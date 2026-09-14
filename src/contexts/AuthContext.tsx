@@ -37,7 +37,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signInWithGoogle = async (): Promise<User | null> => {
     const auth = getFirebaseAuth();
     if (!auth) {
-      throw new Error('Firebase Auth is not configured');
+      throw new Error(
+        'Firebase configuration is not detected in this build. If you added environment variables in Netlify, make sure to trigger a new deploy (Deploys > Trigger deploy > Clear cache and deploy site).'
+      );
     }
 
     try {
@@ -46,10 +48,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return result.user;
     } catch (err: any) {
       console.error('Google sign-in error:', err);
-      if (err.code !== 'auth/popup-closed-by-user') {
-        throw err;
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return null;
       }
-      return null;
+      if (err.code === 'auth/unauthorized-domain') {
+        throw new Error(
+          `Domain "${window.location.hostname}" is not authorized in your Firebase Console.\n\nPlease go to Firebase Console -> Authentication -> Settings -> Authorized domains, and add "${window.location.hostname}".`
+        );
+      }
+      if (err.code === 'auth/popup-blocked') {
+        throw new Error('Google Sign-In popup was blocked by your browser. Please allow popups for this site.');
+      }
+      if (err.code === 'auth/configuration-not-found') {
+        throw new Error(
+          'Google Sign-In provider is not enabled in your Firebase project. Go to Firebase Console -> Authentication -> Sign-in method and enable Google.'
+        );
+      }
+      throw err;
     }
   };
 

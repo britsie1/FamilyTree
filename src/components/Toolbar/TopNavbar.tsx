@@ -67,7 +67,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   canUndo = false,
   canRedo = false,
 }) => {
-  const { user, signInWithGoogle, signOutUser } = useAuth();
+  const { user, isConfigured, signInWithGoogle, signOutUser } = useAuth();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(tree.name);
   const [searchQuery, setSearchQuery] = useState('');
@@ -470,10 +470,21 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         ) : (
           <button
             onClick={async () => {
+              if (!isConfigured) {
+                if (onOpenShareModal) {
+                  onOpenShareModal();
+                } else {
+                  alert(
+                    'Firebase environment variables were not detected in this build.\n\nIf you added variables in Netlify, please trigger a redeploy (Deploys > Trigger deploy > Clear cache and deploy site).'
+                  );
+                }
+                return;
+              }
               try {
                 await signInWithGoogle();
               } catch (err: any) {
                 console.error('Sign-in error:', err);
+                alert(err.message || 'Sign in failed');
               }
             }}
             className="flex items-center gap-1 sm:gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold px-2 sm:px-2.5 py-1.5 rounded-xl text-xs shadow-2xs hover:shadow transition-all cursor-pointer"

@@ -8,6 +8,7 @@ import {
   encodeEmailKey,
   normalizeEmail,
 } from '../../services/firestoreService';
+import { getFirebaseDiagnostics } from '../../services/firebase';
 import {
   X,
   Share2,
@@ -37,6 +38,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   onTreeUpdated,
 }) => {
   const { user, isConfigured, signInWithGoogle } = useAuth();
+  const diagnostics = getFirebaseDiagnostics();
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -296,14 +298,37 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Case 1: Firebase not configured */}
           {!isConfigured && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 text-xs space-y-2">
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 text-xs space-y-3">
               <div className="flex items-center gap-2 font-bold text-amber-800">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <span>Cloud & Sharing Not Configured</span>
               </div>
-              <p className="text-amber-700 leading-relaxed">
-                Cloud sync and sharing are not enabled yet for this deployment. Please contact the project administrator.
+              <p className="text-amber-800 leading-relaxed">
+                Firebase environment variables were not detected in this build.
               </p>
+
+              {diagnostics.missingRequired.length > 0 && (
+                <div className="bg-white/80 rounded-xl p-3 border border-amber-200/60 space-y-1.5 font-mono text-[11px]">
+                  <p className="font-sans font-semibold text-slate-700">Missing required build variables:</p>
+                  <ul className="list-disc list-inside text-rose-600 space-y-0.5">
+                    {diagnostics.missingRequired.map((k) => (
+                      <li key={k}>{k}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="bg-amber-100/70 rounded-xl p-3 text-[11px] space-y-2 text-amber-900">
+                <p className="font-semibold text-slate-900">⚡ How to resolve on Netlify:</p>
+                <ol className="list-decimal list-inside space-y-1 text-amber-800">
+                  <li>In Netlify, go to <strong>Site configuration &gt; Environment variables</strong>.</li>
+                  <li>Ensure your variables start with <code>VITE_FIREBASE_</code> (e.g. <code>VITE_FIREBASE_API_KEY</code>).</li>
+                  <li>
+                    <strong>Important:</strong> Because Vite bakes variables at build time, go to <strong>Deploys &gt; Trigger deploy &gt; Clear cache and deploy site</strong> to rebuild your app.
+                  </li>
+                  <li>In Firebase Console, add your Netlify domain to <strong>Authentication &gt; Settings &gt; Authorized domains</strong>.</li>
+                </ol>
+              </div>
             </div>
           )}
 

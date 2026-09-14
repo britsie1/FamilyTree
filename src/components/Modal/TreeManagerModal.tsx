@@ -459,7 +459,13 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
                     Sign in with Google to sync and access your family trees anywhere.
                   </p>
                   <button
-                    onClick={signInWithGoogle}
+                    onClick={async () => {
+                      try {
+                        await signInWithGoogle();
+                      } catch (err: any) {
+                        setStatusMessage(err.message || 'Sign in failed');
+                      }
+                    }}
                     className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
                   >
                     Sign in with Google
@@ -565,7 +571,13 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
                     Sign in with your Google email to see family trees others have shared with you.
                   </p>
                   <button
-                    onClick={signInWithGoogle}
+                    onClick={async () => {
+                      try {
+                        await signInWithGoogle();
+                      } catch (err: any) {
+                        setStatusMessage(err.message || 'Sign in failed');
+                      }
+                    }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
                   >
                     Sign in with Google
