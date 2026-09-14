@@ -330,7 +330,7 @@ function getMaxAllowedGenForPerson(
  */
 export function calculateGenerations(tree: TreeData): Record<string, number> {
   const generations: Record<string, number> = {};
-  const peopleIds = Object.keys(tree.people);
+  const peopleIds = Object.keys(tree.people).sort();
 
   if (peopleIds.length === 0) return generations;
 
@@ -343,6 +343,9 @@ export function calculateGenerations(tree: TreeData): Record<string, number> {
     }
   });
 
+  const sortedUnions = Object.values(tree.unions).sort((a, b) => a.id.localeCompare(b.id));
+  const sortedPeople = Object.values(tree.people).sort((a, b) => a.id.localeCompare(b.id));
+
   let changed = true;
   let iterations = 0;
   const maxIterations = peopleIds.length * 3 + 20;
@@ -353,7 +356,7 @@ export function calculateGenerations(tree: TreeData): Record<string, number> {
     iterations++;
 
     // 1. Children must be at least 1 generation lower than their parents
-    for (const union of Object.values(tree.unions)) {
+    for (const union of sortedUnions) {
       if (!union.partnerIds || union.partnerIds.length === 0) continue;
 
       let maxParentGen = -Infinity;
@@ -397,7 +400,7 @@ export function calculateGenerations(tree: TreeData): Record<string, number> {
     }
 
     // 2. Individuals with explicit parentUnionId
-    for (const person of Object.values(tree.people)) {
+    for (const person of sortedPeople) {
       if (person.parentUnionId && tree.unions[person.parentUnionId]) {
         const pUnion = tree.unions[person.parentUnionId];
         if (pUnion.partnerIds && pUnion.partnerIds.length > 0) {
@@ -426,7 +429,7 @@ export function calculateGenerations(tree: TreeData): Record<string, number> {
     iterations++;
 
     // 2a. Pull parents down towards their children
-    for (const union of Object.values(tree.unions)) {
+    for (const union of sortedUnions) {
       if (!union.childrenIds || union.childrenIds.length === 0) continue;
 
       // Find the lowest generation of any child in this union
@@ -488,7 +491,7 @@ export interface DetectedFamilies {
  * and traverses both sides to determine the two family branches (e.g. Brits Family vs. Roque Family).
  */
 export function detectFamilyGroups(tree: TreeData): DetectedFamilies {
-  const peopleIds = Object.keys(tree.people);
+  const peopleIds = Object.keys(tree.people).sort();
   if (peopleIds.length === 0) {
     return { familyGroups: [], personFamilyMap: {} };
   }
@@ -684,7 +687,9 @@ export function detectFamilyGroups(tree: TreeData): DetectedFamilies {
         }
       }
     }
-    const topSurname = Object.keys(surnameCounts).sort((a, b) => surnameCounts[b] - surnameCounts[a])[0];
+    const topSurname = Object.keys(surnameCounts).sort(
+      (a, b) => (surnameCounts[b] - surnameCounts[a]) || a.localeCompare(b)
+    )[0];
     if (topSurname) {
       return `${topSurname} Family`;
     }
@@ -768,7 +773,9 @@ function orderPeopleSubset(
     partnerGraph[id] = [];
   });
 
-  ids.forEach((id) => {
+  const deterministicIds = [...ids].sort();
+
+  deterministicIds.forEach((id) => {
     const p = tree.people[id];
     if (!p) return;
     for (const uId of p.unionIds) {
@@ -783,6 +790,11 @@ function orderPeopleSubset(
       }
     }
   });
+
+  // Ensure deterministic partner neighbor ordering
+  for (const id of Object.keys(partnerGraph)) {
+    partnerGraph[id].sort();
+  }
 
   const tracePartnerChain = (startId: string): string[] => {
     const chain: string[] = [];
@@ -806,18 +818,33 @@ function orderPeopleSubset(
       return componentNodes;
     }
 
-    let endpoint = componentNodes[0];
     let minDegree = Infinity;
+    const candidates: string[] = [];
     for (const node of componentNodes) {
       const deg = partnerGraph[node].filter((n) => chainSet.has(n)).length;
-      if (deg === 1) {
-        endpoint = node;
-        break;
-      }
       if (deg < minDegree) {
         minDegree = deg;
-        endpoint = node;
+        candidates.length = 0;
+        candidates.push(node);
+      } else if (deg === minDegree) {
+        candidates.push(node);
       }
+    }
+
+    // Deterministically pick the best endpoint among minDegree candidates:
+    // 1. If startId is an endpoint, prefer starting from startId to preserve local context
+    // 2. Otherwise, sort candidates deterministically (prefer native descendant with parents, then birthDate, then id)
+    let endpoint = candidates[0];
+    if (candidates.includes(startId)) {
+      endpoint = startId;
+    } else {
+      candidates.sort((a, b) => {
+        const aHasParents = Boolean(tree.people[a]?.parentUnionId);
+        const bHasParents = Boolean(tree.people[b]?.parentUnionId);
+        if (aHasParents !== bHasParents) return aHasParents ? -1 : 1;
+        return a.localeCompare(b);
+      });
+      endpoint = candidates[0];
     }
 
     const walked = new Set<string>();
@@ -825,15 +852,15 @@ function orderPeopleSubset(
     while (current && !walked.has(current)) {
       chain.push(current);
       walked.add(current);
-      const next: string | undefined = partnerGraph[current].find((n) => chainSet.has(n) && !walked.has(n));
-      current = next || null;
+      const nextCandidates: string[] = partnerGraph[current].filter((n) => chainSet.has(n) && !walked.has(n));
+      nextCandidates.sort();
+      current = nextCandidates[0] || null;
     }
 
-    for (const node of componentNodes) {
-      if (!walked.has(node)) {
-        chain.push(node);
-        walked.add(node);
-      }
+    const remaining = componentNodes.filter((n) => !walked.has(n)).sort();
+    for (const node of remaining) {
+      chain.push(node);
+      walked.add(node);
     }
 
     return chain;
@@ -842,7 +869,7 @@ function orderPeopleSubset(
   const byParentUnion: Record<string, string[]> = {};
   const withoutParents: string[] = [];
 
-  for (const id of ids) {
+  for (const id of deterministicIds) {
     const p = tree.people[id];
     if (p && p.parentUnionId) {
       if (!byParentUnion[p.parentUnionId]) byParentUnion[p.parentUnionId] = [];
@@ -855,11 +882,34 @@ function orderPeopleSubset(
   const sortedParentUnionIds = Object.keys(byParentUnion).sort((a, b) => {
     const orderA = unionOrderMap[a] ?? 9999;
     const orderB = unionOrderMap[b] ?? 9999;
-    return orderA - orderB;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.localeCompare(b);
   });
 
   for (const uId of sortedParentUnionIds) {
     const siblingIds = byParentUnion[uId];
+    const parentUnion = tree.unions[uId];
+    const canonicalChildren = parentUnion?.childrenIds || [];
+    // Sort siblings deterministically (by birthDate, canonical childrenIds order, then id)
+    siblingIds.sort((a, b) => {
+      const personA = tree.people[a];
+      const personB = tree.people[b];
+      if (personA?.birthDate && personB?.birthDate) {
+        const cmp = personA.birthDate.localeCompare(personB.birthDate);
+        if (cmp !== 0) return cmp;
+      } else if (personA?.birthDate) {
+        return -1;
+      } else if (personB?.birthDate) {
+        return 1;
+      }
+      const idxA = canonicalChildren.indexOf(a);
+      const idxB = canonicalChildren.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
     for (const sId of siblingIds) {
       if (!visited.has(sId)) {
         const chain = tracePartnerChain(sId);
@@ -872,6 +922,7 @@ function orderPeopleSubset(
       }
     }
   }
+
 
   for (const id of withoutParents) {
     if (!visited.has(id)) {
@@ -902,8 +953,10 @@ export function orderGenerations(
   familyOrder?: string[]
 ): GenerationGroup[] {
   const genMap: Record<number, string[]> = {};
+  const sortedPeopleIds = Object.keys(generations).sort();
 
-  for (const [id, gen] of Object.entries(generations)) {
+  for (const id of sortedPeopleIds) {
+    const gen = generations[id];
     if (!genMap[gen]) genMap[gen] = [];
     genMap[gen].push(id);
   }
@@ -956,7 +1009,8 @@ export function orderGenerations(
     orderedIds.forEach((pId) => {
       const p = tree.people[pId];
       if (p) {
-        p.unionIds.forEach((uId) => {
+        const unions = [...(p.unionIds || [])].sort();
+        unions.forEach((uId) => {
           if (unionOrderMap[uId] === undefined) {
             unionOrderMap[uId] = unionCounter++;
           }

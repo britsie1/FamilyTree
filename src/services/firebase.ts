@@ -14,6 +14,9 @@ export interface FirebaseConfig {
 export interface FirebaseDiagnostics {
   isConfigured: boolean;
   projectId: string;
+  rawProjectId: string;
+  isProjectIdAppIdFormat: boolean;
+  wasAutoCorrected: boolean;
   missingRequired: string[];
   presentKeys: string[];
 }
@@ -21,6 +24,27 @@ export interface FirebaseDiagnostics {
 function cleanValue(val: unknown): string {
   if (typeof val !== 'string') return '';
   return val.trim().replace(/^["']|["']$/g, '');
+}
+
+/**
+ * Extracts the Project ID from an auth domain, web app host, or storage bucket.
+ * e.g. "my-project-123.firebaseapp.com" -> "my-project-123"
+ */
+function extractProjectIdFromDomain(domain?: string): string | null {
+  if (!domain) return null;
+  const clean = cleanValue(domain).toLowerCase();
+  const match = clean.match(/^([a-z0-9-]+)\.(firebaseapp\.com|web\.app|appspot\.com|firebasestorage\.app)$/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Checks if a value looks like a Firebase Web App ID (e.g. 1:123456789:web:abcdef)
+ * or literal placeholder text, rather than a valid Google Cloud Project ID.
+ */
+function isAppIdFormat(val: string): boolean {
+  if (!val) return false;
+  const clean = cleanValue(val);
+  return clean.includes(':') || clean.startsWith('1:') || clean.toLowerCase().includes('app id');
 }
 
 /**
@@ -53,6 +77,7 @@ function getJsonConfig(): Partial<FirebaseConfig> | null {
 /**
  * Loads Firebase configuration from environment variables.
  * Supports VITE_FIREBASE_*, FIREBASE_*, or JSON configs.
+ * Automatically heals cases where App ID was mistakenly placed in VITE_FIREBASE_PROJECT_ID.
  */
 export function getFirebaseConfig(): FirebaseConfig | null {
   const json = getJsonConfig();
@@ -69,7 +94,7 @@ export function getFirebaseConfig(): FirebaseConfig | null {
     (import.meta.env as any).FIREBASE_AUTH_DOMAIN
   );
 
-  const projectId = cleanValue(
+  const rawProjectId = cleanValue(
     json?.projectId ||
     import.meta.env.VITE_FIREBASE_PROJECT_ID ||
     (import.meta.env as any).FIREBASE_PROJECT_ID
@@ -87,11 +112,32 @@ export function getFirebaseConfig(): FirebaseConfig | null {
     (import.meta.env as any).FIREBASE_MESSAGING_SENDER_ID
   );
 
-  const appId = cleanValue(
+  const rawAppId = cleanValue(
     json?.appId ||
     import.meta.env.VITE_FIREBASE_APP_ID ||
     (import.meta.env as any).FIREBASE_APP_ID
   );
+
+  let projectId = rawProjectId;
+  let appId = rawAppId;
+
+  // Auto-heal: If rawProjectId is formatted like an App ID (e.g. contains colons or starts with 1:)
+  if (isAppIdFormat(rawProjectId)) {
+    // 1. Check if rawAppId was actually the Project ID (swapped variables)
+    if (rawAppId && !isAppIdFormat(rawAppId)) {
+      projectId = rawAppId;
+      appId = rawProjectId;
+    } else {
+      // 2. Try extracting true project ID from authDomain or storageBucket
+      const fromAuth = extractProjectIdFromDomain(authDomain);
+      const fromBucket = extractProjectIdFromDomain(storageBucket);
+      if (fromAuth) {
+        projectId = fromAuth;
+      } else if (fromBucket) {
+        projectId = fromBucket;
+      }
+    }
+  }
 
   const config: FirebaseConfig = {
     apiKey,
@@ -120,6 +166,9 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
     (import.meta.env as any).FIREBASE_PROJECT_ID
   );
 
+  const isAppId = isAppIdFormat(rawProject);
+  const wasCorrected = Boolean(config && isAppId && config.projectId !== rawProject);
+
   if (config) {
     const present = Object.entries(config)
       .filter(([_, v]) => Boolean(v))
@@ -127,6 +176,9 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
     return {
       isConfigured: true,
       projectId: config.projectId,
+      rawProjectId: rawProject,
+      isProjectIdAppIdFormat: isAppId,
+      wasAutoCorrected: wasCorrected,
       missingRequired: [],
       presentKeys: present,
     };
@@ -155,6 +207,9 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
   return {
     isConfigured: false,
     projectId: rawProject,
+    rawProjectId: rawProject,
+    isProjectIdAppIdFormat: isAppId,
+    wasAutoCorrected: false,
     missingRequired: missing,
     presentKeys: present,
   };

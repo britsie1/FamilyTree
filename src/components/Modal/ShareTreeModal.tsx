@@ -397,7 +397,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
           {/* Case 3: Logged in and configured -> Google Drive sharing interface */}
           {isConfigured && user && (
             <>
-              {/* Status Header: Loading, Error with Retry, or Success */}
+              {/* Status Header: Loading, Auto-correction notice, Error with Retry, or Success */}
               {loading && (
                 <div className="flex items-center gap-2.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 p-3 rounded-xl animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
@@ -408,20 +408,60 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                 </div>
               )}
 
+              {/* If Project ID was an App ID and was auto-corrected */}
+              {diagnostics.wasAutoCorrected && (
+                <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span>Project ID Auto-Detected</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    In Netlify, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">VITE_FIREBASE_PROJECT_ID</code> was set to an App ID (<code className="font-mono text-[10px]">{diagnostics.rawProjectId}</code>).
+                    We automatically resolved your Project ID to <code className="font-mono font-bold text-amber-950">{diagnostics.projectId}</code>.
+                  </p>
+                </div>
+              )}
+
+              {/* If Project ID was an App ID and could NOT be auto-corrected */}
+              {diagnostics.isProjectIdAppIdFormat && !diagnostics.wasAutoCorrected && (
+                <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3.5 text-xs space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-800">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                    <span>Netlify Variable Error: App ID used instead of Project ID</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    In Netlify, <code className="bg-rose-100 px-1 py-0.5 rounded font-mono font-bold">VITE_FIREBASE_PROJECT_ID</code> is set to an App ID (<code className="font-mono">{diagnostics.rawProjectId}</code>).
+                  </p>
+                  <div className="bg-white/90 border border-rose-200 rounded-lg p-2.5 text-[11px] text-slate-700 space-y-1">
+                    <p className="font-semibold text-slate-900">How to fix:</p>
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      <li>In Firebase Console, go to <strong>Project Settings &gt; General</strong>.</li>
+                      <li>Copy the <strong>Project ID</strong> (e.g. <code>my-tree-12345</code>), NOT the App ID.</li>
+                      <li>In Netlify, update <code>VITE_FIREBASE_PROJECT_ID</code> and redeploy.</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+
               {errorMessage && (
                 <div className="text-xs bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl space-y-2.5">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1">
+                    <div className="flex-1 space-y-1.5">
                       <p className="font-semibold leading-snug">{errorMessage}</p>
-                      {diagnostics.projectId && (
-                        <p className="text-[11px] text-slate-600">
-                          Connected Firebase Project ID:{' '}
-                          <code className="font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-rose-200">
-                            {diagnostics.projectId}
+                      <div className="bg-white/80 border border-rose-200 rounded-lg p-2 text-[11px] space-y-1 text-slate-700">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Connected Project ID:</span>
+                          <code className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {diagnostics.projectId || 'Not configured'}
                           </code>
-                        </p>
-                      )}
+                        </div>
+                        {diagnostics.isProjectIdAppIdFormat && (
+                          <p className="text-amber-700 font-medium">
+                            ⚠️ This value looks like an App ID. In Firebase Console, copy the Project ID (e.g. <code>familytree-xyz</code>).
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-rose-200/60">

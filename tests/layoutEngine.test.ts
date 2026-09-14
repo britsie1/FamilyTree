@@ -1150,7 +1150,67 @@ describe('Widest-Row Spacing Adjustment', () => {
       'Adjusted layout should reposition c1 under its parents'
     );
   });
+
+  it('should produce strictly identical layout regardless of people and unions object key ordering', () => {
+    const trees = [
+      userExportedTree,
+      createDoubleInLawPreset(),
+      createThreeGenSampleTree(),
+      createDivorceBlendedPreset(),
+    ];
+
+    for (const tree of trees) {
+      // 1. Original
+      const layoutOrig = computeLayout(tree, 'vertical', true, undefined, true);
+
+      // 2. Alphabetical keys
+      const alphaPeople: Record<string, any> = {};
+      Object.keys(tree.people).sort().forEach((k) => { alphaPeople[k] = tree.people[k]; });
+      const alphaUnions: Record<string, any> = {};
+      Object.keys(tree.unions).sort().forEach((k) => { alphaUnions[k] = tree.unions[k]; });
+      const treeAlpha: TreeData = { ...tree, people: alphaPeople, unions: alphaUnions };
+      const layoutAlpha = computeLayout(treeAlpha, 'vertical', true, undefined, true);
+
+      // 3. Reversed keys
+      const revPeople: Record<string, any> = {};
+      Object.keys(tree.people).sort().reverse().forEach((k) => { revPeople[k] = tree.people[k]; });
+      const revUnions: Record<string, any> = {};
+      Object.keys(tree.unions).sort().reverse().forEach((k) => { revUnions[k] = tree.unions[k]; });
+      const treeRev: TreeData = { ...tree, people: revPeople, unions: revUnions };
+      const layoutRev = computeLayout(treeRev, 'vertical', true, undefined, true);
+
+      // Verify all nodes match exactly
+      for (const id of Object.keys(tree.people)) {
+        const origNode = layoutOrig.nodes[id];
+        const alphaNode = layoutAlpha.nodes[id];
+        const revNode = layoutRev.nodes[id];
+
+        assert(origNode && alphaNode && revNode, `Node ${id} should exist in all layouts`);
+        assert.strictEqual(
+          alphaNode.x,
+          origNode.x,
+          `Node ${id} x-coordinate differed with alphabetical key order in tree ${tree.id}`
+        );
+        assert.strictEqual(
+          alphaNode.y,
+          origNode.y,
+          `Node ${id} y-coordinate differed with alphabetical key order in tree ${tree.id}`
+        );
+        assert.strictEqual(
+          revNode.x,
+          origNode.x,
+          `Node ${id} x-coordinate differed with reversed key order in tree ${tree.id}`
+        );
+        assert.strictEqual(
+          revNode.y,
+          origNode.y,
+          `Node ${id} y-coordinate differed with reversed key order in tree ${tree.id}`
+        );
+      }
+    }
+  });
 });
+
 
 
 

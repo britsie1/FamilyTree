@@ -189,7 +189,7 @@ export async function saveTreeToCloud(
     const docRef = doc(db, TREES_COLLECTION, cloudTree.id);
     const cleanedData = cleanForFirestore(cloudTree);
     await withTimeout(
-      setDoc(docRef, cleanedData, { merge: true }),
+      setDoc(docRef, cleanedData),
       7000,
       'Connection to Cloud Firestore timed out (7s). Please check your internet connection or verify Firestore rules in Firebase Console.'
     );
@@ -250,6 +250,10 @@ export function subscribeToCloudTree(
   return onSnapshot(
     docRef,
     (snap) => {
+      // Ignore local writes that have not been acknowledged by the server
+      if (snap.metadata.hasPendingWrites) {
+        return;
+      }
       if (snap.exists()) {
         const data = snap.data() as CloudTreeData;
         const parsed: CloudTreeData = {

@@ -3,6 +3,12 @@ import type { TreeData, LayoutNode, TreeLayout, LayoutStyle } from '../../types/
 import { PersonCard } from './PersonCard';
 import { ConnectorLines } from './ConnectorLines';
 import { FamilyGroupEnclosures } from './FamilyGroupEnclosures';
+import {
+  calculatePinchTransform,
+  getTouchDistance,
+  getTouchMidpoint,
+  type TouchCoord,
+} from './canvasTouch';
 
 interface TreeCanvasProps {
   tree: TreeData;
@@ -138,6 +144,203 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       container.removeEventListener('wheel', handleWheelNative);
     };
   }, [canvasContainerRef, setZoom, setPan]);
+
+  // Native touch & gesture handling for mobile: drag to pan and pinch to zoom
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    interface TouchState {
+      mode: 'none' | 'pan' | 'pinch';
+      startTouch1: TouchCoord;
+      startTouch2: TouchCoord;
+      startPan: { x: number; y: number };
+      startZoom: number;
+      startDistance: number;
+      startMidpoint: { x: number; y: number };
+      hasMoved: boolean;
+      startedOnBackground: boolean;
+    }
+
+    const touchState: TouchState = {
+      mode: 'none',
+      startTouch1: { clientX: 0, clientY: 0 },
+      startTouch2: { clientX: 0, clientY: 0 },
+      startPan: { x: 0, y: 0 },
+      startZoom: 1,
+      startDistance: 0,
+      startMidpoint: { x: 0, y: 0 },
+      hasMoved: false,
+      startedOnBackground: false,
+    };
+
+    let suppressClickTimer: ReturnType<typeof setTimeout> | null = null;
+    let suppressClick = false;
+
+    // Capture-phase click interceptor to suppress phantom clicks after dragging or pinching
+    const handleClickCapture = (e: MouseEvent) => {
+      if (suppressClick) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const rect = container.getBoundingClientRect();
+      const target = e.target as HTMLElement | null;
+      const isBackground =
+        target === container || Boolean(target?.classList?.contains('canvas-background'));
+
+      if (e.touches.length === 1) {
+        const t1 = e.touches[0];
+        touchState.mode = 'pan';
+        touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+        touchState.startPan = { ...panRef.current };
+        touchState.startZoom = zoomRef.current;
+        touchState.hasMoved = false;
+        touchState.startedOnBackground = isBackground;
+        setIsPanning(true);
+      } else if (e.touches.length >= 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dist = getTouchDistance(t1, t2);
+        const mid = getTouchMidpoint(t1, t2, rect);
+
+        touchState.mode = 'pinch';
+        touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+        touchState.startTouch2 = { clientX: t2.clientX, clientY: t2.clientY };
+        touchState.startPan = { ...panRef.current };
+        touchState.startZoom = zoomRef.current;
+        touchState.startDistance = Math.max(dist, 1);
+        touchState.startMidpoint = mid;
+        touchState.hasMoved = false;
+        touchState.startedOnBackground = isBackground;
+        setIsPanning(true);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (touchState.mode === 'none') return;
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      const rect = container.getBoundingClientRect();
+
+      if (e.touches.length === 1 && touchState.mode === 'pan') {
+        const t1 = e.touches[0];
+        const dx = t1.clientX - touchState.startTouch1.clientX;
+        const dy = t1.clientY - touchState.startTouch1.clientY;
+
+        if (Math.hypot(dx, dy) > 5) {
+          touchState.hasMoved = true;
+          suppressClick = true;
+        }
+
+        setPan({
+          x: touchState.startPan.x + dx,
+          y: touchState.startPan.y + dy,
+        });
+      } else if (e.touches.length >= 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dist = getTouchDistance(t1, t2);
+        const mid = getTouchMidpoint(t1, t2, rect);
+
+        if (touchState.mode !== 'pinch') {
+          // Transition dynamically from 1-finger pan to 2-finger pinch
+          touchState.mode = 'pinch';
+          touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+          touchState.startTouch2 = { clientX: t2.clientX, clientY: t2.clientY };
+          touchState.startPan = { ...panRef.current };
+          touchState.startZoom = zoomRef.current;
+          touchState.startDistance = Math.max(dist, 1);
+          touchState.startMidpoint = mid;
+          return;
+        }
+
+        touchState.hasMoved = true;
+        suppressClick = true;
+
+        const { zoom: newZoom, pan: newPan } = calculatePinchTransform(
+          touchState.startMidpoint,
+          mid,
+          touchState.startPan,
+          touchState.startZoom,
+          touchState.startDistance,
+          dist
+        );
+
+        setZoom(newZoom);
+        setPan(newPan);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        // One finger lifted during pinch: smoothly transition back to 1-finger pan
+        const t1 = e.touches[0];
+        touchState.mode = 'pan';
+        touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+        touchState.startPan = { ...panRef.current };
+        return;
+      }
+
+      if (e.touches.length === 0) {
+        // All fingers lifted
+        if (!touchState.hasMoved && touchState.startedOnBackground) {
+          onSelectPerson(null);
+        }
+
+        if (touchState.hasMoved) {
+          // Keep suppressing phantom clicks for next 120ms
+          if (suppressClickTimer) clearTimeout(suppressClickTimer);
+          suppressClickTimer = setTimeout(() => {
+            suppressClick = false;
+          }, 120);
+        } else {
+          suppressClick = false;
+        }
+
+        touchState.mode = 'none';
+        touchState.hasMoved = false;
+        setIsPanning(false);
+      }
+    };
+
+    const handleTouchCancel = () => {
+      touchState.mode = 'none';
+      touchState.hasMoved = false;
+      suppressClick = false;
+      setIsPanning(false);
+      if (suppressClickTimer) clearTimeout(suppressClickTimer);
+    };
+
+    const preventSafariGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('touchcancel', handleTouchCancel);
+    container.addEventListener('click', handleClickCapture, true);
+    container.addEventListener('gesturestart', preventSafariGesture);
+    container.addEventListener('gesturechange', preventSafariGesture);
+    container.addEventListener('gestureend', preventSafariGesture);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchCancel);
+      container.removeEventListener('click', handleClickCapture, true);
+      container.removeEventListener('gesturestart', preventSafariGesture);
+      container.removeEventListener('gesturechange', preventSafariGesture);
+      container.removeEventListener('gestureend', preventSafariGesture);
+      if (suppressClickTimer) clearTimeout(suppressClickTimer);
+    };
+  }, [canvasContainerRef, setZoom, setPan, onSelectPerson]);
 
   // Mouse Down on Canvas (Start Panning or Marquee Selection)
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -286,7 +489,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         e.preventDefault();
         onCanvasContextMenu?.(e);
       }}
-      className={`relative w-full h-full overflow-hidden bg-slate-50 canvas-background ${
+      className={`relative w-full h-full overflow-hidden bg-slate-50 canvas-background touch-none select-none overscroll-none ${
         isPanning ? 'cursor-grabbing' : isMarqueeSelecting ? 'cursor-crosshair' : 'cursor-grab'
       }`}
     >

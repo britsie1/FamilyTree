@@ -69,6 +69,30 @@ export function App() {
   );
 }
 
+/**
+ * Produces a stable structural fingerprint of a tree for equality checking,
+ * ignoring timestamps and key ordering.
+ */
+function getTreeContentFingerprint(tree: TreeData): string {
+  const sortedP: Record<string, any> = {};
+  for (const k of Object.keys(tree.people || {}).sort()) {
+    sortedP[k] = tree.people[k];
+  }
+  const sortedU: Record<string, any> = {};
+  for (const k of Object.keys(tree.unions || {}).sort()) {
+    sortedU[k] = tree.unions[k];
+  }
+  return JSON.stringify({
+    id: tree.id,
+    name: tree.name,
+    description: tree.description,
+    rootPersonId: tree.rootPersonId,
+    collapsedPersonIds: tree.collapsedPersonIds,
+    people: sortedP,
+    unions: sortedU,
+  });
+}
+
 function FamilyTreeMain() {
   const { user, signInWithGoogle } = useAuth();
 
@@ -136,6 +160,10 @@ function FamilyTreeMain() {
   });
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastSavedCloudFingerprintRef = useRef<string | null>(null);
+  const isRemoteSyncRef = useRef<boolean>(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitialFitRef = useRef<boolean>(false);
 
   // Check URL params for ?treeId=... on initial mount and when user changes
   useEffect(() => {
@@ -178,6 +206,9 @@ function FamilyTreeMain() {
             setAccessDeniedMessage('You do not have permission to view this tree. Ask the owner to share it with your email.');
           }
         } else {
+          hasInitialFitRef.current = false;
+          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(cloudTree);
+          isRemoteSyncRef.current = true;
           setTree(cloudTree);
           setIsCloudTree(true);
           setUserPermission(perm);
@@ -220,9 +251,22 @@ function FamilyTreeMain() {
     const unsubscribe = subscribeToCloudTree(
       tree.id,
       (remoteTree) => {
-        if (remoteTree) {
-          setTree(remoteTree);
+        if (!remoteTree) return;
+        const remoteFingerprint = getTreeContentFingerprint(remoteTree);
+        const currentFingerprint = getTreeContentFingerprint(tree);
+
+        // If the incoming tree is identical to our current tree or matches what we just saved, skip
+        if (
+          remoteFingerprint === currentFingerprint ||
+          remoteFingerprint === lastSavedCloudFingerprintRef.current
+        ) {
+          return;
         }
+
+        // Apply remote changes from cloud without flooding undo history
+        isRemoteSyncRef.current = true;
+        lastSavedCloudFingerprintRef.current = remoteFingerprint;
+        setTree(remoteTree, false);
       },
       (err) => {
         console.error('Real-time sync error:', err);
@@ -232,9 +276,9 @@ function FamilyTreeMain() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isCloudTree, tree.id, userPermission, setTree]);
+  }, [isCloudTree, tree.id, userPermission, setTree, tree]);
 
-  // Auto-save whenever tree changes
+  // Auto-save whenever tree changes (debounced to avoid loop & network flood)
   useEffect(() => {
     // Only persist if not read-only
     if (userPermission === 'viewer') return;
@@ -243,10 +287,34 @@ function FamilyTreeMain() {
 
     // If active tree is a cloud tree and user has write permissions, save to Firestore
     if (isCloudTree && user && (userPermission === 'owner' || userPermission === 'editor')) {
-      saveTreeToCloud(tree, user).catch((err) => {
-        console.error('Failed to auto-save to cloud:', err);
-      });
+      // If this tree update was triggered by a remote cloud sync, do not echo it back
+      if (isRemoteSyncRef.current) {
+        isRemoteSyncRef.current = false;
+        return;
+      }
+
+      const currentFingerprint = getTreeContentFingerprint(tree);
+      if (currentFingerprint === lastSavedCloudFingerprintRef.current) {
+        return;
+      }
+
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+
+      autoSaveTimerRef.current = setTimeout(() => {
+        lastSavedCloudFingerprintRef.current = currentFingerprint;
+        saveTreeToCloud(tree, user).catch((err) => {
+          console.error('Failed to auto-save to cloud:', err);
+        });
+      }, 1000);
     }
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
   }, [tree, isCloudTree, user, userPermission]);
 
   // Make a Copy handler (Google Drive-style)
@@ -260,6 +328,7 @@ function FamilyTreeMain() {
       createdAt: now,
       updatedAt: now,
     };
+    hasInitialFitRef.current = false;
     saveCurrentTree(copy);
     setTree(copy);
     resetHistory(copy);
@@ -325,13 +394,16 @@ function FamilyTreeMain() {
     setPan({ x: newPanX, y: newPanY });
   }, [layout.bounds]);
 
-  // Initial centering on first load
+  // Initial centering on first load or tree switch
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitToScreen();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [fitToScreen]);
+    if (!hasInitialFitRef.current && layout.bounds.width > 0) {
+      hasInitialFitRef.current = true;
+      const timer = setTimeout(() => {
+        fitToScreen();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [fitToScreen, layout.bounds.width]);
 
   // Tree manipulation handlers
   const handleUpdateTreeName = (name: string) => {
@@ -701,6 +773,11 @@ function FamilyTreeMain() {
 
   // Switching or loading a tree
   const handleSwitchTree = (newTree: TreeData, isCloud: boolean = false) => {
+    hasInitialFitRef.current = false;
+    if (isCloud) {
+      lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(newTree);
+      isRemoteSyncRef.current = true;
+    }
     setTree(newTree);
     resetHistory(newTree);
     setIsCloudTree(isCloud);
@@ -726,7 +803,6 @@ function FamilyTreeMain() {
     const { defaultYear } = getTreeYearBounds(newTree);
     setTemporalYear(defaultYear);
     setActiveHistoricalMoment(null);
-    setTimeout(fitToScreen, 60);
   };
 
   const handleToggleTimeline = useCallback(() => {
@@ -898,7 +974,7 @@ function FamilyTreeMain() {
       />
 
       {/* Main Canvas Area */}
-      <main className="flex-1 relative w-full h-full overflow-hidden">
+      <main className="flex-1 relative w-full h-full overflow-hidden touch-none select-none overscroll-none">
         {/* Cloud Loading Spinner Overlay */}
         {cloudLoading && (
           <div className="absolute inset-0 bg-white/60 backdrop-blur-xs z-50 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
