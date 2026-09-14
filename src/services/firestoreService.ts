@@ -116,6 +116,27 @@ export function cleanForFirestore<T>(data: T): T {
 }
 
 /**
+ * Transforms cryptic Firebase / Firestore error messages into actionable user guidance.
+ */
+export function formatFirestoreError(err: any): string {
+  const msg = err?.message || String(err || 'Unknown error');
+
+  if (msg.includes('client is offline') || err?.code === 'unavailable') {
+    return (
+      'Unable to connect to Cloud Firestore (client is offline). Please ensure you have created a Firestore database in Firebase Console: go to Build > Firestore Database > Create database (using the default database ID).'
+    );
+  }
+
+  if (err?.code === 'permission-denied' || msg.includes('permission') || msg.includes('insufficient permissions')) {
+    return (
+      'Firestore permission denied. Please ensure your Firestore Security Rules are published in Firebase Console > Build > Firestore Database > Rules.'
+    );
+  }
+
+  return msg;
+}
+
+/**
  * Saves or updates a tree in Firestore.
  */
 export async function saveTreeToCloud(
@@ -148,11 +169,15 @@ export async function saveTreeToCloud(
     updatedAt: now,
   };
 
-  const docRef = doc(db, TREES_COLLECTION, cloudTree.id);
-  const cleanedData = cleanForFirestore(cloudTree);
-  await setDoc(docRef, cleanedData, { merge: true });
-
-  return cloudTree;
+  try {
+    const docRef = doc(db, TREES_COLLECTION, cloudTree.id);
+    const cleanedData = cleanForFirestore(cloudTree);
+    await setDoc(docRef, cleanedData, { merge: true });
+    return cloudTree;
+  } catch (err: any) {
+    console.error('Failed to save cloud tree:', err);
+    throw new Error(formatFirestoreError(err));
+  }
 }
 
 /**
@@ -179,11 +204,11 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
         sharedEmails: data.sharedEmails || [],
       };
     }
-  } catch (err) {
+    return null;
+  } catch (err: any) {
     console.error(`Error loading cloud tree ${treeId}:`, err);
-    throw err;
+    throw new Error(formatFirestoreError(err));
   }
-  return null;
 }
 
 /**
@@ -315,16 +340,21 @@ export async function updateTreeSharingSettings(
     throw new Error('Firebase is not available');
   }
 
-  const docRef = doc(db, TREES_COLLECTION, treeId);
-  const now = new Date().toISOString();
+  try {
+    const docRef = doc(db, TREES_COLLECTION, treeId);
+    const now = new Date().toISOString();
 
-  await updateDoc(docRef, cleanForFirestore({
-    isPublic: settings.isPublic,
-    publicRole: settings.publicRole,
-    sharedWith: settings.sharedWith,
-    sharedEmails: settings.sharedEmails,
-    updatedAt: now,
-  }));
+    await updateDoc(docRef, cleanForFirestore({
+      isPublic: settings.isPublic,
+      publicRole: settings.publicRole,
+      sharedWith: settings.sharedWith,
+      sharedEmails: settings.sharedEmails,
+      updatedAt: now,
+    }));
+  } catch (err: any) {
+    console.error('Failed to update sharing settings:', err);
+    throw new Error(formatFirestoreError(err));
+  }
 }
 
 /**

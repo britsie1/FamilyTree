@@ -65,7 +65,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     setLoading(true);
 
     getCloudTree(tree.id)
-      .then((existing) => {
+      .then(async (existing) => {
         if (!isMounted) return;
         if (existing) {
           setCloudTree(existing);
@@ -73,17 +73,31 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
           setPublicRole(existing.publicRole || 'viewer');
           setSharedWith(existing.sharedWith || {});
         } else {
-          // Tree is not yet in cloud, will be uploaded on first share action
-          setCloudTree(null);
-          setIsPublic(false);
-          setPublicRole('viewer');
-          setSharedWith({});
+          // Immediately sync local tree to cloud so it's persisted and shareable
+          try {
+            const saved = await saveTreeToCloud(tree, user, {
+              isPublic: false,
+              publicRole: 'viewer',
+              sharedWith: {},
+              sharedEmails: [],
+            });
+            if (!isMounted) return;
+            setCloudTree(saved);
+            setIsPublic(false);
+            setPublicRole('viewer');
+            setSharedWith({});
+            if (onTreeUpdated) onTreeUpdated(saved);
+          } catch (uploadErr: any) {
+            if (!isMounted) return;
+            console.error('Initial cloud sync error:', uploadErr);
+            setErrorMessage(uploadErr.message || 'Could not sync tree to cloud.');
+          }
         }
       })
       .catch((err) => {
         if (!isMounted) return;
         console.error('Error fetching cloud tree for sharing:', err);
-        setErrorMessage('Could not check cloud status: ' + err.message);
+        setErrorMessage(err.message || 'Could not check cloud status.');
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -100,19 +114,17 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
   const handleCopyLink = async () => {
     try {
+      if (!cloudTree && user) {
+        setSaving(true);
+        await handleEnsureCloudTree();
+      }
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Fallback
-      const input = document.createElement('input');
-      input.value = shareUrl;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save to cloud before copying link.');
+    } finally {
+      setSaving(false);
     }
   };
 

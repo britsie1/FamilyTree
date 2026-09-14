@@ -1,6 +1,6 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, type Firestore } from 'firebase/firestore';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -193,11 +193,18 @@ export function getFirebaseDb(): Firestore | null {
   const app = getFirebaseApp();
   if (!app) return null;
   try {
-    cachedDb = getFirestore(app);
+    cachedDb = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    });
     return cachedDb;
-  } catch (err) {
-    console.error('Failed to get Firestore DB:', err);
-    return null;
+  } catch {
+    try {
+      cachedDb = getFirestore(app);
+      return cachedDb;
+    } catch (err) {
+      console.error('Failed to get Firestore DB:', err);
+      return null;
+    }
   }
 }
 

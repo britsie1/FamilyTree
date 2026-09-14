@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { TreeData, Person, UnionType, LayoutStyle, Union, UserPermission, CloudTreeData } from './types/tree';
 import {
   loadCurrentTree,
+  loadTreeById,
   saveCurrentTree,
   exportTreeToJsonFile,
   importTreeFromJsonString,
@@ -156,6 +157,15 @@ function FamilyTreeMain() {
       .then((cloudTree) => {
         if (!isMounted) return;
         if (!cloudTree) {
+          const local = loadTreeById(urlTreeId);
+          if (local) {
+            setTree(local);
+            setIsCloudTree(false);
+            setUserPermission('owner');
+            setAccessDeniedMessage(null);
+            resetHistory(local);
+            return;
+          }
           setAccessDeniedMessage('The requested family tree could not be found or does not exist.');
           return;
         }
@@ -183,7 +193,16 @@ function FamilyTreeMain() {
       .catch((err) => {
         if (!isMounted) return;
         console.error('Failed to fetch cloud tree:', err);
-        setAccessDeniedMessage('Could not load tree from cloud: ' + err.message);
+        const local = loadTreeById(urlTreeId);
+        if (local) {
+          setTree(local);
+          setIsCloudTree(false);
+          setUserPermission('owner');
+          setAccessDeniedMessage(null);
+          resetHistory(local);
+          return;
+        }
+        setAccessDeniedMessage('Could not load tree from cloud: ' + (err.message || 'Unknown error'));
       })
       .finally(() => {
         if (isMounted) setCloudLoading(false);
