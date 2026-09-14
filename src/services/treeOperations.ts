@@ -1120,3 +1120,108 @@ export function unlinkChild(
   return sanitizeTree(nextTree);
 }
 
+/**
+ * Creates a brand new independent TreeData containing only the specified subset of people
+ * and the valid relationships/unions connecting them.
+ */
+export function createTreeFromPeople(
+  sourceTree: TreeData,
+  selectedPersonIds: string[],
+  treeName?: string
+): TreeData {
+  const selectedSet = new Set(selectedPersonIds);
+  const newTreeId = generateId('tree');
+  const now = new Date().toISOString();
+
+  // 1. Copy selected people and clear manual positions
+  const newPeople: Record<string, Person> = {};
+  for (const pId of selectedPersonIds) {
+    const orig = sourceTree.people[pId];
+    if (orig) {
+      newPeople[pId] = {
+        ...JSON.parse(JSON.stringify(orig)),
+        x: undefined,
+        y: undefined,
+        horizontalX: undefined,
+        horizontalY: undefined,
+        unionIds: [],
+        parentUnionId: undefined,
+      };
+    }
+  }
+
+  // 2. Filter unions connecting the selected people
+  const newUnions: Record<string, Union> = {};
+  for (const [uId, u] of Object.entries(sourceTree.unions)) {
+    const retainedPartners = (u.partnerIds || []).filter((pId) => selectedSet.has(pId));
+    const retainedChildren = (u.childrenIds || []).filter((cId) => selectedSet.has(cId));
+
+    // Keep union if:
+    // - 2+ partners
+    // - 1+ partner and 1+ child
+    // - 2+ children (preserving sibling connection even without parents)
+    const shouldKeep =
+      retainedPartners.length >= 2 ||
+      (retainedPartners.length >= 1 && retainedChildren.length >= 1) ||
+      (retainedPartners.length === 0 && retainedChildren.length >= 2);
+
+    if (shouldKeep) {
+      newUnions[uId] = {
+        ...JSON.parse(JSON.stringify(u)),
+        partnerIds: retainedPartners,
+        childrenIds: retainedChildren,
+        x: undefined,
+        y: undefined,
+      };
+
+      // Link partners
+      for (const pId of retainedPartners) {
+        if (newPeople[pId] && !newPeople[pId].unionIds.includes(uId)) {
+          newPeople[pId].unionIds.push(uId);
+        }
+      }
+
+      // Link children
+      for (const cId of retainedChildren) {
+        if (newPeople[cId]) {
+          newPeople[cId].parentUnionId = uId;
+        }
+      }
+    }
+  }
+
+  // 3. Determine root person
+  const rootPersonId =
+    sourceTree.rootPersonId && selectedSet.has(sourceTree.rootPersonId)
+      ? sourceTree.rootPersonId
+      : selectedPersonIds[0] || '';
+
+  // 4. Default name derivation
+  let defaultName = treeName?.trim();
+  if (!defaultName) {
+    const surnames = Object.values(newPeople)
+      .map((p) => p.lastName?.trim())
+      .filter(Boolean);
+    const uniqueSurnames = Array.from(new Set(surnames));
+    if (uniqueSurnames.length === 1 && uniqueSurnames[0]) {
+      defaultName = `${uniqueSurnames[0]} Family Tree`;
+    } else {
+      defaultName = `${sourceTree.name || 'Family Tree'} (Branch)`;
+    }
+  }
+
+  const rawTree: TreeData = {
+    id: newTreeId,
+    name: defaultName,
+    description: `Created from ${Object.keys(newPeople).length} selected members of "${sourceTree.name || 'tree'}".`,
+    createdAt: now,
+    updatedAt: now,
+    people: newPeople,
+    unions: newUnions,
+    rootPersonId,
+  };
+
+  return sanitizeTree(rawTree);
+}
+
+

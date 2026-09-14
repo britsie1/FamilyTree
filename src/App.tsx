@@ -28,9 +28,11 @@ import {
   updateUnionInTree,
   clearManualPositions,
   getPersonDisplayName,
+  createTreeFromPeople,
 } from './services/treeOperations';
 import { computeLayout, getBranchPersonIds } from './services/layoutEngine';
 import { TreeCanvas } from './components/Canvas/TreeCanvas';
+import { ContextMenu } from './components/Canvas/ContextMenu';
 import { TopNavbar } from './components/Toolbar/TopNavbar';
 import { ZoomControls } from './components/Toolbar/ZoomControls';
 import { PersonInspector } from './components/Inspector/PersonInspector';
@@ -38,13 +40,14 @@ import { EdgeCaseModal } from './components/Modal/EdgeCaseModal';
 import { AddRelationshipModal, type RelationType } from './components/Modal/AddRelationshipModal';
 import { EditUnionModal } from './components/Modal/EditUnionModal';
 import { TreeManagerModal } from './components/Modal/TreeManagerModal';
+import { CreateTreeFromSelectionModal } from './components/Modal/CreateTreeFromSelectionModal';
 import { toPng } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import { findRelationship, type RelationshipResult } from './services/relationshipFinder';
 import { RelationshipCard } from './components/Canvas/RelationshipCard';
 import { useTreeHistory } from './hooks/useTreeHistory';
 import { parseGedcom, exportGedcomToFile } from './services/gedcomService';
-import { Target, X } from 'lucide-react';
+import { Target, X, GitFork } from 'lucide-react';
 import { TemporalScrubBar } from './components/Toolbar/TemporalScrubBar';
 import { getTreeYearBounds, type HistoricalMoment } from './services/temporalEngine';
 
@@ -63,12 +66,20 @@ export function App() {
   const [groupByFamily, setGroupByFamily] = useState<boolean>(false);
   const [adjustSpacing, setAdjustSpacing] = useState<boolean>(true);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>('me');
+  const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set(['me']));
   const [comparisonPersonId, setComparisonPersonId] = useState<string | null>(null);
   const [selectedUnionId, setSelectedUnionId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(0.9);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 400, y: 150 });
   const [isEdgeCaseModalOpen, setIsEdgeCaseModalOpen] = useState(false);
   const [isTreeManagerOpen, setIsTreeManagerOpen] = useState(false);
+  const [isCreateTreeModalOpen, setIsCreateTreeModalOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    targetPersonId?: string | null;
+  } | null>(null);
 
   // Branch Collapsing & Focus Mode state
   const [collapsedPersonIds, setCollapsedPersonIds] = useState<Set<string>>(new Set());
@@ -260,25 +271,126 @@ export function App() {
 
   const handleSelectPerson = useCallback(
     (personId: string | null, event?: React.MouseEvent) => {
+      setContextMenu(null);
+
       if (!personId) {
         setSelectedPersonId(null);
+        setSelectedPersonIds(new Set());
         setComparisonPersonId(null);
         return;
       }
 
+      // Shift + Click: Toggle membership in multi-selection
+      if (event && event.shiftKey) {
+        setSelectedPersonIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(personId)) {
+            next.delete(personId);
+            if (selectedPersonId === personId) {
+              setSelectedPersonId(Array.from(next)[0] || null);
+            }
+          } else {
+            next.add(personId);
+            setSelectedPersonId(personId);
+          }
+          return next;
+        });
+        setComparisonPersonId(null);
+        return;
+      }
+
+      // Ctrl/Meta + Click: trigger comparison mode between two individuals
       if (event && (event.ctrlKey || event.metaKey)) {
         if (selectedPersonId && selectedPersonId !== personId) {
-          // Ctrl+Click triggers relationship comparison mode
           setComparisonPersonId(personId);
+          setSelectedPersonIds((prev) => {
+            const next = new Set(prev);
+            next.add(selectedPersonId);
+            next.add(personId);
+            return next;
+          });
           return;
         }
       }
 
-      // Normal click: select person and exit comparison
+      // Normal click: select single person and reset multi-selection
       setSelectedPersonId(personId);
+      setSelectedPersonIds(new Set([personId]));
       setComparisonPersonId(null);
     },
     [selectedPersonId]
+  );
+
+  const handleMultiSelectPeople = useCallback(
+    (personIds: string[], append: boolean = true) => {
+      setSelectedPersonIds((prev) => {
+        const next = append ? new Set(prev) : new Set<string>();
+        personIds.forEach((id) => next.add(id));
+        if (next.size > 0 && (!selectedPersonId || !next.has(selectedPersonId))) {
+          setSelectedPersonId(personIds[0] || Array.from(next)[0]);
+        }
+        return next;
+      });
+      setComparisonPersonId(null);
+      setContextMenu(null);
+    },
+    [selectedPersonId]
+  );
+
+  const handlePersonContextMenu = useCallback((e: React.MouseEvent, personId: string) => {
+    e.preventDefault();
+    setSelectedPersonIds((prev) => {
+      const next = new Set(prev);
+      if (!next.has(personId)) {
+        if (e.shiftKey) {
+          next.add(personId);
+        } else {
+          next.clear();
+          next.add(personId);
+          setSelectedPersonId(personId);
+        }
+      }
+      return next;
+    });
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      targetPersonId: personId,
+    });
+  }, []);
+
+  const handleCanvasContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (selectedPersonIds.size > 0) {
+        setContextMenu({
+          isOpen: true,
+          x: e.clientX,
+          y: e.clientY,
+        });
+      }
+    },
+    [selectedPersonIds.size]
+  );
+
+  const handleCreateTreeFromSelection = useCallback(
+    (name: string, switchImmediately: boolean) => {
+      const selectedArray = Array.from(selectedPersonIds);
+      if (selectedArray.length === 0) return;
+
+      const newTree = createTreeFromPeople(tree, selectedArray, name);
+      saveCurrentTree(newTree);
+
+      if (switchImmediately) {
+        handleSwitchTree(newTree);
+        confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
+      } else {
+        confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedPersonIds, tree]
   );
 
   const handleSwapComparison = useCallback(() => {
@@ -295,6 +407,11 @@ export function App() {
     if (selectedPersonId === personId) {
       setSelectedPersonId(null);
     }
+    setSelectedPersonIds((prev) => {
+      const next = new Set(prev);
+      next.delete(personId);
+      return next;
+    });
     if (comparisonPersonId === personId) {
       setComparisonPersonId(null);
     }
@@ -407,6 +524,7 @@ export function App() {
       },
     }));
     setSelectedPersonId(newPerson.id);
+    setSelectedPersonIds(new Set([newPerson.id]));
   };
 
   const handleResetLayout = () => {
@@ -429,11 +547,14 @@ export function App() {
   const handleSwitchTree = (newTree: TreeData) => {
     setTree(newTree);
     resetHistory(newTree);
-    setSelectedPersonId(newTree.rootPersonId || Object.keys(newTree.people)[0] || null);
+    const initialPersonId = newTree.rootPersonId || Object.keys(newTree.people)[0] || null;
+    setSelectedPersonId(initialPersonId);
+    setSelectedPersonIds(new Set(initialPersonId ? [initialPersonId] : []));
     setSelectedUnionId(null);
     setComparisonPersonId(null);
     setFocusPersonId(null);
     setCollapsedPersonIds(new Set());
+    setContextMenu(null);
     const { defaultYear } = getTreeYearBounds(newTree);
     setTemporalYear(defaultYear);
     setActiveHistoricalMoment(null);
@@ -549,7 +670,11 @@ export function App() {
       }
 
       if (e.key === 'Escape') {
-        if (activeHistoricalMoment) {
+        if (contextMenu) {
+          setContextMenu(null);
+        } else if (isCreateTreeModalOpen) {
+          setIsCreateTreeModalOpen(false);
+        } else if (activeHistoricalMoment) {
           setActiveHistoricalMoment(null);
         } else if (focusPersonId) {
           setFocusPersonId(null);
@@ -557,6 +682,7 @@ export function App() {
           setComparisonPersonId(null);
         } else {
           setSelectedPersonId(null);
+          setSelectedPersonIds(new Set());
           setSelectedUnionId(null);
         }
         setRelModal((prev) => ({ ...prev, isOpen: false }));
@@ -575,7 +701,7 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [comparisonPersonId, focusPersonId, isTimelineActive, tree, activeHistoricalMoment]);
+  }, [comparisonPersonId, focusPersonId, isTimelineActive, tree, activeHistoricalMoment, contextMenu, isCreateTreeModalOpen]);
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-slate-50 relative">
@@ -638,11 +764,15 @@ export function App() {
           layout={layout}
           layoutStyle={layoutStyle}
           selectedPersonId={selectedPersonId}
+          selectedPersonIds={selectedPersonIds}
           comparisonPersonId={comparisonPersonId}
           relationshipPathIds={currentRelationship?.path || []}
           temporalYear={isTimelineActive ? temporalYear : null}
           activeMoment={activeHistoricalMoment}
           onSelectPerson={handleSelectPerson}
+          onMultiSelectPeople={handleMultiSelectPeople}
+          onPersonContextMenu={handlePersonContextMenu}
+          onCanvasContextMenu={handleCanvasContextMenu}
           onUpdatePersonPosition={handleUpdatePersonPosition}
           onFinishDragPerson={handleFinishDragPerson}
           onToggleCollapse={handleToggleCollapse}
@@ -658,6 +788,56 @@ export function App() {
           setPan={setPan}
           canvasContainerRef={canvasContainerRef}
         />
+
+        {/* Floating Multi-Selection Action HUD */}
+        {selectedPersonIds.size > 1 && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3.5 z-40 text-xs border border-slate-700/60 animate-in slide-in-from-bottom-3 duration-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+              <span className="font-semibold text-slate-100">
+                {selectedPersonIds.size} people selected
+              </span>
+            </div>
+            <div className="h-4 w-px bg-slate-700" />
+            <button
+              onClick={() => setIsCreateTreeModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer hover:scale-105"
+            >
+              <GitFork className="w-3.5 h-3.5" />
+              <span>Create new tree</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedPersonIds(new Set());
+                setSelectedPersonId(null);
+              }}
+              className="text-slate-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Deselect all"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Context Menu on Right Click */}
+        {contextMenu && (
+          <ContextMenu
+            isOpen={contextMenu.isOpen}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            selectedCount={selectedPersonIds.size || 1}
+            onCreateNewTree={() => {
+              setContextMenu(null);
+              setIsCreateTreeModalOpen(true);
+            }}
+            onDeselectAll={() => {
+              setContextMenu(null);
+              setSelectedPersonIds(new Set());
+              setSelectedPersonId(null);
+            }}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
 
         {/* Floating Zoom & View Controls */}
         <ZoomControls
@@ -775,6 +955,17 @@ export function App() {
           setSelectedUnionId(null);
         }}
       />
+
+      {/* Create Tree From Selection Modal */}
+      {isCreateTreeModalOpen && (
+        <CreateTreeFromSelectionModal
+          isOpen={isCreateTreeModalOpen}
+          onClose={() => setIsCreateTreeModalOpen(false)}
+          tree={tree}
+          selectedPersonIds={Array.from(selectedPersonIds)}
+          onCreateTree={handleCreateTreeFromSelection}
+        />
+      )}
     </div>
   );
 }

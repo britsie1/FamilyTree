@@ -9,9 +9,13 @@ interface TreeCanvasProps {
   layout: TreeLayout;
   layoutStyle?: LayoutStyle;
   selectedPersonId: string | null;
+  selectedPersonIds?: Set<string>;
   comparisonPersonId?: string | null;
   relationshipPathIds?: string[];
   onSelectPerson: (personId: string | null, event?: React.MouseEvent) => void;
+  onMultiSelectPeople?: (personIds: string[], append: boolean) => void;
+  onPersonContextMenu?: (e: React.MouseEvent, personId: string) => void;
+  onCanvasContextMenu?: (e: React.MouseEvent) => void;
   onUpdatePersonPosition: (personId: string, x: number, y: number) => void;
   onAddChild: (personId: string) => void;
   onAddPartner: (personId: string) => void;
@@ -35,9 +39,13 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   layout,
   layoutStyle = 'vertical',
   selectedPersonId,
+  selectedPersonIds,
   comparisonPersonId,
   relationshipPathIds = [],
   onSelectPerson,
+  onMultiSelectPeople,
+  onPersonContextMenu,
+  onCanvasContextMenu,
   onUpdatePersonPosition,
   onAddChild,
   onAddPartner,
@@ -60,6 +68,24 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   // Dragging Canvas (Panning)
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hasMovedPanRef = useRef(false);
+  const panStartMousePosRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
+
+  // Marquee Selection Box (Shift + Drag)
+  const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
+  const [marqueeBox, setMarqueeBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const isMarqueeRef = useRef(false);
+  const marqueeBoxRef = useRef(marqueeBox);
+
+  useEffect(() => {
+    isMarqueeRef.current = isMarqueeSelecting;
+    marqueeBoxRef.current = marqueeBox;
+  }, [isMarqueeSelecting, marqueeBox]);
 
   // Dragging a Person Card
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
@@ -113,13 +139,27 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     };
   }, [canvasContainerRef, setZoom, setPan]);
 
-  // Mouse Down on Canvas (Start Panning)
+  // Mouse Down on Canvas (Start Panning or Marquee Selection)
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Only pan if clicking on empty background
+    if (e.button !== 0) return; // Only left-click starts pan or marquee
+
+    // Only pan or marquee if clicking on empty background
     if (e.target === canvasContainerRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      onSelectPerson(null);
+      if (e.shiftKey) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setIsMarqueeSelecting(true);
+        setMarqueeBox({
+          startX: e.clientX - rect.left,
+          startY: e.clientY - rect.top,
+          currentX: e.clientX - rect.left,
+          currentY: e.clientY - rect.top,
+        });
+      } else {
+        setIsPanning(true);
+        panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+        panStartMousePosRef.current = { clientX: e.clientX, clientY: e.clientY };
+        hasMovedPanRef.current = false;
+      }
     }
   };
 
@@ -142,7 +182,18 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   // Global Mouse Move & Mouse Up
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (isPanning) {
+      if (isMarqueeRef.current) {
+        const container = canvasContainerRef.current;
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          setMarqueeBox((prev) =>
+            prev ? { ...prev, currentX: e.clientX - rect.left, currentY: e.clientY - rect.top } : null
+          );
+        }
+      } else if (isPanning) {
+        if (Math.hypot(e.clientX - panStartMousePosRef.current.clientX, e.clientY - panStartMousePosRef.current.clientY) > 4) {
+          hasMovedPanRef.current = true;
+        }
         setPan({
           x: e.clientX - panStartRef.current.x,
           y: e.clientY - panStartRef.current.y,
@@ -163,7 +214,51 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     };
 
     const handleMouseUp = () => {
+      if (isMarqueeRef.current) {
+        const box = marqueeBoxRef.current;
+        if (box && Math.hypot(box.currentX - box.startX, box.currentY - box.startY) > 6) {
+          const currentZoom = zoomRef.current;
+          const currentPan = panRef.current;
+          const screenMinX = Math.min(box.startX, box.currentX);
+          const screenMaxX = Math.max(box.startX, box.currentX);
+          const screenMinY = Math.min(box.startY, box.currentY);
+          const screenMaxY = Math.max(box.startY, box.currentY);
+
+          const worldMinX = (screenMinX - currentPan.x) / currentZoom;
+          const worldMaxX = (screenMaxX - currentPan.x) / currentZoom;
+          const worldMinY = (screenMinY - currentPan.y) / currentZoom;
+          const worldMaxY = (screenMaxY - currentPan.y) / currentZoom;
+
+          const matchedIds: string[] = [];
+          for (const node of Object.values(layout.nodes)) {
+            const nodeMinX = node.x;
+            const nodeMaxX = node.x + node.width;
+            const nodeMinY = node.y;
+            const nodeMaxY = node.y + node.height;
+
+            const intersects =
+              nodeMaxX >= worldMinX &&
+              nodeMinX <= worldMaxX &&
+              nodeMaxY >= worldMinY &&
+              nodeMinY <= worldMaxY;
+
+            if (intersects) {
+              matchedIds.push(node.id);
+            }
+          }
+
+          if (matchedIds.length > 0 && onMultiSelectPeople) {
+            onMultiSelectPeople(matchedIds, true);
+          }
+        }
+        setIsMarqueeSelecting(false);
+        setMarqueeBox(null);
+      }
+
       if (isPanning) {
+        if (!hasMovedPanRef.current) {
+          onSelectPerson(null);
+        }
         setIsPanning(false);
       }
       if (draggingPersonId) {
@@ -181,16 +276,35 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, draggingPersonId, zoom, setPan, onUpdatePersonPosition, onFinishDragPerson]);
+  }, [isPanning, draggingPersonId, zoom, setPan, onUpdatePersonPosition, onFinishDragPerson, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson]);
 
   return (
     <div
       ref={canvasContainerRef}
       onMouseDown={handleMouseDown}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onCanvasContextMenu?.(e);
+      }}
       className={`relative w-full h-full overflow-hidden bg-slate-50 canvas-background ${
-        isPanning ? 'cursor-grabbing' : 'cursor-grab'
+        isPanning ? 'cursor-grabbing' : isMarqueeSelecting ? 'cursor-crosshair' : 'cursor-grab'
       }`}
     >
+      {/* Visual Marquee Box */}
+      {isMarqueeSelecting && marqueeBox && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${Math.min(marqueeBox.startX, marqueeBox.currentX)}px`,
+            top: `${Math.min(marqueeBox.startY, marqueeBox.currentY)}px`,
+            width: `${Math.abs(marqueeBox.currentX - marqueeBox.startX)}px`,
+            height: `${Math.abs(marqueeBox.currentY - marqueeBox.startY)}px`,
+            pointerEvents: 'none',
+            zIndex: 60,
+          }}
+          className="border-2 border-indigo-500 bg-indigo-500/15 rounded-lg shadow-xs"
+        />
+      )}
       {/* Background Architectural Grid Pattern */}
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none opacity-40 canvas-background"
@@ -259,6 +373,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               node={node}
               layoutStyle={layoutStyle}
               isSelected={selectedPersonId === node.id}
+              isMultiSelected={selectedPersonIds ? selectedPersonIds.has(node.id) : false}
               isCompared={comparisonPersonId === node.id}
               isOnRelationshipPath={relationshipPathIds.includes(node.id)}
               hasActiveComparison={Boolean(selectedPersonId && comparisonPersonId)}
@@ -273,6 +388,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                   onSelectPerson(id, e);
                 }
               }}
+              onContextMenu={onPersonContextMenu}
               onHover={setHoveredPersonId}
               onAddChild={onAddChild}
               onAddPartner={onAddPartner}

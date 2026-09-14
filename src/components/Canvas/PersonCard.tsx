@@ -2,12 +2,13 @@ import React from 'react';
 import type { LayoutNode, Gender, LayoutStyle } from '../../types/tree';
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
-import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake } from 'lucide-react';
+import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check } from 'lucide-react';
 
 interface PersonCardProps {
   node: LayoutNode;
   layoutStyle?: LayoutStyle;
   isSelected: boolean;
+  isMultiSelected?: boolean;
   isCompared?: boolean;
   isOnRelationshipPath?: boolean;
   hasActiveComparison?: boolean;
@@ -18,6 +19,7 @@ interface PersonCardProps {
   activeMoment?: HistoricalMoment | null;
   onToggleCollapse?: (personId: string) => void;
   onSelect: (personId: string, event: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent, personId: string) => void;
   onHover: (personId: string | null) => void;
   onAddChild: (personId: string) => void;
   onAddPartner: (personId: string) => void;
@@ -30,6 +32,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   node,
   layoutStyle = 'vertical',
   isSelected,
+  isMultiSelected = false,
   isCompared = false,
   isOnRelationshipPath = false,
   hasActiveComparison = false,
@@ -40,6 +43,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   activeMoment: _activeMoment = null,
   onToggleCollapse,
   onSelect,
+  onContextMenu,
   onHover,
   onAddChild,
   onAddPartner,
@@ -132,7 +136,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         height: `${height}px`,
       }}
       className={`group select-none pointer-events-auto transition-all duration-150 cursor-grab active:cursor-grabbing rounded-xl bg-white border border-l-4 shadow-sm ${cardStateClasses} ${
-        isSelected
+        isSelected || isMultiSelected
           ? 'ring-2 ring-indigo-600 border-indigo-600 shadow-lg z-30'
           : isCompared
           ? 'ring-2 ring-purple-600 border-purple-600 shadow-lg z-30'
@@ -146,6 +150,11 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         e.stopPropagation();
         onSelect(person.id, e);
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu?.(e, person.id);
+      }}
       onMouseEnter={() => onHover(person.id)}
       onMouseLeave={() => onHover(null)}
       onMouseDown={(e) => onDragStart(e, person.id)}
@@ -158,6 +167,16 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         >
           <Cake className="w-3 h-3" />
           <span>Honoree</span>
+        </span>
+      )}
+
+      {/* Multi-selection Checkmark Indicator */}
+      {isMultiSelected && !hasActiveComparison && (
+        <span
+          title="Selected"
+          className="absolute -top-2 -left-2 bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center shadow-md z-35 animate-in zoom-in-75 duration-100"
+        >
+          <Check className="w-3 h-3 stroke-[3]" />
         </span>
       )}
 
