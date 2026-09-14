@@ -28,6 +28,7 @@ interface ShareTreeModalProps {
   isOpen: boolean;
   onClose: () => void;
   tree: TreeData;
+  isCloudTree?: boolean;
   onTreeUpdated?: (cloudTree: CloudTreeData) => void;
 }
 
@@ -35,6 +36,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   isOpen,
   onClose,
   tree,
+  isCloudTree = false,
   onTreeUpdated,
 }) => {
   const { user, isConfigured, signInWithGoogle } = useAuth();
@@ -63,50 +65,56 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
     let isMounted = true;
     setLoading(true);
+    setErrorMessage(null);
 
-    getCloudTree(tree.id)
-      .then(async (existing) => {
-        if (!isMounted) return;
+    const initCloudTree = async () => {
+      try {
+        let existing: CloudTreeData | null = null;
+        if (isCloudTree) {
+          try {
+            existing = await getCloudTree(tree.id);
+          } catch (fetchErr) {
+            console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
+            existing = null;
+          }
+        }
+
         if (existing) {
+          if (!isMounted) return;
           setCloudTree(existing);
           setIsPublic(existing.isPublic ?? false);
           setPublicRole(existing.publicRole || 'viewer');
           setSharedWith(existing.sharedWith || {});
         } else {
           // Immediately sync local tree to cloud so it's persisted and shareable
-          try {
-            const saved = await saveTreeToCloud(tree, user, {
-              isPublic: false,
-              publicRole: 'viewer',
-              sharedWith: {},
-              sharedEmails: [],
-            });
-            if (!isMounted) return;
-            setCloudTree(saved);
-            setIsPublic(false);
-            setPublicRole('viewer');
-            setSharedWith({});
-            if (onTreeUpdated) onTreeUpdated(saved);
-          } catch (uploadErr: any) {
-            if (!isMounted) return;
-            console.error('Initial cloud sync error:', uploadErr);
-            setErrorMessage(uploadErr.message || 'Could not sync tree to cloud.');
-          }
+          const saved = await saveTreeToCloud(tree, user, {
+            isPublic: false,
+            publicRole: 'viewer',
+            sharedWith: {},
+            sharedEmails: [],
+          });
+          if (!isMounted) return;
+          setCloudTree(saved);
+          setIsPublic(false);
+          setPublicRole('viewer');
+          setSharedWith({});
+          if (onTreeUpdated) onTreeUpdated(saved);
         }
-      })
-      .catch((err) => {
+      } catch (err: any) {
         if (!isMounted) return;
-        console.error('Error fetching cloud tree for sharing:', err);
-        setErrorMessage(err.message || 'Could not check cloud status.');
-      })
-      .finally(() => {
+        console.error('Initial cloud sync error:', err);
+        setErrorMessage(err.message || 'Could not sync tree to cloud.');
+      } finally {
         if (isMounted) setLoading(false);
-      });
+      }
+    };
+
+    initCloudTree();
 
     return () => {
       isMounted = false;
     };
-  }, [isOpen, tree.id, user, isConfigured]);
+  }, [isOpen, tree.id, user, isConfigured, isCloudTree]);
 
   if (!isOpen) return null;
 

@@ -1128,6 +1128,7 @@ function FamilyTreeMain() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         tree={tree}
+        isCloudTree={isCloudTree}
         onTreeUpdated={(updatedCloudTree) => {
           setTree(updatedCloudTree);
           setIsCloudTree(true);
