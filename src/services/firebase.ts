@@ -1,6 +1,6 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, type Firestore } from 'firebase/firestore';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -13,6 +13,7 @@ export interface FirebaseConfig {
 
 export interface FirebaseDiagnostics {
   isConfigured: boolean;
+  projectId: string;
   missingRequired: string[];
   presentKeys: string[];
 }
@@ -114,12 +115,18 @@ export function isFirebaseConfigured(): boolean {
 
 export function getFirebaseDiagnostics(): FirebaseDiagnostics {
   const config = getFirebaseConfig();
+  const rawProject = cleanValue(
+    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
+    (import.meta.env as any).FIREBASE_PROJECT_ID
+  );
+
   if (config) {
     const present = Object.entries(config)
       .filter(([_, v]) => Boolean(v))
       .map(([k]) => k);
     return {
       isConfigured: true,
+      projectId: config.projectId,
       missingRequired: [],
       presentKeys: present,
     };
@@ -147,6 +154,7 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
 
   return {
     isConfigured: false,
+    projectId: rawProject,
     missingRequired: missing,
     presentKeys: present,
   };
@@ -193,18 +201,11 @@ export function getFirebaseDb(): Firestore | null {
   const app = getFirebaseApp();
   if (!app) return null;
   try {
-    cachedDb = initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
-    });
+    cachedDb = getFirestore(app);
     return cachedDb;
-  } catch {
-    try {
-      cachedDb = getFirestore(app);
-      return cachedDb;
-    } catch (err) {
-      console.error('Failed to get Firestore DB:', err);
-      return null;
-    }
+  } catch (err) {
+    console.error('Failed to get Firestore DB:', err);
+    return null;
   }
 }
 

@@ -123,17 +123,33 @@ export function formatFirestoreError(err: any): string {
 
   if (msg.includes('client is offline') || err?.code === 'unavailable') {
     return (
-      'Unable to connect to Cloud Firestore (client is offline). Please ensure you have created a Firestore database in Firebase Console: go to Build > Firestore Database > Create database (using the default database ID).'
+      'Unable to connect to Cloud Firestore (client is offline or blocked). Please verify: 1) A Firestore Database is created in Firebase Console (Build > Firestore Database) using Native mode and (default) database ID; 2) Firestore Rules are published; 3) No browser ad-blocker/extension is blocking firestore.googleapis.com.'
     );
   }
 
   if (err?.code === 'permission-denied' || msg.includes('permission') || msg.includes('insufficient permissions')) {
     return (
-      'Firestore permission denied. Please ensure your Firestore Security Rules are published in Firebase Console > Build > Firestore Database > Rules.'
+      'Firestore permission denied. Please verify your Firestore Security Rules in Firebase Console > Build > Firestore Database > Rules.'
     );
   }
 
   return msg;
+}
+
+/**
+ * Wraps a promise in a timeout to prevent indefinite hangs when network is blocked.
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = 7000,
+  errorMsg = 'Firestore operation timed out'
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMsg)), timeoutMs)
+    ),
+  ]);
 }
 
 /**
@@ -172,7 +188,11 @@ export async function saveTreeToCloud(
   try {
     const docRef = doc(db, TREES_COLLECTION, cloudTree.id);
     const cleanedData = cleanForFirestore(cloudTree);
-    await setDoc(docRef, cleanedData, { merge: true });
+    await withTimeout(
+      setDoc(docRef, cleanedData, { merge: true }),
+      7000,
+      'Connection to Cloud Firestore timed out (7s). Please check your internet connection or verify Firestore rules in Firebase Console.'
+    );
     return cloudTree;
   } catch (err: any) {
     console.error('Failed to save cloud tree:', err);
@@ -189,7 +209,11 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
 
   try {
     const docRef = doc(db, TREES_COLLECTION, treeId);
-    const snap = await getDoc(docRef);
+    const snap = await withTimeout(
+      getDoc(docRef),
+      7000,
+      'Connection to Cloud Firestore timed out (7s).'
+    );
     if (snap.exists()) {
       const data = snap.data() as CloudTreeData;
       return {
@@ -344,13 +368,17 @@ export async function updateTreeSharingSettings(
     const docRef = doc(db, TREES_COLLECTION, treeId);
     const now = new Date().toISOString();
 
-    await updateDoc(docRef, cleanForFirestore({
-      isPublic: settings.isPublic,
-      publicRole: settings.publicRole,
-      sharedWith: settings.sharedWith,
-      sharedEmails: settings.sharedEmails,
-      updatedAt: now,
-    }));
+    await withTimeout(
+      updateDoc(docRef, cleanForFirestore({
+        isPublic: settings.isPublic,
+        publicRole: settings.publicRole,
+        sharedWith: settings.sharedWith,
+        sharedEmails: settings.sharedEmails,
+        updatedAt: now,
+      })),
+      7000,
+      'Updating sharing settings timed out (7s).'
+    );
   } catch (err: any) {
     console.error('Failed to update sharing settings:', err);
     throw new Error(formatFirestoreError(err));

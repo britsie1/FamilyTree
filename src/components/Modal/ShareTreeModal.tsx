@@ -59,62 +59,52 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const [publicRole, setPublicRole] = useState<ShareRole>('viewer');
   const [sharedWith, setSharedWith] = useState<Record<string, SharedUser>>({});
 
-  // When modal opens, load or initialize cloud tree metadata
-  useEffect(() => {
-    if (!isOpen || !isConfigured || !user) return;
+  // Define syncWithCloud so both useEffect and Retry button can invoke it
+  const syncWithCloud = async () => {
+    if (!isConfigured || !user) return;
 
-    let isMounted = true;
     setLoading(true);
     setErrorMessage(null);
 
-    const initCloudTree = async () => {
-      try {
-        let existing: CloudTreeData | null = null;
-        if (isCloudTree) {
-          try {
-            existing = await getCloudTree(tree.id);
-          } catch (fetchErr) {
-            console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
-            existing = null;
-          }
+    try {
+      let existing: CloudTreeData | null = null;
+      if (isCloudTree) {
+        try {
+          existing = await getCloudTree(tree.id);
+        } catch (fetchErr) {
+          console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
+          existing = null;
         }
-
-        if (existing) {
-          if (!isMounted) return;
-          setCloudTree(existing);
-          setIsPublic(existing.isPublic ?? false);
-          setPublicRole(existing.publicRole || 'viewer');
-          setSharedWith(existing.sharedWith || {});
-        } else {
-          // Immediately sync local tree to cloud so it's persisted and shareable
-          const saved = await saveTreeToCloud(tree, user, {
-            isPublic: false,
-            publicRole: 'viewer',
-            sharedWith: {},
-            sharedEmails: [],
-          });
-          if (!isMounted) return;
-          setCloudTree(saved);
-          setIsPublic(false);
-          setPublicRole('viewer');
-          setSharedWith({});
-          if (onTreeUpdated) onTreeUpdated(saved);
-        }
-      } catch (err: any) {
-        if (!isMounted) return;
-        console.error('Initial cloud sync error:', err);
-        setErrorMessage(err.message || 'Could not sync tree to cloud.');
-      } finally {
-        if (isMounted) setLoading(false);
       }
-    };
 
-    initCloudTree();
+      if (existing) {
+        setCloudTree(existing);
+        setIsPublic(existing.isPublic ?? false);
+        setPublicRole(existing.publicRole || 'viewer');
+        setSharedWith(existing.sharedWith || {});
+      } else {
+        // Immediately sync local tree to cloud so it's persisted and shareable
+        const saved = await saveTreeToCloud(tree, user, {
+          isPublic: isPublic,
+          publicRole: publicRole,
+          sharedWith: sharedWith,
+          sharedEmails: Object.values(sharedWith).map((u) => normalizeEmail(u.email)),
+        });
+        setCloudTree(saved);
+        if (onTreeUpdated) onTreeUpdated(saved);
+      }
+    } catch (err: any) {
+      console.error('Cloud sync error:', err);
+      setErrorMessage(err.message || 'Could not sync tree to cloud.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen, tree.id, user, isConfigured, isCloudTree]);
+  useEffect(() => {
+    if (!isOpen || !isConfigured || !user) return;
+    syncWithCloud();
+  }, [isOpen, tree.id, user?.uid, isConfigured, isCloudTree]);
 
   if (!isOpen) return null;
 
@@ -122,17 +112,24 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
   const handleCopyLink = async () => {
     try {
-      if (!cloudTree && user) {
-        setSaving(true);
-        await handleEnsureCloudTree();
-      }
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
+
+      // In background, ensure tree is uploaded if not yet
+      if (!cloudTree && user) {
+        setSaving(true);
+        handleEnsureCloudTree()
+          .catch((err) => {
+            console.error('Background cloud save failed:', err);
+            setErrorMessage(err.message || 'Failed to save to cloud.');
+          })
+          .finally(() => {
+            setSaving(false);
+          });
+      }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to save to cloud before copying link.');
-    } finally {
-      setSaving(false);
+      setErrorMessage(err.message || 'Failed to copy link to clipboard.');
     }
   };
 
@@ -400,194 +397,238 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
           {/* Case 3: Logged in and configured -> Google Drive sharing interface */}
           {isConfigured && user && (
             <>
+              {/* Status Header: Loading, Error with Retry, or Success */}
               {loading && (
-                <div className="flex items-center justify-center py-6 gap-2 text-xs text-slate-500">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                  <span>Loading sharing permissions...</span>
+                <div className="flex items-center gap-2.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 p-3 rounded-xl animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="font-semibold">Connecting to cloud storage...</span>
+                    <span className="text-[11px] text-blue-600 block">Syncing tree permissions and collaborators.</span>
+                  </div>
                 </div>
               )}
 
-              {!loading && (
-                <>
-                  {/* Notice if tree is being promoted from local to cloud */}
-                  {!cloudTree && (
-                    <div className="bg-indigo-50/70 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-                      <span>
-                        This tree will be saved to your cloud storage account upon sharing.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Add people input */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Add people with email address
-                    </label>
-                    <form onSubmit={handleAddPerson} className="flex items-center gap-2">
-                      <input
-                        type="email"
-                        placeholder="Add people by email..."
-                        value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
-                        className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
-                      <select
-                        value={inputRole}
-                        onChange={(e) => setInputRole(e.target.value as ShareRole)}
-                        className="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2.5 py-2 rounded-xl focus:outline-none cursor-pointer font-medium text-slate-700"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                      </select>
-                      <button
-                        type="submit"
-                        disabled={!emailInput.trim() || saving}
-                        className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-40 text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition-all shadow-xs cursor-pointer"
-                      >
-                        Add
-                      </button>
-                    </form>
-                  </div>
-
-                  {errorMessage && (
-                    <div className="flex items-center gap-1.5 text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2.5 rounded-lg">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      <span>{errorMessage}</span>
-                    </div>
-                  )}
-
-                  {/* People with access list */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                      People with access
-                    </h4>
-                    <div className="space-y-2 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
-                      {/* Owner item */}
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {user.photoURL ? (
-                            <img
-                              src={user.photoURL}
-                              alt={user.displayName || 'Owner'}
-                              className="w-7 h-7 rounded-full object-cover flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center flex-shrink-0">
-                              {(user.displayName || user.email || 'O')[0].toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-slate-900 truncate">
-                              {user.displayName || 'You'} (You)
-                            </p>
-                            <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                          Owner
-                        </span>
-                      </div>
-
-                      {/* Shared collaborators */}
-                      {sharedUsersList.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 text-center py-2">
-                          No collaborators added yet.
+              {errorMessage && (
+                <div className="text-xs bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <p className="font-semibold leading-snug">{errorMessage}</p>
+                      {diagnostics.projectId && (
+                        <p className="text-[11px] text-slate-600">
+                          Connected Firebase Project ID:{' '}
+                          <code className="font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-rose-200">
+                            {diagnostics.projectId}
+                          </code>
                         </p>
-                      ) : (
-                        sharedUsersList.map(([encodedKey, shared]) => (
-                          <div
-                            key={encodedKey}
-                            className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center flex-shrink-0">
-                                {shared.email[0].toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium text-slate-800 truncate">
-                                  {shared.email}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value={shared.role}
-                                onChange={(e) =>
-                                  handleChangeUserRole(encodedKey, e.target.value as ShareRole)
-                                }
-                                disabled={saving}
-                                className="text-[11px] font-medium bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none cursor-pointer"
-                              >
-                                <option value="viewer">Viewer</option>
-                                <option value="editor">Editor</option>
-                              </select>
-                              <button
-                                onClick={() => handleRemoveUser(encodedKey)}
-                                title="Remove access"
-                                disabled={saving}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))
                       )}
                     </div>
                   </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-rose-200/60">
+                    <span className="text-[11px] text-rose-600">
+                      You can still copy the link or manage settings.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={syncWithCloud}
+                      disabled={loading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                      <span>Retry Cloud Sync</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                  {/* General Access (Drive style) */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                      General access
-                    </h4>
-                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                            isPublic ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {isPublic ? <Globe className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+              {cloudTree && !loading && !errorMessage && (
+                <div className="flex items-center justify-between text-xs text-emerald-800 bg-emerald-50/80 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Tree is synced with Cloud Firestore</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-700">{diagnostics.projectId}</span>
+                </div>
+              )}
+
+              {!cloudTree && !loading && !errorMessage && (
+                <div className="bg-indigo-50/70 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                    <span>This tree will be saved to your cloud storage when shared.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={syncWithCloud}
+                    disabled={saving || loading}
+                    className="text-[11px] bg-white hover:bg-indigo-50 text-indigo-700 font-semibold px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                  >
+                    Sync now
+                  </button>
+                </div>
+              )}
+
+              {/* Add people input */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Add people with email address
+                </label>
+                <form onSubmit={handleAddPerson} className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    placeholder="Add people by email..."
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                  <select
+                    value={inputRole}
+                    onChange={(e) => setInputRole(e.target.value as ShareRole)}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2.5 py-2 rounded-xl focus:outline-none cursor-pointer font-medium text-slate-700"
+                  >
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={!emailInput.trim() || saving}
+                    className="inline-flex items-center gap-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-40 text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition-all shadow-xs cursor-pointer"
+                  >
+                    {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>Add</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* People with access list */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  People with access
+                </h4>
+                <div className="space-y-2 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
+                  {/* Owner item */}
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {user.photoURL ? (
+                        <img
+                          src={user.photoURL}
+                          alt={user.displayName || 'Owner'}
+                          className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                          {(user.displayName || user.email || 'O')[0].toUpperCase()}
                         </div>
-                        <div>
-                          <div className="relative inline-block">
-                            <select
-                              value={isPublic ? 'anyone' : 'restricted'}
-                              onChange={(e) => handleTogglePublic(e.target.value === 'anyone')}
-                              disabled={saving}
-                              className="text-xs font-bold text-slate-900 bg-transparent pr-5 border-none focus:outline-none cursor-pointer appearance-none"
-                            >
-                              <option value="restricted">Restricted</option>
-                              <option value="anyone">Anyone with the link</option>
-                            </select>
-                            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 truncate">
+                          {user.displayName || 'You'} (You)
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      Owner
+                    </span>
+                  </div>
+
+                  {/* Shared collaborators */}
+                  {sharedUsersList.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 text-center py-2">
+                      No collaborators added yet.
+                    </p>
+                  ) : (
+                    sharedUsersList.map(([encodedKey, shared]) => (
+                      <div
+                        key={encodedKey}
+                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                            {shared.email[0].toUpperCase()}
                           </div>
-                          <p className="text-[11px] text-slate-500">
-                            {isPublic
-                              ? 'Anyone on the internet with the link can access'
-                              : 'Only people with access can open with the link'}
-                          </p>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-slate-800 truncate">
+                              {shared.email}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={shared.role}
+                            onChange={(e) =>
+                              handleChangeUserRole(encodedKey, e.target.value as ShareRole)
+                            }
+                            disabled={saving}
+                            className="text-[11px] font-medium bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none cursor-pointer"
+                          >
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                          </select>
+                          <button
+                            onClick={() => handleRemoveUser(encodedKey)}
+                            title="Remove access"
+                            disabled={saving}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+                    ))
+                  )}
+                </div>
+              </div>
 
-                      {isPublic && (
+              {/* General Access (Drive style) */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  General access
+                </h4>
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                        isPublic ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {isPublic ? <Globe className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <div className="relative inline-block">
                         <select
-                          value={publicRole}
-                          onChange={(e) => handleChangePublicRole(e.target.value as ShareRole)}
+                          value={isPublic ? 'anyone' : 'restricted'}
+                          onChange={(e) => handleTogglePublic(e.target.value === 'anyone')}
                           disabled={saving}
-                          className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                          className="text-xs font-bold text-slate-900 bg-transparent pr-5 border-none focus:outline-none cursor-pointer appearance-none"
                         >
-                          <option value="viewer">Viewer</option>
-                          <option value="editor">Editor</option>
+                          <option value="restricted">Restricted</option>
+                          <option value="anyone">Anyone with the link</option>
                         </select>
-                      )}
+                        <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        {isPublic
+                          ? 'Anyone on the internet with the link can access'
+                          : 'Only people with access can open with the link'}
+                      </p>
                     </div>
                   </div>
-                </>
-              )}
+
+                  {isPublic && (
+                    <select
+                      value={publicRole}
+                      onChange={(e) => handleChangePublicRole(e.target.value as ShareRole)}
+                      disabled={saving}
+                      className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                    >
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                    </select>
+                  )}
+                </div>
+              </div>
             </>
           )}
         </div>

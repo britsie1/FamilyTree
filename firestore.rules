@@ -6,30 +6,45 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner() {
+      return isAuthenticated() && resource != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isPublic() {
+      return resource != null && resource.data.get('isPublic', false) == true;
+    }
+
+    function isPublicEditor() {
+      return isPublic() && resource.data.get('publicRole', 'viewer') == 'editor';
+    }
+
+    function isInvitedCollaborator() {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             resource != null &&
+             ('sharedEmails' in resource.data) &&
+             request.auth.token.email.lower() in resource.data.sharedEmails;
+    }
+
     // Rules for family tree documents
     match /trees/{treeId} {
       // Anyone can read if document does not exist yet (to allow checking existence),
       // or if tree is public, or if owner, or if invited email
-      allow read: if resource == null ||
-                     resource.data.isPublic == true ||
-                     (isAuthenticated() && resource.data.ownerId == request.auth.uid) ||
-                     (isAuthenticated() && request.auth.token.email != null &&
-                      request.auth.token.email.lower() in resource.data.sharedEmails);
+      allow read: if resource == null || isPublic() || isOwner() || isInvitedCollaborator();
 
       // Authenticated users can create new trees with themselves as owner
       allow create: if isAuthenticated() &&
                        request.resource.data.ownerId == request.auth.uid;
 
-      // Update allowed by owner, public editor, or invited editor
+      // Update allowed by owner, public editor, or invited collaborator
       allow update: if isAuthenticated() && (
-                       resource.data.ownerId == request.auth.uid ||
-                       (resource.data.isPublic == true && resource.data.publicRole == 'editor') ||
-                       (request.auth.token.email != null &&
-                        request.auth.token.email.lower() in resource.data.sharedEmails)
-                     );
+                       isOwner() ||
+                       isPublicEditor() ||
+                       isInvitedCollaborator()
+                    );
 
       // Delete allowed only by owner
-      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isOwner();
     }
   }
 }
