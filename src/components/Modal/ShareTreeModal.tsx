@@ -7,7 +7,9 @@ import {
   updateTreeSharingSettings,
   encodeEmailKey,
   normalizeEmail,
+  RECOMMENDED_FIRESTORE_RULES,
 } from '../../services/firestoreService';
+import { generateId, isPresetTreeId } from '../../services/storage';
 import { getFirebaseDiagnostics } from '../../services/firebase';
 import {
   X,
@@ -22,6 +24,9 @@ import {
   Sparkles,
   AlertCircle,
   Loader2,
+  Copy,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface ShareTreeModalProps {
@@ -45,6 +50,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rulesCopied, setRulesCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Cloud tree state
@@ -59,6 +65,13 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const [publicRole, setPublicRole] = useState<ShareRole>('viewer');
   const [sharedWith, setSharedWith] = useState<Record<string, SharedUser>>({});
 
+  const isPermissionError = Boolean(
+    errorMessage &&
+      (errorMessage.toLowerCase().includes('permission') ||
+        errorMessage.toLowerCase().includes('rules') ||
+        errorMessage.toLowerCase().includes('insufficient'))
+  );
+
   // Define syncWithCloud so both useEffect and Retry button can invoke it
   const syncWithCloud = async () => {
     if (!isConfigured || !user) return;
@@ -67,9 +80,15 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     setErrorMessage(null);
 
     try {
+      let currentId = tree.id;
+      if (isPresetTreeId(currentId)) {
+        currentId = generateId('tree');
+        tree.id = currentId;
+      }
+
       let existing: CloudTreeData | null = null;
       try {
-        existing = await getCloudTree(tree.id);
+        existing = await getCloudTree(currentId);
       } catch (fetchErr) {
         console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
         existing = null;
@@ -106,7 +125,8 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const shareUrl = `${window.location.origin}${window.location.pathname}?treeId=${encodeURIComponent(tree.id)}`;
+  const shareTreeId = cloudTree?.id || tree.id;
+  const shareUrl = `${window.location.origin}${window.location.pathname}?treeId=${encodeURIComponent(shareTreeId)}`;
 
   const handleCopyLink = async () => {
     try {
@@ -134,6 +154,10 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const handleEnsureCloudTree = async (): Promise<CloudTreeData> => {
     if (!user) throw new Error('You must be logged in to share this tree.');
     if (cloudTree) return cloudTree;
+
+    if (isPresetTreeId(tree.id)) {
+      tree.id = generateId('tree');
+    }
 
     // Save to Firestore now
     const saved = await saveTreeToCloud(tree, user, {
@@ -182,9 +206,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     // Persist immediately if cloud tree exists
     try {
       setSaving(true);
-      await handleEnsureCloudTree();
+      const activeCloud = await handleEnsureCloudTree();
       const emails = Object.values(updatedSharedWith).map((u) => normalizeEmail(u.email));
-      await updateTreeSharingSettings(tree.id, {
+      await updateTreeSharingSettings(activeCloud.id, {
         isPublic,
         publicRole,
         sharedWith: updatedSharedWith,
@@ -206,9 +230,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
     try {
       setSaving(true);
-      await handleEnsureCloudTree();
+      const activeCloud = await handleEnsureCloudTree();
       const emails = Object.values(updated).map((u) => normalizeEmail(u.email));
-      await updateTreeSharingSettings(tree.id, {
+      await updateTreeSharingSettings(activeCloud.id, {
         isPublic,
         publicRole,
         sharedWith: updated,
@@ -228,9 +252,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
     try {
       setSaving(true);
-      await handleEnsureCloudTree();
+      const activeCloud = await handleEnsureCloudTree();
       const emails = Object.values(updated).map((u) => normalizeEmail(u.email));
-      await updateTreeSharingSettings(tree.id, {
+      await updateTreeSharingSettings(activeCloud.id, {
         isPublic,
         publicRole,
         sharedWith: updated,
@@ -247,9 +271,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     setIsPublic(newIsPublic);
     try {
       setSaving(true);
-      await handleEnsureCloudTree();
+      const activeCloud = await handleEnsureCloudTree();
       const emails = Object.values(sharedWith).map((u) => normalizeEmail(u.email));
-      await updateTreeSharingSettings(tree.id, {
+      await updateTreeSharingSettings(activeCloud.id, {
         isPublic: newIsPublic,
         publicRole,
         sharedWith,
@@ -266,9 +290,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     setPublicRole(newRole);
     try {
       setSaving(true);
-      await handleEnsureCloudTree();
+      const activeCloud = await handleEnsureCloudTree();
       const emails = Object.values(sharedWith).map((u) => normalizeEmail(u.email));
-      await updateTreeSharingSettings(tree.id, {
+      await updateTreeSharingSettings(activeCloud.id, {
         isPublic,
         publicRole: newRole,
         sharedWith,
@@ -460,6 +484,54 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                           </p>
                         )}
                       </div>
+
+                      {/* Specialized guidance for Firestore Permission Denied */}
+                      {isPermissionError && (
+                        <div className="bg-amber-50/95 border border-amber-300 rounded-xl p-3.5 text-[11px] text-amber-950 space-y-2.5 mt-2">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-900 text-xs">
+                            <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                            <span>Firestore Security Rules update required</span>
+                          </div>
+                          <p className="leading-relaxed text-amber-800">
+                            Firestore rejected the save operation because security rules in your Firebase Console project are locking database writes (or default Test Mode expired).
+                          </p>
+                          <div className="flex flex-wrap gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(RECOMMENDED_FIRESTORE_RULES);
+                                  setRulesCopied(true);
+                                  setTimeout(() => setRulesCopied(false), 2500);
+                                } catch (copyErr) {
+                                  console.error('Failed to copy rules:', copyErr);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer text-xs"
+                            >
+                              {rulesCopied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{rulesCopied ? 'Rules Copied to Clipboard!' : 'Copy Recommended Rules'}</span>
+                            </button>
+                            {diagnostics.projectId && (
+                              <a
+                                href={`https://console.firebase.google.com/project/${encodeURIComponent(diagnostics.projectId)}/firestore/rules`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 font-semibold border border-amber-300 rounded-lg shadow-2xs transition-colors cursor-pointer text-xs"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Open Firebase Console Rules ↗</span>
+                              </a>
+                            )}
+                          </div>
+                          <ol className="list-decimal list-inside space-y-1 text-amber-900/90 pt-1 font-sans">
+                            <li>Click <strong>Copy Recommended Rules</strong> above.</li>
+                            <li>Open your Firebase Console Rules tab using the button above.</li>
+                            <li>Paste the rules into the online editor and click <strong>Publish</strong>.</li>
+                            <li>Come back here and click <strong>Retry Cloud Sync</strong> below.</li>
+                          </ol>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-rose-200/60">

@@ -7,6 +7,17 @@ export function generateId(prefix: string = 'node'): string {
   return `${prefix}_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`;
 }
 
+export function isPresetTreeId(id: string): boolean {
+  if (!id) return false;
+  return (
+    id === 'tree_double_in_law' ||
+    id === 'tree_royal_sample' ||
+    id === 'tree_divorce_preset' ||
+    id === 'tree_blank' ||
+    id.startsWith('preset_')
+  );
+}
+
 // Preset 1: The exact edge case described by the user: Dad's brother marries Mom's sister!
 export function createDoubleInLawPreset(): TreeData {
   const treeId = 'tree_double_in_law';

@@ -22,6 +22,69 @@ import type {
   ShareRole,
 } from '../types/tree';
 import { sanitizeTree } from './treeOperations';
+import { generateId, isPresetTreeId } from './storage';
+
+export const RECOMMENDED_FIRESTORE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return isAuthenticated() && resource != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isPublic() {
+      return resource != null && resource.data.get('isPublic', false) == true;
+    }
+
+    function isPublicEditor() {
+      return isPublic() && resource.data.get('publicRole', 'viewer') == 'editor';
+    }
+
+    function isInvitedCollaborator() {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             resource != null &&
+             ('sharedEmails' in resource.data) &&
+             request.auth.token.email.lower() in resource.data.sharedEmails;
+    }
+
+    // Rules for family tree documents
+    match /trees/{treeId} {
+      // Anyone can read if document does not exist yet (to allow checking existence),
+      // or if tree is public, or if owner, or if invited email
+      allow read: if resource == null || isPublic() || isOwner() || isInvitedCollaborator();
+
+      // Authenticated users can create new trees with themselves as owner
+      allow create: if isAuthenticated() &&
+                       request.resource.data.ownerId == request.auth.uid;
+
+      // Update allowed by owner, public editor, or invited collaborator
+      allow update: if (
+                       // 1. Owner can update tree and settings
+                       isOwner()
+                    ) || (
+                       // 2. Public editor (including guest) can update tree data,
+                       // but cannot change ownership or general access settings
+                       isPublicEditor() &&
+                       request.resource.data.ownerId == resource.data.ownerId &&
+                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false) &&
+                       request.resource.data.get('publicRole', 'viewer') == resource.data.get('publicRole', 'viewer')
+                    ) || (
+                       // 3. Invited collaborator can update tree data, but cannot change ownership
+                       isInvitedCollaborator() &&
+                       request.resource.data.ownerId == resource.data.ownerId &&
+                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false)
+                    );
+
+      // Delete allowed only by owner
+      allow delete: if isOwner();
+    }
+  }
+}`;
 
 const TREES_COLLECTION = 'trees';
 
@@ -205,12 +268,30 @@ export async function saveTreeToCloud(
   const sanitized = sanitizeTree(tree);
   const treeAny = tree as any;
 
+  // Auto-heal preset ID collisions: Presets must not be saved under global static IDs
+  if (isPresetTreeId(sanitized.id)) {
+    const newId = generateId('tree');
+    sanitized.id = newId;
+    tree.id = newId;
+  }
+
+  // If this local tree has an ownerId from another user (e.g. from an import or copy),
+  // fork a new tree ID so it doesn't try to overwrite another user's document
+  if (!existingMetadata?.ownerId && treeAny.ownerId && treeAny.ownerId !== user.uid) {
+    const forkedId = generateId('tree');
+    sanitized.id = forkedId;
+    tree.id = forkedId;
+  }
+
+  // Ensure owner is current user unless existingMetadata explicitly specifies ownerId
+  const resolvedOwnerId = existingMetadata?.ownerId || user.uid;
+
   // Preserve existing metadata if not explicitly provided
   const metadata: CloudTreeMetadata = {
-    ownerId: existingMetadata?.ownerId || treeAny.ownerId || user.uid,
-    ownerEmail: existingMetadata?.ownerEmail || treeAny.ownerEmail || normalizeEmail(user.email || ''),
-    ownerDisplayName: existingMetadata?.ownerDisplayName || treeAny.ownerDisplayName || user.displayName || 'Anonymous',
-    ownerPhotoURL: existingMetadata?.ownerPhotoURL || treeAny.ownerPhotoURL || user.photoURL || '',
+    ownerId: resolvedOwnerId,
+    ownerEmail: existingMetadata?.ownerEmail || (treeAny.ownerEmail && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerEmail : normalizeEmail(user.email || '')),
+    ownerDisplayName: existingMetadata?.ownerDisplayName || (treeAny.ownerDisplayName && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerDisplayName : (user.displayName || 'Anonymous')),
+    ownerPhotoURL: existingMetadata?.ownerPhotoURL || (treeAny.ownerPhotoURL && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerPhotoURL : (user.photoURL || '')),
     isPublic: existingMetadata?.isPublic ?? treeAny.isPublic ?? false,
     publicRole: existingMetadata?.publicRole || treeAny.publicRole || 'viewer',
     sharedWith: existingMetadata?.sharedWith || treeAny.sharedWith || {},
@@ -233,6 +314,29 @@ export async function saveTreeToCloud(
     );
     return cloudTree;
   } catch (err: any) {
+    // If it's a permission error and tree ID might have collided with another user's document in Firestore,
+    // automatically attempt recovery with a guaranteed unique ID
+    const msg = err?.message || String(err || '');
+    if (
+      (err?.code === 'permission-denied' || msg.includes('permission') || msg.includes('insufficient permissions')) &&
+      !cloudTree.id.startsWith('tree_u_')
+    ) {
+      try {
+        const freshId = `tree_u_${generateId('tree')}`;
+        cloudTree.id = freshId;
+        tree.id = freshId;
+        const freshDocRef = doc(db, TREES_COLLECTION, freshId);
+        const cleanedData = cleanForFirestore(cloudTree);
+        await withTimeout(
+          setDoc(freshDocRef, cleanedData),
+          7000,
+          'Connection to Cloud Firestore timed out (7s).'
+        );
+        return cloudTree;
+      } catch (retryErr) {
+        console.warn('Auto-recovery with fresh ID also encountered error:', retryErr);
+      }
+    }
     console.error('Failed to save cloud tree:', err);
     throw new Error(formatFirestoreError(err));
   }
