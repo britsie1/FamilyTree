@@ -122,4 +122,16 @@ describe('Firestore Cloud Service & Permission Resolution', () => {
       },
     });
   });
+
+  it('updateCloudTreeData rejects cleanly if tree ID is missing or Firebase is unconfigured in test environment', async () => {
+    const { updateCloudTreeData } = await import('../src/services/firestoreService');
+    await assert.rejects(
+      async () => {
+        await updateCloudTreeData({ id: '', name: 'Empty', people: {}, unions: {} });
+      },
+      {
+        message: /Firebase is not configured or tree ID is missing/,
+      }
+    );
+  });
 });

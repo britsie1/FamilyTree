@@ -153,7 +153,43 @@ export function withTimeout<T>(
 }
 
 /**
- * Saves or updates a tree in Firestore.
+ * Updates only the tree content (people, unions, name, etc.) in Cloud Firestore.
+ * Crucially leaves ownership, owner metadata, and sharing settings untouched.
+ */
+export async function updateCloudTreeData(tree: TreeData): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !tree?.id) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+
+  const sanitized = sanitizeTree(tree);
+  const docRef = doc(db, TREES_COLLECTION, sanitized.id);
+  const now = new Date().toISOString();
+
+  const contentUpdate = cleanForFirestore({
+    name: sanitized.name,
+    description: sanitized.description || '',
+    rootPersonId: sanitized.rootPersonId || null,
+    collapsedPersonIds: sanitized.collapsedPersonIds || [],
+    people: sanitized.people,
+    unions: sanitized.unions,
+    updatedAt: now,
+  });
+
+  try {
+    await withTimeout(
+      updateDoc(docRef, contentUpdate),
+      7000,
+      'Connection to Cloud Firestore timed out (7s).'
+    );
+  } catch (err: any) {
+    console.error(`Failed to update cloud tree ${sanitized.id}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Saves or updates a tree in Firestore with metadata preservation.
  */
 export async function saveTreeToCloud(
   tree: TreeData,
@@ -167,16 +203,18 @@ export async function saveTreeToCloud(
 
   const now = new Date().toISOString();
   const sanitized = sanitizeTree(tree);
+  const treeAny = tree as any;
 
+  // Preserve existing metadata if not explicitly provided
   const metadata: CloudTreeMetadata = {
-    ownerId: existingMetadata?.ownerId || user.uid,
-    ownerEmail: existingMetadata?.ownerEmail || normalizeEmail(user.email || ''),
-    ownerDisplayName: existingMetadata?.ownerDisplayName || user.displayName || 'Anonymous',
-    ownerPhotoURL: existingMetadata?.ownerPhotoURL || user.photoURL || '',
-    isPublic: existingMetadata?.isPublic ?? false,
-    publicRole: existingMetadata?.publicRole || 'viewer',
-    sharedWith: existingMetadata?.sharedWith || {},
-    sharedEmails: existingMetadata?.sharedEmails || [],
+    ownerId: existingMetadata?.ownerId || treeAny.ownerId || user.uid,
+    ownerEmail: existingMetadata?.ownerEmail || treeAny.ownerEmail || normalizeEmail(user.email || ''),
+    ownerDisplayName: existingMetadata?.ownerDisplayName || treeAny.ownerDisplayName || user.displayName || 'Anonymous',
+    ownerPhotoURL: existingMetadata?.ownerPhotoURL || treeAny.ownerPhotoURL || user.photoURL || '',
+    isPublic: existingMetadata?.isPublic ?? treeAny.isPublic ?? false,
+    publicRole: existingMetadata?.publicRole || treeAny.publicRole || 'viewer',
+    sharedWith: existingMetadata?.sharedWith || treeAny.sharedWith || {},
+    sharedEmails: existingMetadata?.sharedEmails || treeAny.sharedEmails || [],
   };
 
   const cloudTree: CloudTreeData = {

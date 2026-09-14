@@ -47,7 +47,7 @@ import { ShareTreeModal } from './components/Modal/ShareTreeModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import {
   getCloudTree,
-  saveTreeToCloud,
+  updateCloudTreeData,
   subscribeToCloudTree,
   resolveUserPermission,
 } from './services/firestoreService';
@@ -94,7 +94,7 @@ function getTreeContentFingerprint(tree: TreeData): string {
 }
 
 function FamilyTreeMain() {
-  const { user, signInWithGoogle } = useAuth();
+  const { user, signInWithGoogle, signInAnonymouslyUser } = useAuth();
 
   const {
     tree,
@@ -109,6 +109,8 @@ function FamilyTreeMain() {
   const [isCloudTree, setIsCloudTree] = useState<boolean>(false);
   const [userPermission, setUserPermission] = useState<UserPermission>('owner');
   const isReadOnly = userPermission === 'viewer';
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'error' | 'offline'>('synced');
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [cloudLoading, setCloudLoading] = useState<boolean>(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
@@ -160,6 +162,8 @@ function FamilyTreeMain() {
   });
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  const currentTreeRef = useRef<TreeData>(tree);
+  currentTreeRef.current = tree;
   const lastSavedCloudFingerprintRef = useRef<string | null>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,6 +178,8 @@ function FamilyTreeMain() {
       setIsCloudTree(false);
       setUserPermission('owner');
       setAccessDeniedMessage(null);
+      setCloudSyncStatus('synced');
+      setCloudSyncError(null);
       return;
     }
 
@@ -191,6 +197,7 @@ function FamilyTreeMain() {
             setIsCloudTree(false);
             setUserPermission('owner');
             setAccessDeniedMessage(null);
+            setCloudSyncStatus('synced');
             resetHistory(local);
             return;
           }
@@ -212,6 +219,8 @@ function FamilyTreeMain() {
           setTree(cloudTree);
           setIsCloudTree(true);
           setUserPermission(perm);
+          setCloudSyncStatus('synced');
+          setCloudSyncError(null);
           setAccessDeniedMessage(null);
           resetHistory(cloudTree);
           const initialId = cloudTree.rootPersonId || Object.keys(cloudTree.people)[0] || null;
@@ -219,6 +228,13 @@ function FamilyTreeMain() {
           setSelectedPersonIds(new Set(initialId ? [initialId] : []));
           setComparisonPersonId(null);
           setFocusPersonId(null);
+
+          // If guest editor, attempt background anonymous authentication so Firestore receives auth token
+          if (!user && perm === 'editor') {
+            signInAnonymouslyUser().catch((anonErr) => {
+              console.warn('Background anonymous auth skipped:', anonErr);
+            });
+          }
         }
       })
       .catch((err) => {
@@ -242,7 +258,7 @@ function FamilyTreeMain() {
     return () => {
       isMounted = false;
     };
-  }, [user, resetHistory, setTree]);
+  }, [user, resetHistory, setTree, signInAnonymouslyUser]);
 
   // Real-time listener when viewing or editing a cloud tree
   useEffect(() => {
@@ -253,7 +269,7 @@ function FamilyTreeMain() {
       (remoteTree) => {
         if (!remoteTree) return;
         const remoteFingerprint = getTreeContentFingerprint(remoteTree);
-        const currentFingerprint = getTreeContentFingerprint(tree);
+        const currentFingerprint = getTreeContentFingerprint(currentTreeRef.current);
 
         // If the incoming tree is identical to our current tree or matches what we just saved, skip
         if (
@@ -267,16 +283,24 @@ function FamilyTreeMain() {
         isRemoteSyncRef.current = true;
         lastSavedCloudFingerprintRef.current = remoteFingerprint;
         setTree(remoteTree, false);
+
+        // Keep local permissions in sync if sharing role was updated remotely
+        const newPerm = resolveUserPermission(remoteTree, user);
+        if (newPerm !== userPermission) {
+          setUserPermission(newPerm);
+        }
       },
       (err) => {
         console.error('Real-time sync error:', err);
+        setCloudSyncStatus('error');
+        setCloudSyncError(err.message || 'Real-time sync error');
       }
     );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isCloudTree, tree.id, userPermission, setTree, tree]);
+  }, [isCloudTree, tree.id, userPermission, user, setTree]);
 
   // Auto-save whenever tree changes (debounced to avoid loop & network flood)
   useEffect(() => {
@@ -286,7 +310,7 @@ function FamilyTreeMain() {
     saveCurrentTree(tree);
 
     // If active tree is a cloud tree and user has write permissions, save to Firestore
-    if (isCloudTree && user && (userPermission === 'owner' || userPermission === 'editor')) {
+    if (isCloudTree && (userPermission === 'owner' || userPermission === 'editor')) {
       // If this tree update was triggered by a remote cloud sync, do not echo it back
       if (isRemoteSyncRef.current) {
         isRemoteSyncRef.current = false;
@@ -302,11 +326,19 @@ function FamilyTreeMain() {
         clearTimeout(autoSaveTimerRef.current);
       }
 
-      autoSaveTimerRef.current = setTimeout(() => {
+      setCloudSyncStatus('saving');
+
+      autoSaveTimerRef.current = setTimeout(async () => {
         lastSavedCloudFingerprintRef.current = currentFingerprint;
-        saveTreeToCloud(tree, user).catch((err) => {
+        try {
+          await updateCloudTreeData(tree);
+          setCloudSyncStatus('synced');
+          setCloudSyncError(null);
+        } catch (err: any) {
           console.error('Failed to auto-save to cloud:', err);
-        });
+          setCloudSyncStatus('error');
+          setCloudSyncError(err.message || 'Failed to auto-save to cloud');
+        }
       }, 1000);
     }
 
@@ -315,7 +347,7 @@ function FamilyTreeMain() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [tree, isCloudTree, user, userPermission]);
+  }, [tree, isCloudTree, userPermission]);
 
   // Make a Copy handler (Google Drive-style)
   const handleMakeCopy = useCallback(() => {
@@ -959,6 +991,8 @@ function FamilyTreeMain() {
         isReadOnly={isReadOnly}
         isCloudTree={isCloudTree}
         userPermission={userPermission}
+        cloudSyncStatus={cloudSyncStatus}
+        cloudSyncError={cloudSyncError}
         onMakeCopy={handleMakeCopy}
         onAddPerson={handleAddPerson}
         onExportJson={handleExportJson}
@@ -1206,9 +1240,13 @@ function FamilyTreeMain() {
         tree={tree}
         isCloudTree={isCloudTree}
         onTreeUpdated={(updatedCloudTree) => {
+          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(updatedCloudTree);
           setTree(updatedCloudTree);
           setIsCloudTree(true);
           setUserPermission('owner');
+          setCloudSyncStatus('synced');
+          setCloudSyncError(null);
+          window.history.pushState({}, '', `?treeId=${encodeURIComponent(updatedCloudTree.id)}`);
         }}
       />
 

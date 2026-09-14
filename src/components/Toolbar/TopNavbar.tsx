@@ -20,6 +20,10 @@ import {
   Eye,
   Copy,
   LogOut,
+  Check,
+  AlertCircle,
+  Loader2,
+  LogIn,
 } from 'lucide-react';
 
 interface TopNavbarProps {
@@ -31,6 +35,8 @@ interface TopNavbarProps {
   isReadOnly?: boolean;
   isCloudTree?: boolean;
   userPermission?: UserPermission;
+  cloudSyncStatus?: 'synced' | 'saving' | 'error' | 'offline';
+  cloudSyncError?: string | null;
   onMakeCopy?: () => void;
   onAddPerson: () => void;
   onExportJson: () => void;
@@ -54,6 +60,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   isReadOnly = false,
   isCloudTree = false,
   userPermission = 'owner',
+  cloudSyncStatus = 'synced',
+  cloudSyncError = null,
   onMakeCopy,
   onAddPerson,
   onExportJson,
@@ -153,6 +161,20 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   View Only
                 </span>
               )}
+              {isCloudTree && userPermission === 'editor' && !user && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    signInWithGoogle();
+                  }}
+                  className="hidden xs:inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 sm:px-2 py-0.5 rounded-full cursor-pointer transition-colors"
+                  title="You are editing as a guest. Click to sign in with Google to sync edits."
+                >
+                  <LogIn className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-600" />
+                  <span>Guest Editor</span>
+                </button>
+              )}
             </h1>
           )}
 
@@ -168,7 +190,31 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               <span>Local storage (Offline)</span>
             )}
             <span>•</span>
-            <span>Auto-saved</span>
+            {isCloudTree ? (
+              cloudSyncStatus === 'saving' ? (
+                <span className="flex items-center gap-1 text-blue-600 font-medium">
+                  <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                  <span>Saving...</span>
+                </span>
+              ) : cloudSyncStatus === 'error' ? (
+                <button
+                  type="button"
+                  onClick={!user ? () => signInWithGoogle() : undefined}
+                  className="flex items-center gap-1 text-rose-600 font-semibold hover:underline cursor-pointer"
+                  title={cloudSyncError || 'Sync failed. Click to resolve.'}
+                >
+                  <AlertCircle className="w-3 h-3 text-rose-600 flex-shrink-0" />
+                  <span>{!user ? 'Sync failed (Sign in to sync)' : 'Sync error'}</span>
+                </button>
+              ) : (
+                <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  <span>Saved to cloud</span>
+                </span>
+              )
+            ) : (
+              <span>Auto-saved</span>
+            )}
           </p>
         </div>
 

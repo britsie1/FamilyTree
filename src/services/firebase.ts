@@ -47,13 +47,31 @@ function isAppIdFormat(val: string): boolean {
   return clean.includes(':') || clean.startsWith('1:') || clean.toLowerCase().includes('app id');
 }
 
+function getEnvVar(key: string): string {
+  try {
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+    if (metaEnv && typeof metaEnv === 'object') {
+      if (metaEnv[key]) return cleanValue(metaEnv[key]);
+      const noPrefix = key.replace('VITE_', '');
+      if (metaEnv[noPrefix]) return cleanValue(metaEnv[noPrefix]);
+    }
+    const proc = (globalThis as any).process;
+    if (proc && proc.env && typeof proc.env === 'object') {
+      if (proc.env[key]) return cleanValue(proc.env[key]);
+      const noPrefix = key.replace('VITE_', '');
+      if (proc.env[noPrefix]) return cleanValue(proc.env[noPrefix]);
+    }
+  } catch {
+    // Ignore environment access errors
+  }
+  return '';
+}
+
 /**
  * Checks if a single JSON config was provided (e.g. pasted into VITE_FIREBASE_CONFIG or FIREBASE_CONFIG)
  */
 function getJsonConfig(): Partial<FirebaseConfig> | null {
-  const raw =
-    (import.meta.env.VITE_FIREBASE_CONFIG as string | undefined) ||
-    ((import.meta.env as any).FIREBASE_CONFIG as string | undefined);
+  const raw = getEnvVar('VITE_FIREBASE_CONFIG');
 
   if (!raw) return null;
   try {
@@ -83,39 +101,27 @@ export function getFirebaseConfig(): FirebaseConfig | null {
   const json = getJsonConfig();
 
   const apiKey = cleanValue(
-    json?.apiKey ||
-    import.meta.env.VITE_FIREBASE_API_KEY ||
-    (import.meta.env as any).FIREBASE_API_KEY
+    json?.apiKey || getEnvVar('VITE_FIREBASE_API_KEY')
   );
 
   const authDomain = cleanValue(
-    json?.authDomain ||
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
-    (import.meta.env as any).FIREBASE_AUTH_DOMAIN
+    json?.authDomain || getEnvVar('VITE_FIREBASE_AUTH_DOMAIN')
   );
 
   const rawProjectId = cleanValue(
-    json?.projectId ||
-    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
-    (import.meta.env as any).FIREBASE_PROJECT_ID
+    json?.projectId || getEnvVar('VITE_FIREBASE_PROJECT_ID')
   );
 
   const storageBucket = cleanValue(
-    json?.storageBucket ||
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    (import.meta.env as any).FIREBASE_STORAGE_BUCKET
+    json?.storageBucket || getEnvVar('VITE_FIREBASE_STORAGE_BUCKET')
   );
 
   const messagingSenderId = cleanValue(
-    json?.messagingSenderId ||
-    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
-    (import.meta.env as any).FIREBASE_MESSAGING_SENDER_ID
+    json?.messagingSenderId || getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID')
   );
 
   const rawAppId = cleanValue(
-    json?.appId ||
-    import.meta.env.VITE_FIREBASE_APP_ID ||
-    (import.meta.env as any).FIREBASE_APP_ID
+    json?.appId || getEnvVar('VITE_FIREBASE_APP_ID')
   );
 
   let projectId = rawProjectId;
@@ -161,10 +167,7 @@ export function isFirebaseConfigured(): boolean {
 
 export function getFirebaseDiagnostics(): FirebaseDiagnostics {
   const config = getFirebaseConfig();
-  const rawProject = cleanValue(
-    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
-    (import.meta.env as any).FIREBASE_PROJECT_ID
-  );
+  const rawProject = getEnvVar('VITE_FIREBASE_PROJECT_ID');
 
   const isAppId = isAppIdFormat(rawProject);
   const wasCorrected = Boolean(config && isAppId && config.projectId !== rawProject);
@@ -188,10 +191,7 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
   const present: string[] = [];
 
   const checkKey = (keyName: string, label: string) => {
-    const val = cleanValue(
-      import.meta.env[keyName] ||
-      (import.meta.env as any)[keyName.replace('VITE_', '')]
-    );
+    const val = getEnvVar(keyName);
     if (!val || val === 'your-api-key-here') {
       missing.push(label);
     } else {

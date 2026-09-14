@@ -68,13 +68,11 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
     try {
       let existing: CloudTreeData | null = null;
-      if (isCloudTree) {
-        try {
-          existing = await getCloudTree(tree.id);
-        } catch (fetchErr) {
-          console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
-          existing = null;
-        }
+      try {
+        existing = await getCloudTree(tree.id);
+      } catch (fetchErr) {
+        console.warn('Could not fetch cloud tree directly, will attempt upload:', fetchErr);
+        existing = null;
       }
 
       if (existing) {

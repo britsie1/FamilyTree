@@ -37,10 +37,21 @@ service cloud.firestore {
                        request.resource.data.ownerId == request.auth.uid;
 
       // Update allowed by owner, public editor, or invited collaborator
-      allow update: if isAuthenticated() && (
-                       isOwner() ||
-                       isPublicEditor() ||
-                       isInvitedCollaborator()
+      allow update: if (
+                       // 1. Owner can update tree and settings
+                       isOwner()
+                    ) || (
+                       // 2. Public editor (including guest) can update tree data,
+                       // but cannot change ownership or general access settings
+                       isPublicEditor() &&
+                       request.resource.data.ownerId == resource.data.ownerId &&
+                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false) &&
+                       request.resource.data.get('publicRole', 'viewer') == resource.data.get('publicRole', 'viewer')
+                    ) || (
+                       // 3. Invited collaborator can update tree data, but cannot change ownership
+                       isInvitedCollaborator() &&
+                       request.resource.data.ownerId == resource.data.ownerId &&
+                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false)
                     );
 
       // Delete allowed only by owner

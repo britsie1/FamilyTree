@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from 'firebase/auth';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import {
   getFirebaseAuth,
   googleProvider,
@@ -12,6 +12,7 @@ export interface AuthContextType {
   loading: boolean;
   isConfigured: boolean;
   signInWithGoogle: () => Promise<User | null>;
+  signInAnonymouslyUser: () => Promise<User | null>;
   signOutUser: () => Promise<void>;
 }
 
@@ -68,6 +69,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const signInAnonymouslyUser = async (): Promise<User | null> => {
+    const auth = getFirebaseAuth();
+    if (!auth) return null;
+
+    try {
+      const result = await signInAnonymously(auth);
+      setUser(result.user);
+      return result.user;
+    } catch (err: any) {
+      console.warn('Anonymous sign-in not enabled or failed:', err?.message || err);
+      return null;
+    }
+  };
+
   const signOutUser = async (): Promise<void> => {
     const auth = getFirebaseAuth();
     if (auth) {
@@ -83,6 +98,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loading,
         isConfigured,
         signInWithGoogle,
+        signInAnonymouslyUser,
         signOutUser,
       }}
     >
