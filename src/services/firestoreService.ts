@@ -14,6 +14,8 @@ import {
 import { getFirebaseDb } from './firebase';
 import type {
   TreeData,
+  Person,
+  Union,
   CloudTreeData,
   CloudTreeMetadata,
   CloudTreeSummary,
@@ -247,6 +249,74 @@ export async function updateCloudTreeData(tree: TreeData): Promise<void> {
     );
   } catch (err: any) {
     console.error(`Failed to update cloud tree ${sanitized.id}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Granularly patches a single person in Firestore without overwriting the entire tree.
+ */
+export async function patchCloudPerson(
+  treeId: string,
+  personId: string,
+  updates: Partial<Person>
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) return;
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const now = new Date().toISOString();
+  const cleaned = cleanForFirestore(updates);
+
+  const payload: Record<string, any> = {
+    updatedAt: now,
+  };
+  for (const [key, val] of Object.entries(cleaned as Record<string, any>)) {
+    payload[`people.${personId}.${key}`] = val;
+  }
+
+  try {
+    await withTimeout(
+      updateDoc(docRef, payload),
+      7000,
+      'Connection to Cloud Firestore timed out.'
+    );
+  } catch (err: any) {
+    console.error(`Failed to patch cloud person ${personId}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Granularly patches a single union in Firestore without overwriting the entire tree.
+ */
+export async function patchCloudUnion(
+  treeId: string,
+  unionId: string,
+  updates: Partial<Union>
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) return;
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const now = new Date().toISOString();
+  const cleaned = cleanForFirestore(updates);
+
+  const payload: Record<string, any> = {
+    updatedAt: now,
+  };
+  for (const [key, val] of Object.entries(cleaned as Record<string, any>)) {
+    payload[`unions.${unionId}.${key}`] = val;
+  }
+
+  try {
+    await withTimeout(
+      updateDoc(docRef, payload),
+      7000,
+      'Connection to Cloud Firestore timed out.'
+    );
+  } catch (err: any) {
+    console.error(`Failed to patch cloud union ${unionId}:`, err);
     throw new Error(formatFirestoreError(err));
   }
 }

@@ -80,11 +80,8 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     setErrorMessage(null);
 
     try {
-      let currentId = tree.id;
-      if (isPresetTreeId(currentId)) {
-        currentId = generateId('tree');
-        tree.id = currentId;
-      }
+      const currentId = isPresetTreeId(tree.id) ? generateId('tree') : tree.id;
+      const targetTree = currentId !== tree.id ? { ...tree, id: currentId } : tree;
 
       let existing: CloudTreeData | null = null;
       try {
@@ -101,7 +98,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         setSharedWith(existing.sharedWith || {});
       } else {
         // Immediately sync local tree to cloud so it's persisted and shareable
-        const saved = await saveTreeToCloud(tree, user, {
+        const saved = await saveTreeToCloud(targetTree, user, {
           isPublic: isPublic,
           publicRole: publicRole,
           sharedWith: sharedWith,
@@ -155,12 +152,10 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     if (!user) throw new Error('You must be logged in to share this tree.');
     if (cloudTree) return cloudTree;
 
-    if (isPresetTreeId(tree.id)) {
-      tree.id = generateId('tree');
-    }
+    const targetTree = isPresetTreeId(tree.id) ? { ...tree, id: generateId('tree') } : tree;
 
     // Save to Firestore now
-    const saved = await saveTreeToCloud(tree, user, {
+    const saved = await saveTreeToCloud(targetTree, user, {
       isPublic,
       publicRole,
       sharedWith,

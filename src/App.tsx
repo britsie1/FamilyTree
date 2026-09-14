@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { TreeData, Person, UnionType, LayoutStyle, Union, UserPermission, CloudTreeData } from './types/tree';
+import type { TreeData, Union, Person } from './types/tree';
 import {
   loadCurrentTree,
   loadTreeById,
@@ -10,29 +10,13 @@ import {
   createDivorceBlendedPreset,
   createThreeGenSampleTree,
   createBlankTree,
-  generateId,
 } from './services/storage';
 import {
-  addChildToPerson,
-  addSiblingToPerson,
-  addPartnerToPerson,
-  addParentToPerson,
-  linkExistingChild,
-  linkExistingPartner,
-  linkExistingParent,
-  linkExistingSibling,
-  unlinkPartner,
-  unlinkChild,
-  unlinkParentFromChild,
-  createEmptyPerson,
-  deletePersonFromTree,
-  updatePersonInTree,
-  updateUnionInTree,
-  clearManualPositions,
   getPersonDisplayName,
   createTreeFromPeople,
 } from './services/treeOperations';
-import { computeLayout, getBranchPersonIds } from './services/layoutEngine';
+import { getBranchPersonIds } from './services/layoutEngine';
+import { useAsyncLayout } from './services/layoutClient';
 import { TreeCanvas } from './components/Canvas/TreeCanvas';
 import { ContextMenu } from './components/Canvas/ContextMenu';
 import { TopNavbar } from './components/Toolbar/TopNavbar';
@@ -55,11 +39,16 @@ import { toPng } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import { findRelationship, type RelationshipResult } from './services/relationshipFinder';
 import { RelationshipCard } from './components/Canvas/RelationshipCard';
-import { useTreeHistory } from './hooks/useTreeHistory';
 import { parseGedcom, exportGedcomToFile } from './services/gedcomService';
 import { Target, X, GitFork, Lock, LogIn, Eye, Copy, Loader2 } from 'lucide-react';
 import { TemporalScrubBar } from './components/Toolbar/TemporalScrubBar';
-import { getTreeYearBounds, type HistoricalMoment } from './services/temporalEngine';
+import { getTreeYearBounds } from './services/temporalEngine';
+
+// Centralized Stores
+import { useTreeStore } from './stores/useTreeStore';
+import { useCanvasStore } from './stores/useCanvasStore';
+import { useTemporalStore } from './stores/useTemporalStore';
+import { useCollabStore } from './stores/useCollabStore';
 
 export function App() {
   return (
@@ -96,34 +85,89 @@ function getTreeContentFingerprint(tree: TreeData): string {
 function FamilyTreeMain() {
   const { user, signInWithGoogle, signInAnonymouslyUser } = useAuth();
 
-  const {
-    tree,
-    setTree,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    resetHistory,
-  } = useTreeHistory(loadCurrentTree());
+  // Tree Store
+  const tree = useTreeStore((s) => s.tree);
+  const setTree = useTreeStore((s) => s.setTree);
+  const undo = useTreeStore((s) => s.undo);
+  const redo = useTreeStore((s) => s.redo);
+  const canUndo = useTreeStore((s) => s.canUndo);
+  const canRedo = useTreeStore((s) => s.canRedo);
+  const resetHistory = useTreeStore((s) => s.resetHistory);
+  const updateTreeName = useTreeStore((s) => s.updateTreeName);
+  const updatePerson = useTreeStore((s) => s.updatePerson);
+  const updatePersonPosition = useTreeStore((s) => s.updatePersonPosition);
+  const updateUnion = useTreeStore((s) => s.updateUnion);
+  const deleteUnion = useTreeStore((s) => s.deleteUnion);
+  const deletePerson = useTreeStore((s) => s.deletePerson);
+  const addPerson = useTreeStore((s) => s.addPerson);
+  const addChild = useTreeStore((s) => s.addChild);
+  const addSibling = useTreeStore((s) => s.addSibling);
+  const addPartner = useTreeStore((s) => s.addPartner);
+  const addParent = useTreeStore((s) => s.addParent);
+  const linkChild = useTreeStore((s) => s.linkChild);
+  const linkSibling = useTreeStore((s) => s.linkSibling);
+  const linkPartner = useTreeStore((s) => s.linkPartner);
+  const linkParent = useTreeStore((s) => s.linkParent);
+  const unlinkPartnerAction = useTreeStore((s) => s.unlinkPartnerAction);
+  const unlinkChildAction = useTreeStore((s) => s.unlinkChildAction);
+  const unlinkParentFromChildAction = useTreeStore((s) => s.unlinkParentFromChildAction);
+  const resetLayoutAction = useTreeStore((s) => s.resetLayout);
+  const makeCopyAction = useTreeStore((s) => s.makeCopy);
 
-  const [isCloudTree, setIsCloudTree] = useState<boolean>(false);
-  const [userPermission, setUserPermission] = useState<UserPermission>('owner');
+  // Canvas Store
+  const zoom = useCanvasStore((s) => s.zoom);
+  const pan = useCanvasStore((s) => s.pan);
+  const setZoom = useCanvasStore((s) => s.setZoom);
+  const setPan = useCanvasStore((s) => s.setPan);
+  const layoutStyle = useCanvasStore((s) => s.layoutStyle);
+  const groupByFamily = useCanvasStore((s) => s.groupByFamily);
+  const adjustSpacing = useCanvasStore((s) => s.adjustSpacing);
+  const toggleLayoutStyle = useCanvasStore((s) => s.toggleLayoutStyle);
+  const toggleGroupByFamily = useCanvasStore((s) => s.toggleGroupByFamily);
+  const toggleAdjustSpacing = useCanvasStore((s) => s.toggleAdjustSpacing);
+  const selectedPersonId = useCanvasStore((s) => s.selectedPersonId);
+  const selectedPersonIds = useCanvasStore((s) => s.selectedPersonIds);
+  const comparisonPersonId = useCanvasStore((s) => s.comparisonPersonId);
+  const selectedUnionId = useCanvasStore((s) => s.selectedUnionId);
+  const focusPersonId = useCanvasStore((s) => s.focusPersonId);
+  const collapsedPersonIds = useCanvasStore((s) => s.collapsedPersonIds);
+  const selectPerson = useCanvasStore((s) => s.selectPerson);
+  const multiSelectPeople = useCanvasStore((s) => s.multiSelectPeople);
+  const setComparisonPersonId = useCanvasStore((s) => s.setComparisonPersonId);
+  const swapComparison = useCanvasStore((s) => s.swapComparison);
+  const setSelectedUnionId = useCanvasStore((s) => s.setSelectedUnionId);
+  const toggleFocus = useCanvasStore((s) => s.toggleFocus);
+  const clearFocus = useCanvasStore((s) => s.clearFocus);
+  const toggleCollapse = useCanvasStore((s) => s.toggleCollapse);
+  const clearSelection = useCanvasStore((s) => s.clearSelection);
+
+  // Collab Store
+  const isCloudTree = useCollabStore((s) => s.isCloudTree);
+  const userPermission = useCollabStore((s) => s.userPermission);
   const isReadOnly = userPermission === 'viewer';
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'error' | 'offline'>('synced');
-  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
-  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
-  const [cloudLoading, setCloudLoading] = useState<boolean>(false);
-  const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
+  const cloudSyncStatus = useCollabStore((s) => s.cloudSyncStatus);
+  const cloudSyncError = useCollabStore((s) => s.cloudSyncError);
+  const cloudLoading = useCollabStore((s) => s.cloudLoading);
+  const accessDeniedMessage = useCollabStore((s) => s.accessDeniedMessage);
+  const isShareModalOpen = useCollabStore((s) => s.isShareModalOpen);
+  const setIsCloudTree = useCollabStore((s) => s.setIsCloudTree);
+  const setUserPermission = useCollabStore((s) => s.setUserPermission);
+  const setCloudSyncStatus = useCollabStore((s) => s.setCloudSyncStatus);
+  const setCloudLoading = useCollabStore((s) => s.setCloudLoading);
+  const setAccessDeniedMessage = useCollabStore((s) => s.setAccessDeniedMessage);
+  const setIsShareModalOpen = useCollabStore((s) => s.setIsShareModalOpen);
 
-  const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('vertical');
-  const [groupByFamily, setGroupByFamily] = useState<boolean>(false);
-  const [adjustSpacing, setAdjustSpacing] = useState<boolean>(true);
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>('me');
-  const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set(['me']));
-  const [comparisonPersonId, setComparisonPersonId] = useState<string | null>(null);
-  const [selectedUnionId, setSelectedUnionId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<number>(0.9);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 400, y: 150 });
+  // Temporal Store
+  const isTimelineActive = useTemporalStore((s) => s.isTimelineActive);
+  const temporalYear = useTemporalStore((s) => s.temporalYear);
+  const activeHistoricalMoment = useTemporalStore((s) => s.activeMoment);
+  const toggleTimeline = useTemporalStore((s) => s.toggleTimeline);
+  const setTemporalYear = useTemporalStore((s) => s.setTemporalYear);
+  const setActiveHistoricalMoment = useTemporalStore((s) => s.setActiveMoment);
+  const jumpToYear = useTemporalStore((s) => s.jumpToYear);
+  const closeTimeline = useTemporalStore((s) => s.closeTimeline);
+
+  // Modals & Context Menu local state
   const [isEdgeCaseModalOpen, setIsEdgeCaseModalOpen] = useState(false);
   const [isTreeManagerOpen, setIsTreeManagerOpen] = useState(false);
   const [isCreateTreeModalOpen, setIsCreateTreeModalOpen] = useState(false);
@@ -134,22 +178,7 @@ function FamilyTreeMain() {
     targetPersonId?: string | null;
   } | null>(null);
 
-  // Branch Collapsing & Focus Mode state
-  const [collapsedPersonIds, setCollapsedPersonIds] = useState<Set<string>>(new Set());
-  const [focusPersonId, setFocusPersonId] = useState<string | null>(null);
-
-  // 4D Temporal Scrub Bar ("Who Was in the Room?") state
-  const [isTimelineActive, setIsTimelineActive] = useState<boolean>(false);
-  const [temporalYear, setTemporalYear] = useState<number | null>(null);
-  const [activeHistoricalMoment, setActiveHistoricalMoment] = useState<HistoricalMoment | null>(null);
-
-  // Compute relationship between selectedPersonId (A) and comparisonPersonId (B)
-  const currentRelationship = useMemo<RelationshipResult | null>(() => {
-    if (!selectedPersonId || !comparisonPersonId) return null;
-    return findRelationship(tree, selectedPersonId, comparisonPersonId);
-  }, [tree, selectedPersonId, comparisonPersonId]);
-
-  // Add / Link relationship modal state
+  // Relationship modal state
   const [relModal, setRelModal] = useState<{
     isOpen: boolean;
     sourcePersonId: string | null;
@@ -162,14 +191,18 @@ function FamilyTreeMain() {
   });
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
-  const currentTreeRef = useRef<TreeData>(tree);
-  currentTreeRef.current = tree;
   const lastSavedCloudFingerprintRef = useRef<string | null>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInitialFitRef = useRef<boolean>(false);
 
-  // Check URL params for ?treeId=... on initial mount and when user changes
+  // Relationship between selected (A) and comparison (B)
+  const currentRelationship = useMemo<RelationshipResult | null>(() => {
+    if (!selectedPersonId || !comparisonPersonId) return null;
+    return findRelationship(tree, selectedPersonId, comparisonPersonId);
+  }, [tree, selectedPersonId, comparisonPersonId]);
+
+  // Cloud Tree Initial URL Load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlTreeId = params.get('treeId');
@@ -179,7 +212,6 @@ function FamilyTreeMain() {
       setUserPermission('owner');
       setAccessDeniedMessage(null);
       setCloudSyncStatus('synced');
-      setCloudSyncError(null);
       return;
     }
 
@@ -193,12 +225,11 @@ function FamilyTreeMain() {
         if (!cloudTree) {
           const local = loadTreeById(urlTreeId);
           if (local) {
-            setTree(local);
+            resetHistory(local);
             setIsCloudTree(false);
             setUserPermission('owner');
             setAccessDeniedMessage(null);
             setCloudSyncStatus('synced');
-            resetHistory(local);
             return;
           }
           setAccessDeniedMessage('The requested family tree could not be found or does not exist.');
@@ -216,20 +247,15 @@ function FamilyTreeMain() {
           hasInitialFitRef.current = false;
           lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(cloudTree);
           isRemoteSyncRef.current = true;
-          setTree(cloudTree);
+          resetHistory(cloudTree);
           setIsCloudTree(true);
           setUserPermission(perm);
           setCloudSyncStatus('synced');
-          setCloudSyncError(null);
           setAccessDeniedMessage(null);
-          resetHistory(cloudTree);
           const initialId = cloudTree.rootPersonId || Object.keys(cloudTree.people)[0] || null;
-          setSelectedPersonId(initialId);
-          setSelectedPersonIds(new Set(initialId ? [initialId] : []));
-          setComparisonPersonId(null);
-          setFocusPersonId(null);
+          selectPerson(initialId);
+          clearFocus();
 
-          // If guest editor, attempt background anonymous authentication so Firestore receives auth token
           if (!user && perm === 'editor') {
             signInAnonymouslyUser().catch((anonErr) => {
               console.warn('Background anonymous auth skipped:', anonErr);
@@ -242,11 +268,10 @@ function FamilyTreeMain() {
         console.error('Failed to fetch cloud tree:', err);
         const local = loadTreeById(urlTreeId);
         if (local) {
-          setTree(local);
+          resetHistory(local);
           setIsCloudTree(false);
           setUserPermission('owner');
           setAccessDeniedMessage(null);
-          resetHistory(local);
           return;
         }
         setAccessDeniedMessage('Could not load tree from cloud: ' + (err.message || 'Unknown error'));
@@ -258,9 +283,9 @@ function FamilyTreeMain() {
     return () => {
       isMounted = false;
     };
-  }, [user, resetHistory, setTree, signInAnonymouslyUser]);
+  }, [user, resetHistory, selectPerson, clearFocus, setIsCloudTree, setUserPermission, setAccessDeniedMessage, setCloudSyncStatus, setCloudLoading, signInAnonymouslyUser]);
 
-  // Real-time listener when viewing or editing a cloud tree
+  // Real-time Firestore Listener
   useEffect(() => {
     if (!isCloudTree || !tree.id || userPermission === 'none') return;
 
@@ -269,9 +294,8 @@ function FamilyTreeMain() {
       (remoteTree) => {
         if (!remoteTree) return;
         const remoteFingerprint = getTreeContentFingerprint(remoteTree);
-        const currentFingerprint = getTreeContentFingerprint(currentTreeRef.current);
+        const currentFingerprint = getTreeContentFingerprint(useTreeStore.getState().tree);
 
-        // If the incoming tree is identical to our current tree or matches what we just saved, skip
         if (
           remoteFingerprint === currentFingerprint ||
           remoteFingerprint === lastSavedCloudFingerprintRef.current
@@ -279,12 +303,10 @@ function FamilyTreeMain() {
           return;
         }
 
-        // Apply remote changes from cloud without flooding undo history
         isRemoteSyncRef.current = true;
         lastSavedCloudFingerprintRef.current = remoteFingerprint;
         setTree(remoteTree, false);
 
-        // Keep local permissions in sync if sharing role was updated remotely
         const newPerm = resolveUserPermission(remoteTree, user);
         if (newPerm !== userPermission) {
           setUserPermission(newPerm);
@@ -292,26 +314,22 @@ function FamilyTreeMain() {
       },
       (err) => {
         console.error('Real-time sync error:', err);
-        setCloudSyncStatus('error');
-        setCloudSyncError(err.message || 'Real-time sync error');
+        setCloudSyncStatus('error', err.message || 'Real-time sync error');
       }
     );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isCloudTree, tree.id, userPermission, user, setTree]);
+  }, [isCloudTree, tree.id, userPermission, user, setTree, setUserPermission, setCloudSyncStatus]);
 
-  // Auto-save whenever tree changes (debounced to avoid loop & network flood)
+  // Auto-save Debounce
   useEffect(() => {
-    // Only persist if not read-only
     if (userPermission === 'viewer') return;
 
     saveCurrentTree(tree);
 
-    // If active tree is a cloud tree and user has write permissions, save to Firestore
     if (isCloudTree && (userPermission === 'owner' || userPermission === 'editor')) {
-      // If this tree update was triggered by a remote cloud sync, do not echo it back
       if (isRemoteSyncRef.current) {
         isRemoteSyncRef.current = false;
         return;
@@ -333,11 +351,9 @@ function FamilyTreeMain() {
         try {
           await updateCloudTreeData(tree);
           setCloudSyncStatus('synced');
-          setCloudSyncError(null);
         } catch (err: any) {
           console.error('Failed to auto-save to cloud:', err);
-          setCloudSyncStatus('error');
-          setCloudSyncError(err.message || 'Failed to auto-save to cloud');
+          setCloudSyncStatus('error', err.message || 'Failed to auto-save to cloud');
         }
       }, 1000);
     }
@@ -347,31 +363,9 @@ function FamilyTreeMain() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [tree, isCloudTree, userPermission]);
+  }, [tree, isCloudTree, userPermission, setCloudSyncStatus]);
 
-  // Make a Copy handler (Google Drive-style)
-  const handleMakeCopy = useCallback(() => {
-    const newId = generateId('tree');
-    const now = new Date().toISOString();
-    const copy: TreeData = {
-      ...tree,
-      id: newId,
-      name: `${tree.name || 'Family Tree'} (Copy)`,
-      createdAt: now,
-      updatedAt: now,
-    };
-    hasInitialFitRef.current = false;
-    saveCurrentTree(copy);
-    setTree(copy);
-    resetHistory(copy);
-    setIsCloudTree(false);
-    setUserPermission('owner');
-    setAccessDeniedMessage(null);
-    window.history.replaceState({}, '', window.location.pathname);
-    confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-  }, [tree, setTree, resetHistory]);
-
-  // Active tree filtered for focus mode if active
+  // Active tree filtered for focus mode
   const activeTree = useMemo(() => {
     if (!focusPersonId || !tree.people[focusPersonId]) return tree;
     const branchIds = getBranchPersonIds(tree, focusPersonId);
@@ -395,12 +389,16 @@ function FamilyTreeMain() {
     };
   }, [tree, focusPersonId]);
 
-  // Compute layout & edges
-  const layout = useMemo(() => {
-    return computeLayout(activeTree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing);
-  }, [activeTree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing]);
+  // Asynchronous Layout computation via Web Worker
+  const { layout } = useAsyncLayout(
+    activeTree,
+    layoutStyle,
+    groupByFamily,
+    collapsedPersonIds,
+    adjustSpacing
+  );
 
-  // Fit tree nicely into the current screen viewport
+  // Fit to screen
   const fitToScreen = useCallback(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
@@ -424,9 +422,9 @@ function FamilyTreeMain() {
 
     setZoom(newZoom);
     setPan({ x: newPanX, y: newPanY });
-  }, [layout.bounds]);
+  }, [layout.bounds, setZoom, setPan]);
 
-  // Initial centering on first load or tree switch
+  // Initial centering
   useEffect(() => {
     if (!hasInitialFitRef.current && layout.bounds.width > 0) {
       hasInitialFitRef.current = true;
@@ -437,187 +435,141 @@ function FamilyTreeMain() {
     }
   }, [fitToScreen, layout.bounds.width]);
 
-  // Tree manipulation handlers
-  const handleUpdateTreeName = (name: string) => {
-    setTree((prev) => ({ ...prev, name }));
-  };
+  // Handlers
+  const handleMakeCopy = useCallback(() => {
+    hasInitialFitRef.current = false;
+    makeCopyAction();
+    setIsCloudTree(false);
+    setUserPermission('owner');
+    setAccessDeniedMessage(null);
+    window.history.replaceState({}, '', window.location.pathname);
+    confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+  }, [makeCopyAction, setIsCloudTree, setUserPermission, setAccessDeniedMessage]);
 
-  const handleUpdatePerson = (personId: string, updates: Partial<Person>) => {
-    setTree((prev) => updatePersonInTree(prev, personId, updates));
-  };
+  const handleSwitchTree = useCallback(
+    (newTree: TreeData, isCloud: boolean = false) => {
+      hasInitialFitRef.current = false;
+      if (isCloud) {
+        lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(newTree);
+        isRemoteSyncRef.current = true;
+      }
+      resetHistory(newTree);
+      setIsCloudTree(isCloud);
 
-  const handleUpdateUnion = (
-    unionId: string,
-    updates: Partial<{ type: UnionType; marriageDate?: string; divorceDate?: string }>
-  ) => {
-    setTree((prev) => updateUnionInTree(prev, unionId, updates));
-  };
-
-  const handleDeleteUnion = (unionId: string) => {
-    setTree((prev) => {
-      const nextTree = { ...prev, unions: { ...prev.unions }, people: { ...prev.people } };
-      delete nextTree.unions[unionId];
-      // Clean up references in people
-      Object.keys(nextTree.people).forEach((pId) => {
-        const p = nextTree.people[pId];
-        if (p.unionIds.includes(unionId)) {
-          nextTree.people[pId] = {
-            ...p,
-            unionIds: p.unionIds.filter((id) => id !== unionId),
-          };
-        }
-        if (p.parentUnionId === unionId) {
-          nextTree.people[pId] = {
-            ...p,
-            parentUnionId: undefined,
-          };
-        }
-      });
-      return nextTree;
-    });
-    setSelectedUnionId(null);
-  };
-
-  const handleToggleLayoutStyle = () => {
-    setLayoutStyle((prev) => (prev === 'vertical' ? 'horizontal' : 'vertical'));
-    setTimeout(fitToScreen, 60);
-  };
-
-  const handleToggleGroupByFamily = () => {
-    setGroupByFamily((prev) => !prev);
-    setTimeout(fitToScreen, 60);
-  };
-
-  // Intermediate node position update during drag (does not flood undo history)
-  const handleUpdatePersonPosition = useCallback(
-    (personId: string, x: number, y: number) => {
-      if (layoutStyle === 'horizontal') {
-        setTree(
-          (prev) => updatePersonInTree(prev, personId, { horizontalX: x, horizontalY: y }),
-          false
-        );
+      if (isCloud) {
+        const perm = resolveUserPermission(newTree as any, user);
+        setUserPermission(perm);
+        window.history.pushState({}, '', `?treeId=${encodeURIComponent(newTree.id)}`);
       } else {
-        setTree((prev) => updatePersonInTree(prev, personId, { x, y }), false);
+        setUserPermission('owner');
+        window.history.pushState({}, '', window.location.pathname);
       }
-    },
-    [layoutStyle, setTree]
-  );
 
-  // Commit single undo snapshot when card drag finishes
-  const handleFinishDragPerson = useCallback(() => {
-    setTree((prev) => ({ ...prev }), true);
-  }, [setTree]);
-
-  const handleToggleCollapse = useCallback((personId: string) => {
-    setCollapsedPersonIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(personId)) {
-        next.delete(personId);
-      } else {
-        next.add(personId);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleToggleFocus = useCallback(
-    (personId: string) => {
-      setFocusPersonId((prev) => (prev === personId ? null : personId));
-      setTimeout(fitToScreen, 60);
-    },
-    [fitToScreen]
-  );
-
-  const handleSelectPerson = useCallback(
-    (personId: string | null, event?: React.MouseEvent) => {
+      const initialPersonId = newTree.rootPersonId || Object.keys(newTree.people)[0] || null;
+      selectPerson(initialPersonId);
+      setSelectedUnionId(null);
+      clearFocus();
       setContextMenu(null);
-
-      if (!personId) {
-        setSelectedPersonId(null);
-        setSelectedPersonIds(new Set());
-        setComparisonPersonId(null);
-        return;
-      }
-
-      // Shift + Click: Toggle membership in multi-selection
-      if (event && event.shiftKey) {
-        setSelectedPersonIds((prev) => {
-          const next = new Set(prev);
-          if (next.has(personId)) {
-            next.delete(personId);
-            if (selectedPersonId === personId) {
-              setSelectedPersonId(Array.from(next)[0] || null);
-            }
-          } else {
-            next.add(personId);
-            setSelectedPersonId(personId);
-          }
-          return next;
-        });
-        setComparisonPersonId(null);
-        return;
-      }
-
-      // Ctrl/Meta + Click: trigger comparison mode between two individuals
-      if (event && (event.ctrlKey || event.metaKey)) {
-        if (selectedPersonId && selectedPersonId !== personId) {
-          setComparisonPersonId(personId);
-          setSelectedPersonIds((prev) => {
-            const next = new Set(prev);
-            next.add(selectedPersonId);
-            next.add(personId);
-            return next;
-          });
-          return;
-        }
-      }
-
-      // Normal click: select single person and reset multi-selection
-      setSelectedPersonId(personId);
-      setSelectedPersonIds(new Set([personId]));
-      setComparisonPersonId(null);
+      setAccessDeniedMessage(null);
+      const { defaultYear } = getTreeYearBounds(newTree);
+      setTemporalYear(defaultYear);
+      setActiveHistoricalMoment(null);
     },
-    [selectedPersonId]
+    [
+      resetHistory,
+      setIsCloudTree,
+      setUserPermission,
+      user,
+      selectPerson,
+      setSelectedUnionId,
+      clearFocus,
+      setAccessDeniedMessage,
+      setTemporalYear,
+      setActiveHistoricalMoment,
+    ]
   );
 
-  const handleMultiSelectPeople = useCallback(
-    (personIds: string[], append: boolean = true) => {
-      setSelectedPersonIds((prev) => {
-        const next = append ? new Set(prev) : new Set<string>();
-        personIds.forEach((id) => next.add(id));
-        if (next.size > 0 && (!selectedPersonId || !next.has(selectedPersonId))) {
-          setSelectedPersonId(personIds[0] || Array.from(next)[0]);
-        }
-        return next;
+  const handleSelectPreset = (presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => {
+    let nextTree: TreeData;
+    if (presetKey === 'double_in_law') {
+      nextTree = createDoubleInLawPreset();
+    } else if (presetKey === 'divorce') {
+      nextTree = createDivorceBlendedPreset();
+    } else if (presetKey === 'royal') {
+      nextTree = createThreeGenSampleTree();
+    } else {
+      nextTree = createBlankTree();
+    }
+    nextTree.id = `tree_${presetKey}_${Date.now().toString(36)}`;
+    saveCurrentTree(nextTree);
+    handleSwitchTree(nextTree);
+  };
+
+  const handleCreateNewRelation = () => {
+    const { sourcePersonId, relationType, preferredUnionId } = relModal;
+    if (!sourcePersonId) return;
+
+    let newId = '';
+    if (relationType === 'child') {
+      newId = addChild(sourcePersonId, preferredUnionId);
+    } else if (relationType === 'sibling') {
+      newId = addSibling(sourcePersonId);
+    } else if (relationType === 'partner') {
+      newId = addPartner(sourcePersonId);
+    } else if (relationType === 'parent') {
+      newId = addParent(sourcePersonId);
+    }
+
+    if (newId) {
+      selectPerson(newId);
+    }
+  };
+
+  const handleLinkExistingRelation = (targetPersonId: string) => {
+    const { sourcePersonId, relationType, preferredUnionId } = relModal;
+    if (!sourcePersonId || !targetPersonId) return;
+
+    if (relationType === 'child') {
+      linkChild(sourcePersonId, targetPersonId, preferredUnionId);
+    } else if (relationType === 'sibling') {
+      linkSibling(sourcePersonId, targetPersonId);
+    } else if (relationType === 'partner') {
+      linkPartner(sourcePersonId, targetPersonId);
+    } else if (relationType === 'parent') {
+      linkParent(sourcePersonId, targetPersonId);
+    }
+
+    selectPerson(targetPersonId);
+    confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+  };
+
+  const handleAddChildToUnion = (unionId: string) => {
+    const union = tree.unions[unionId];
+    if (!union) return;
+    const firstPartner = union.partnerIds[0];
+    if (firstPartner) {
+      setRelModal({
+        isOpen: true,
+        sourcePersonId: firstPartner,
+        relationType: 'child',
+        preferredUnionId: unionId,
       });
-      setComparisonPersonId(null);
-      setContextMenu(null);
-    },
-    [selectedPersonId]
-  );
+    }
+  };
 
-  const handlePersonContextMenu = useCallback((e: React.MouseEvent, personId: string) => {
-    e.preventDefault();
-    setSelectedPersonIds((prev) => {
-      const next = new Set(prev);
-      if (!next.has(personId)) {
-        if (e.shiftKey) {
-          next.add(personId);
-        } else {
-          next.clear();
-          next.add(personId);
-          setSelectedPersonId(personId);
-        }
-      }
-      return next;
-    });
-    setContextMenu({
-      isOpen: true,
-      x: e.clientX,
-      y: e.clientY,
-      targetPersonId: personId,
-    });
-  }, []);
+  const handlePersonContextMenu = useCallback(
+    (e: React.MouseEvent, personId: string) => {
+      e.preventDefault();
+      selectPerson(personId, e);
+      setContextMenu({
+        isOpen: true,
+        x: e.clientX,
+        y: e.clientY,
+        targetPersonId: personId,
+      });
+    },
+    [selectPerson]
+  );
 
   const handleCanvasContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -648,248 +600,9 @@ function FamilyTreeMain() {
         confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedPersonIds, tree]
+    [selectedPersonIds, tree, handleSwitchTree]
   );
 
-  const handleSwapComparison = useCallback(() => {
-    if (selectedPersonId && comparisonPersonId) {
-      const prevA = selectedPersonId;
-      const prevB = comparisonPersonId;
-      setSelectedPersonId(prevB);
-      setComparisonPersonId(prevA);
-    }
-  }, [selectedPersonId, comparisonPersonId]);
-
-  const handleDeletePerson = (personId: string) => {
-    setTree((prev) => deletePersonFromTree(prev, personId));
-    if (selectedPersonId === personId) {
-      setSelectedPersonId(null);
-    }
-    setSelectedPersonIds((prev) => {
-      const next = new Set(prev);
-      next.delete(personId);
-      return next;
-    });
-    if (comparisonPersonId === personId) {
-      setComparisonPersonId(null);
-    }
-  };
-
-  // Open modal to add or link a relation
-  const handleOpenAddRelationship = (
-    sourcePersonId: string,
-    relationType: RelationType,
-    preferredUnionId?: string
-  ) => {
-    setRelModal({
-      isOpen: true,
-      sourcePersonId,
-      relationType,
-      preferredUnionId,
-    });
-  };
-
-  // Action from modal: Create brand new relative
-  const handleCreateNewRelation = () => {
-    const { sourcePersonId, relationType, preferredUnionId } = relModal;
-    if (!sourcePersonId) return;
-
-    setTree((prev) => {
-      let nextTree = prev;
-      let newId = '';
-
-      if (relationType === 'child') {
-        const res = addChildToPerson(prev, sourcePersonId, preferredUnionId);
-        nextTree = res.tree;
-        newId = res.newChildId;
-      } else if (relationType === 'sibling') {
-        const res = addSiblingToPerson(prev, sourcePersonId);
-        nextTree = res.tree;
-        newId = res.newSiblingId;
-      } else if (relationType === 'partner') {
-        const res = addPartnerToPerson(prev, sourcePersonId);
-        nextTree = res.tree;
-        newId = res.newPartnerId;
-      } else if (relationType === 'parent') {
-        const res = addParentToPerson(prev, sourcePersonId);
-        nextTree = res.tree;
-        newId = res.newParentId;
-      }
-
-      if (newId) {
-        setSelectedPersonId(newId);
-      }
-      return nextTree;
-    });
-  };
-
-  // Action from modal: Link existing relative from tree
-  const handleLinkExistingRelation = (targetPersonId: string) => {
-    const { sourcePersonId, relationType, preferredUnionId } = relModal;
-    if (!sourcePersonId || !targetPersonId) return;
-
-    setTree((prev) => {
-      let nextTree = prev;
-      if (relationType === 'child') {
-        nextTree = linkExistingChild(prev, sourcePersonId, targetPersonId, preferredUnionId);
-      } else if (relationType === 'sibling') {
-        nextTree = linkExistingSibling(prev, sourcePersonId, targetPersonId);
-      } else if (relationType === 'partner') {
-        nextTree = linkExistingPartner(prev, sourcePersonId, targetPersonId);
-      } else if (relationType === 'parent') {
-        nextTree = linkExistingParent(prev, sourcePersonId, targetPersonId);
-      }
-      return nextTree;
-    });
-
-    setSelectedPersonId(targetPersonId);
-    confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
-  };
-
-  // Direct addition to specific union anchor
-  const handleAddChildToUnion = (unionId: string) => {
-    const union = tree.unions[unionId];
-    if (!union) return;
-    const firstPartner = union.partnerIds[0];
-    if (firstPartner) {
-      handleOpenAddRelationship(firstPartner, 'child', unionId);
-    }
-  };
-
-  // Unlink relationships
-  const handleUnlinkPartner = (personId: string, unionId: string) => {
-    setTree((prev) => unlinkPartner(prev, personId, unionId));
-  };
-
-  const handleUnlinkChild = (childPersonId: string) => {
-    setTree((prev) => unlinkChild(prev, childPersonId));
-  };
-
-  const handleUnlinkParentFromChild = (childPersonId: string, parentPersonId: string) => {
-    setTree((prev) => unlinkParentFromChild(prev, childPersonId, parentPersonId));
-  };
-
-  const handleAddPerson = () => {
-    if (isReadOnly) return;
-    const newPerson = createEmptyPerson({
-      firstName: '',
-      lastName: '',
-    });
-    setTree((prev) => ({
-      ...prev,
-      people: {
-        ...prev.people,
-        [newPerson.id]: newPerson,
-      },
-    }));
-    setSelectedPersonId(newPerson.id);
-    setSelectedPersonIds(new Set([newPerson.id]));
-  };
-
-  const handleResetLayout = () => {
-    setTree((prev) => clearManualPositions(prev));
-    setTimeout(fitToScreen, 50);
-  };
-
-  const handleToggleAdjustSpacing = () => {
-    setAdjustSpacing((prev) => {
-      const next = !prev;
-      if (next) {
-        setTree((t) => clearManualPositions(t));
-      }
-      return next;
-    });
-    setTimeout(fitToScreen, 50);
-  };
-
-  // Switching or loading a tree
-  const handleSwitchTree = (newTree: TreeData, isCloud: boolean = false) => {
-    hasInitialFitRef.current = false;
-    if (isCloud) {
-      lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(newTree);
-      isRemoteSyncRef.current = true;
-    }
-    setTree(newTree);
-    resetHistory(newTree);
-    setIsCloudTree(isCloud);
-
-    if (isCloud) {
-      const perm = resolveUserPermission(newTree as CloudTreeData, user);
-      setUserPermission(perm);
-      window.history.pushState({}, '', `?treeId=${encodeURIComponent(newTree.id)}`);
-    } else {
-      setUserPermission('owner');
-      window.history.pushState({}, '', window.location.pathname);
-    }
-
-    const initialPersonId = newTree.rootPersonId || Object.keys(newTree.people)[0] || null;
-    setSelectedPersonId(initialPersonId);
-    setSelectedPersonIds(new Set(initialPersonId ? [initialPersonId] : []));
-    setSelectedUnionId(null);
-    setComparisonPersonId(null);
-    setFocusPersonId(null);
-    setCollapsedPersonIds(new Set());
-    setContextMenu(null);
-    setAccessDeniedMessage(null);
-    const { defaultYear } = getTreeYearBounds(newTree);
-    setTemporalYear(defaultYear);
-    setActiveHistoricalMoment(null);
-  };
-
-  const handleToggleTimeline = useCallback(() => {
-    setIsTimelineActive((prev) => {
-      const next = !prev;
-      if (next) {
-        if (temporalYear === null) {
-          const { defaultYear } = getTreeYearBounds(tree);
-          setTemporalYear(defaultYear);
-        }
-      } else {
-        setActiveHistoricalMoment(null);
-      }
-      return next;
-    });
-  }, [tree, temporalYear]);
-
-  const handleJumpToYear = useCallback((year: number, moment?: HistoricalMoment | null) => {
-    setIsTimelineActive(true);
-    setTemporalYear(year);
-    if (moment) {
-      setActiveHistoricalMoment(moment);
-      confetti({ particleCount: 45, spread: 55, origin: { y: 0.7 } });
-    } else {
-      setActiveHistoricalMoment(null);
-    }
-  }, []);
-
-  // Loading preset creates a new tree without overwriting active tree
-  const handleSelectPreset = (presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => {
-    let nextTree: TreeData;
-    if (presetKey === 'double_in_law') {
-      nextTree = createDoubleInLawPreset();
-    } else if (presetKey === 'divorce') {
-      nextTree = createDivorceBlendedPreset();
-    } else if (presetKey === 'royal') {
-      nextTree = createThreeGenSampleTree();
-    } else {
-      nextTree = createBlankTree();
-    }
-    nextTree.id = `tree_${presetKey}_${Date.now().toString(36)}`;
-    saveCurrentTree(nextTree);
-    handleSwitchTree(nextTree);
-  };
-
-  const handleExportJson = () => {
-    exportTreeToJsonFile(tree);
-  };
-
-  const handleExportGedcom = () => {
-    exportGedcomToFile(tree);
-    confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-  };
-
-  // Unified File Import: Automatically detects GEDCOM or JSON
   const handleImportFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -914,9 +627,8 @@ function FamilyTreeMain() {
   };
 
   const handleExportImage = async () => {
-    const plane = document.getElementById('tree-capture-plane');
     const container = canvasContainerRef.current;
-    if (!plane || !container) return;
+    if (!container) return;
 
     try {
       const dataUrl = await toPng(container, {
@@ -953,13 +665,11 @@ function FamilyTreeMain() {
         } else if (activeHistoricalMoment) {
           setActiveHistoricalMoment(null);
         } else if (focusPersonId) {
-          setFocusPersonId(null);
+          clearFocus();
         } else if (comparisonPersonId) {
           setComparisonPersonId(null);
         } else {
-          setSelectedPersonId(null);
-          setSelectedPersonIds(new Set());
-          setSelectedUnionId(null);
+          clearSelection();
         }
         setRelModal((prev) => ({ ...prev, isOpen: false }));
       }
@@ -977,14 +687,27 @@ function FamilyTreeMain() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [comparisonPersonId, focusPersonId, isTimelineActive, tree, activeHistoricalMoment, contextMenu, isCreateTreeModalOpen]);
+  }, [
+    comparisonPersonId,
+    focusPersonId,
+    isTimelineActive,
+    tree,
+    activeHistoricalMoment,
+    contextMenu,
+    isCreateTreeModalOpen,
+    clearFocus,
+    setComparisonPersonId,
+    clearSelection,
+    setActiveHistoricalMoment,
+    setTemporalYear,
+  ]);
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-slate-50 relative">
       {/* Top Navbar */}
       <TopNavbar
         tree={tree}
-        onUpdateTreeName={handleUpdateTreeName}
+        onUpdateTreeName={updateTreeName}
         onSelectPreset={handleSelectPreset}
         onOpenTreeManager={() => setIsTreeManagerOpen(true)}
         onOpenShareModal={() => setIsShareModalOpen(true)}
@@ -994,12 +717,19 @@ function FamilyTreeMain() {
         cloudSyncStatus={cloudSyncStatus}
         cloudSyncError={cloudSyncError}
         onMakeCopy={handleMakeCopy}
-        onAddPerson={handleAddPerson}
-        onExportJson={handleExportJson}
-        onExportGedcom={handleExportGedcom}
+        onAddPerson={() => {
+          if (isReadOnly) return;
+          const p = addPerson({ firstName: '', lastName: '' });
+          selectPerson(p.id);
+        }}
+        onExportJson={() => exportTreeToJsonFile(tree)}
+        onExportGedcom={() => {
+          exportGedcomToFile(tree);
+          confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+        }}
         onImportFile={handleImportFile}
         onExportImage={handleExportImage}
-        onSelectPerson={(id) => handleSelectPerson(id)}
+        onSelectPerson={(id) => selectPerson(id)}
         onOpenEdgeCaseModal={() => setIsEdgeCaseModalOpen(true)}
         onUndo={undo}
         onRedo={redo}
@@ -1009,7 +739,6 @@ function FamilyTreeMain() {
 
       {/* Main Canvas Area */}
       <main className="flex-1 relative w-full h-full overflow-hidden touch-none select-none overscroll-none">
-        {/* Cloud Loading Spinner Overlay */}
         {cloudLoading && (
           <div className="absolute inset-0 bg-white/60 backdrop-blur-xs z-50 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
             <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
@@ -1046,7 +775,7 @@ function FamilyTreeMain() {
             </div>
             <button
               onClick={() => {
-                setFocusPersonId(null);
+                clearFocus();
                 setTimeout(fitToScreen, 60);
               }}
               className="bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors flex items-center gap-1 text-white shadow-xs"
@@ -1067,19 +796,19 @@ function FamilyTreeMain() {
           relationshipPathIds={currentRelationship?.path || []}
           temporalYear={isTimelineActive ? temporalYear : null}
           activeMoment={activeHistoricalMoment}
-          onSelectPerson={handleSelectPerson}
-          onMultiSelectPeople={handleMultiSelectPeople}
+          onSelectPerson={selectPerson}
+          onMultiSelectPeople={multiSelectPeople}
           onPersonContextMenu={handlePersonContextMenu}
           onCanvasContextMenu={handleCanvasContextMenu}
-          onUpdatePersonPosition={handleUpdatePersonPosition}
-          onFinishDragPerson={handleFinishDragPerson}
-          onToggleCollapse={handleToggleCollapse}
-          onAddChild={(id) => handleOpenAddRelationship(id, 'child')}
-          onAddPartner={(id) => handleOpenAddRelationship(id, 'partner')}
-          onAddSibling={(id) => handleOpenAddRelationship(id, 'sibling')}
-          onAddParent={(id) => handleOpenAddRelationship(id, 'parent')}
+          onUpdatePersonPosition={(id, x, y) => updatePersonPosition(id, x, y, layoutStyle)}
+          onFinishDragPerson={() => setTree((prev) => ({ ...prev }), true)}
+          onToggleCollapse={toggleCollapse}
+          onAddChild={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'child' })}
+          onAddPartner={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'partner' })}
+          onAddSibling={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'sibling' })}
+          onAddParent={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'parent' })}
           onAddChildToUnion={handleAddChildToUnion}
-          onSelectUnion={(id) => setSelectedUnionId(id)}
+          onSelectUnion={setSelectedUnionId}
           zoom={zoom}
           setZoom={setZoom}
           pan={pan}
@@ -1087,7 +816,7 @@ function FamilyTreeMain() {
           canvasContainerRef={canvasContainerRef}
         />
 
-        {/* Floating Multi-Selection Action HUD */}
+        {/* Multi-Selection HUD */}
         {selectedPersonIds.size > 1 && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3.5 z-40 text-xs border border-slate-700/60 animate-in slide-in-from-bottom-3 duration-200">
             <div className="flex items-center gap-2">
@@ -1105,10 +834,7 @@ function FamilyTreeMain() {
               <span>Create new tree</span>
             </button>
             <button
-              onClick={() => {
-                setSelectedPersonIds(new Set());
-                setSelectedPersonId(null);
-              }}
+              onClick={clearSelection}
               className="text-slate-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               title="Deselect all"
             >
@@ -1117,7 +843,7 @@ function FamilyTreeMain() {
           </div>
         )}
 
-        {/* Context Menu on Right Click */}
+        {/* Context Menu */}
         {contextMenu && (
           <ContextMenu
             isOpen={contextMenu.isOpen}
@@ -1130,8 +856,7 @@ function FamilyTreeMain() {
             }}
             onDeselectAll={() => {
               setContextMenu(null);
-              setSelectedPersonIds(new Set());
-              setSelectedPersonId(null);
+              clearSelection();
             }}
             onClose={() => setContextMenu(null)}
           />
@@ -1148,14 +873,29 @@ function FamilyTreeMain() {
           }}
           onFitToScreen={fitToScreen}
           layoutStyle={layoutStyle}
-          onToggleLayoutStyle={handleToggleLayoutStyle}
-          onResetLayout={handleResetLayout}
+          onToggleLayoutStyle={() => {
+            toggleLayoutStyle();
+            setTimeout(fitToScreen, 60);
+          }}
+          onResetLayout={() => {
+            resetLayoutAction();
+            setTimeout(fitToScreen, 50);
+          }}
           groupByFamily={groupByFamily}
-          onToggleGroupByFamily={handleToggleGroupByFamily}
+          onToggleGroupByFamily={() => {
+            toggleGroupByFamily();
+            setTimeout(fitToScreen, 60);
+          }}
           adjustSpacing={adjustSpacing}
-          onToggleAdjustSpacing={handleToggleAdjustSpacing}
+          onToggleAdjustSpacing={() => {
+            toggleAdjustSpacing();
+            setTimeout(fitToScreen, 50);
+          }}
           isTimelineActive={isTimelineActive}
-          onToggleTimeline={handleToggleTimeline}
+          onToggleTimeline={() => {
+            const { defaultYear } = getTreeYearBounds(tree);
+            toggleTimeline(defaultYear);
+          }}
           temporalYear={isTimelineActive ? temporalYear : null}
         />
 
@@ -1164,10 +904,10 @@ function FamilyTreeMain() {
           <RelationshipCard
             tree={tree}
             relationship={currentRelationship}
-            onSwap={handleSwapComparison}
+            onSwap={swapComparison}
             onClose={() => setComparisonPersonId(null)}
             onSelectPerson={(id) => {
-              setSelectedPersonId(id);
+              selectPerson(id);
               setComparisonPersonId(null);
             }}
           />
@@ -1179,10 +919,7 @@ function FamilyTreeMain() {
             tree={tree}
             temporalYear={temporalYear}
             onYearChange={(y) => setTemporalYear(y)}
-            onClose={() => {
-              setIsTimelineActive(false);
-              setActiveHistoricalMoment(null);
-            }}
+            onClose={closeTimeline}
             activeMoment={activeHistoricalMoment}
             onSelectMoment={(m) => {
               setActiveHistoricalMoment(m);
@@ -1200,31 +937,34 @@ function FamilyTreeMain() {
           comparisonPersonId={comparisonPersonId}
           relationship={currentRelationship}
           isFocused={focusPersonId === selectedPersonId}
-          onToggleFocus={handleToggleFocus}
-          isCollapsed={selectedPersonId ? collapsedPersonIds.has(selectedPersonId) : false}
-          onToggleCollapse={handleToggleCollapse}
-          onClearComparison={() => setComparisonPersonId(null)}
-          onClose={() => {
-            setSelectedPersonId(null);
-            setComparisonPersonId(null);
+          onToggleFocus={(id) => {
+            toggleFocus(id);
+            setTimeout(fitToScreen, 60);
           }}
-          onUpdatePerson={handleUpdatePerson}
-          onDeletePerson={handleDeletePerson}
-          onSelectPerson={(id) => handleSelectPerson(id)}
-          onAddChild={(id) => handleOpenAddRelationship(id, 'child')}
-          onAddPartner={(id) => handleOpenAddRelationship(id, 'partner')}
-          onAddSibling={(id) => handleOpenAddRelationship(id, 'sibling')}
-          onAddParent={(id) => handleOpenAddRelationship(id, 'parent')}
-          onUnlinkPartner={handleUnlinkPartner}
-          onUnlinkChild={handleUnlinkChild}
-          onUnlinkParentFromChild={handleUnlinkParentFromChild}
-          onEditUnion={(id) => setSelectedUnionId(id)}
-          onJumpToYear={handleJumpToYear}
+          isCollapsed={selectedPersonId ? collapsedPersonIds.has(selectedPersonId) : false}
+          onToggleCollapse={toggleCollapse}
+          onClearComparison={() => setComparisonPersonId(null)}
+          onClose={clearSelection}
+          onUpdatePerson={updatePerson}
+          onDeletePerson={(id) => {
+            deletePerson(id);
+            if (selectedPersonId === id) clearSelection();
+          }}
+          onSelectPerson={(id) => selectPerson(id)}
+          onAddChild={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'child' })}
+          onAddPartner={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'partner' })}
+          onAddSibling={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'sibling' })}
+          onAddParent={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'parent' })}
+          onUnlinkPartner={unlinkPartnerAction}
+          onUnlinkChild={unlinkChildAction}
+          onUnlinkParentFromChild={unlinkParentFromChildAction}
+          onEditUnion={setSelectedUnionId}
+          onJumpToYear={jumpToYear}
           isReadOnly={isReadOnly}
         />
       </main>
 
-      {/* Tree Manager Modal */}
+      {/* Modals */}
       <TreeManagerModal
         isOpen={isTreeManagerOpen}
         onClose={() => setIsTreeManagerOpen(false)}
@@ -1233,7 +973,6 @@ function FamilyTreeMain() {
         onOpenShareModal={() => setIsShareModalOpen(true)}
       />
 
-      {/* Google Drive-Style Share Modal */}
       <ShareTreeModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
@@ -1241,11 +980,10 @@ function FamilyTreeMain() {
         isCloudTree={isCloudTree}
         onTreeUpdated={(updatedCloudTree) => {
           lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(updatedCloudTree);
-          setTree(updatedCloudTree);
+          resetHistory(updatedCloudTree);
           setIsCloudTree(true);
           setUserPermission('owner');
           setCloudSyncStatus('synced');
-          setCloudSyncError(null);
           window.history.pushState({}, '', `?treeId=${encodeURIComponent(updatedCloudTree.id)}`);
         }}
       />
@@ -1293,14 +1031,12 @@ function FamilyTreeMain() {
         </div>
       )}
 
-      {/* Edge Case Solution Modal */}
       <EdgeCaseModal
         isOpen={isEdgeCaseModalOpen}
         onClose={() => setIsEdgeCaseModalOpen(false)}
         onLoadDemo={() => handleSelectPreset('double_in_law')}
       />
 
-      {/* Add or Link Relationship Modal */}
       <AddRelationshipModal
         isOpen={relModal.isOpen}
         onClose={() => setRelModal((prev) => ({ ...prev, isOpen: false }))}
@@ -1311,22 +1047,20 @@ function FamilyTreeMain() {
         onLinkExisting={handleLinkExistingRelation}
       />
 
-      {/* Edit Relationship / Marriage / Divorce Modal */}
       <EditUnionModal
         isOpen={Boolean(selectedUnionId)}
         onClose={() => setSelectedUnionId(null)}
         tree={tree}
         unionId={selectedUnionId}
-        onUpdateUnion={handleUpdateUnion}
-        onDeleteUnion={handleDeleteUnion}
+        onUpdateUnion={updateUnion}
+        onDeleteUnion={deleteUnion}
         onAddChildToUnion={handleAddChildToUnion}
         onSelectPerson={(id) => {
-          setSelectedPersonId(id);
+          selectPerson(id);
           setSelectedUnionId(null);
         }}
       />
 
-      {/* Create Tree From Selection Modal */}
       {isCreateTreeModalOpen && (
         <CreateTreeFromSelectionModal
           isOpen={isCreateTreeModalOpen}

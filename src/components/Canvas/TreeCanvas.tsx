@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { TreeData, LayoutNode, TreeLayout, LayoutStyle } from '../../types/tree';
 import { PersonCard } from './PersonCard';
 import { ConnectorLines } from './ConnectorLines';
@@ -93,8 +93,10 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     marqueeBoxRef.current = marqueeBox;
   }, [isMarqueeSelecting, marqueeBox]);
 
-  // Dragging a Person Card
+  // Dragging a Person Card (transient 60/120 FPS drag without triggering layout recomputations)
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; nodeX: number; nodeY: number }>({
     mouseX: 0,
     mouseY: 0,
@@ -110,6 +112,57 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     zoomRef.current = zoom;
     panRef.current = pan;
   }, [zoom, pan]);
+
+  // Viewport culling bounding box in canvas coordinates
+  const [viewportRect, setViewportRect] = useState<{
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const updateViewport = () => {
+      const rect = container.getBoundingClientRect();
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const margin = 350 / currentZoom;
+      setViewportRect({
+        minX: -currentPan.x / currentZoom - margin,
+        minY: -currentPan.y / currentZoom - margin,
+        maxX: (rect.width - currentPan.x) / currentZoom + margin,
+        maxY: (rect.height - currentPan.y) / currentZoom + margin,
+      });
+    };
+
+    updateViewport();
+    const ro = new ResizeObserver(updateViewport);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [pan.x, pan.y, zoom, canvasContainerRef]);
+
+  // Viewport-culled visible nodes for rendering scalability
+  const visibleNodes = useMemo(() => {
+    const allNodes = Object.values(layout.nodes);
+    // If fewer than 40 nodes, render all directly without culling overhead
+    if (!viewportRect || allNodes.length < 40) {
+      return allNodes;
+    }
+    return allNodes.filter((node) => {
+      if (node.id === selectedPersonId || node.id === draggingPersonId) return true;
+      const nodeRight = node.x + node.width;
+      const nodeBottom = node.y + node.height;
+      return (
+        nodeRight >= viewportRect.minX &&
+        node.x <= viewportRect.maxX &&
+        nodeBottom >= viewportRect.minY &&
+        node.y <= viewportRect.maxY
+      );
+    });
+  }, [layout.nodes, viewportRect, selectedPersonId, draggingPersonId]);
 
   // Non-passive wheel listener attached to container to allow e.preventDefault() without console errors
   useEffect(() => {
@@ -409,10 +462,9 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           hasMovedCardRef.current = true;
         }
 
-        const newX = dragStartRef.current.nodeX + dx;
-        const newY = dragStartRef.current.nodeY + dy;
-
-        onUpdatePersonPosition(draggingPersonId, newX, newY);
+        const offset = { x: dx, y: dy };
+        dragOffsetRef.current = offset;
+        setDragOffset(offset);
       }
     };
 
@@ -465,10 +517,18 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         setIsPanning(false);
       }
       if (draggingPersonId) {
-        if (hasMovedCardRef.current && onFinishDragPerson) {
-          onFinishDragPerson(draggingPersonId);
+        if (hasMovedCardRef.current) {
+          const finalOffset = dragOffsetRef.current || { x: 0, y: 0 };
+          const finalX = dragStartRef.current.nodeX + finalOffset.x;
+          const finalY = dragStartRef.current.nodeY + finalOffset.y;
+          onUpdatePersonPosition(draggingPersonId, finalX, finalY);
+          if (onFinishDragPerson) {
+            onFinishDragPerson(draggingPersonId);
+          }
         }
         setDraggingPersonId(null);
+        setDragOffset(null);
+        dragOffsetRef.current = null;
       }
     };
 
@@ -557,8 +617,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           onSelectUnion={onSelectUnion}
         />
 
-        {/* HTML Interactive Person Cards */}
-        {Object.values(layout.nodes).map((node: LayoutNode) => {
+        {/* HTML Interactive Person Cards (Culled to visible viewport) */}
+        {visibleNodes.map((node: LayoutNode) => {
           const person = node.data;
           const hasDescendants = (person.unionIds || []).some(
             (uId) => (_tree.unions[uId]?.childrenIds?.length || 0) > 0
@@ -574,6 +634,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             <PersonCard
               key={node.id}
               node={node}
+              dragOffset={draggingPersonId === node.id ? dragOffset : null}
               layoutStyle={layoutStyle}
               isSelected={selectedPersonId === node.id}
               isMultiSelected={selectedPersonIds ? selectedPersonIds.has(node.id) : false}

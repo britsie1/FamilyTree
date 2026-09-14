@@ -26,6 +26,7 @@ interface PersonCardProps {
   onAddSibling: (personId: string) => void;
   onAddParent: (personId: string) => void;
   onDragStart: (e: React.MouseEvent, personId: string) => void;
+  dragOffset?: { x: number; y: number } | null;
 }
 
 export const PersonCard: React.FC<PersonCardProps> = ({
@@ -50,8 +51,11 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   onAddSibling,
   onAddParent,
   onDragStart,
+  dragOffset = null,
 }) => {
   const { data: person, x, y, width, height } = node;
+  const currentX = dragOffset ? x + dragOffset.x : x;
+  const currentY = dragOffset ? y + dragOffset.y : y;
 
   const displayName = getPersonDisplayName(person);
   const fullName = getPersonFullName(person);
@@ -131,7 +135,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
     <div
       style={{
         position: 'absolute',
-        transform: `translate(${x}px, ${y}px)`,
+        transform: `translate(${currentX}px, ${currentY}px)`,
         width: `${width}px`,
         height: `${height}px`,
       }}
