@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { TreeData, Person, UnionType, LayoutStyle, Union } from './types/tree';
+import type { TreeData, Person, UnionType, LayoutStyle, Union, UserPermission, CloudTreeData } from './types/tree';
 import {
   loadCurrentTree,
   saveCurrentTree,
@@ -9,6 +9,7 @@ import {
   createDivorceBlendedPreset,
   createThreeGenSampleTree,
   createBlankTree,
+  generateId,
 } from './services/storage';
 import {
   addChildToPerson,
@@ -41,17 +42,35 @@ import { AddRelationshipModal, type RelationType } from './components/Modal/AddR
 import { EditUnionModal } from './components/Modal/EditUnionModal';
 import { TreeManagerModal } from './components/Modal/TreeManagerModal';
 import { CreateTreeFromSelectionModal } from './components/Modal/CreateTreeFromSelectionModal';
+import { ShareTreeModal } from './components/Modal/ShareTreeModal';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import {
+  getCloudTree,
+  saveTreeToCloud,
+  subscribeToCloudTree,
+  resolveUserPermission,
+} from './services/firestoreService';
 import { toPng } from 'html-to-image';
 import confetti from 'canvas-confetti';
 import { findRelationship, type RelationshipResult } from './services/relationshipFinder';
 import { RelationshipCard } from './components/Canvas/RelationshipCard';
 import { useTreeHistory } from './hooks/useTreeHistory';
 import { parseGedcom, exportGedcomToFile } from './services/gedcomService';
-import { Target, X, GitFork } from 'lucide-react';
+import { Target, X, GitFork, Lock, LogIn, Eye, Copy, Loader2 } from 'lucide-react';
 import { TemporalScrubBar } from './components/Toolbar/TemporalScrubBar';
 import { getTreeYearBounds, type HistoricalMoment } from './services/temporalEngine';
 
 export function App() {
+  return (
+    <AuthProvider>
+      <FamilyTreeMain />
+    </AuthProvider>
+  );
+}
+
+function FamilyTreeMain() {
+  const { user, signInWithGoogle } = useAuth();
+
   const {
     tree,
     setTree,
@@ -61,6 +80,13 @@ export function App() {
     canRedo,
     resetHistory,
   } = useTreeHistory(loadCurrentTree());
+
+  const [isCloudTree, setIsCloudTree] = useState<boolean>(false);
+  const [userPermission, setUserPermission] = useState<UserPermission>('owner');
+  const isReadOnly = userPermission === 'viewer';
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [cloudLoading, setCloudLoading] = useState<boolean>(false);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
 
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('vertical');
   const [groupByFamily, setGroupByFamily] = useState<boolean>(false);
@@ -110,10 +136,120 @@ export function App() {
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Check URL params for ?treeId=... on initial mount and when user changes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlTreeId = params.get('treeId');
+
+    if (!urlTreeId) {
+      setIsCloudTree(false);
+      setUserPermission('owner');
+      setAccessDeniedMessage(null);
+      return;
+    }
+
+    let isMounted = true;
+    setCloudLoading(true);
+    setAccessDeniedMessage(null);
+
+    getCloudTree(urlTreeId)
+      .then((cloudTree) => {
+        if (!isMounted) return;
+        if (!cloudTree) {
+          setAccessDeniedMessage('The requested family tree could not be found or does not exist.');
+          return;
+        }
+
+        const perm = resolveUserPermission(cloudTree, user);
+        if (perm === 'none') {
+          if (!user) {
+            setAccessDeniedMessage('This tree is private. Sign in with Google to check if you have access.');
+          } else {
+            setAccessDeniedMessage('You do not have permission to view this tree. Ask the owner to share it with your email.');
+          }
+        } else {
+          setTree(cloudTree);
+          setIsCloudTree(true);
+          setUserPermission(perm);
+          setAccessDeniedMessage(null);
+          resetHistory(cloudTree);
+          const initialId = cloudTree.rootPersonId || Object.keys(cloudTree.people)[0] || null;
+          setSelectedPersonId(initialId);
+          setSelectedPersonIds(new Set(initialId ? [initialId] : []));
+          setComparisonPersonId(null);
+          setFocusPersonId(null);
+        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.error('Failed to fetch cloud tree:', err);
+        setAccessDeniedMessage('Could not load tree from cloud: ' + err.message);
+      })
+      .finally(() => {
+        if (isMounted) setCloudLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, resetHistory, setTree]);
+
+  // Real-time listener when viewing or editing a cloud tree
+  useEffect(() => {
+    if (!isCloudTree || !tree.id || userPermission === 'none') return;
+
+    const unsubscribe = subscribeToCloudTree(
+      tree.id,
+      (remoteTree) => {
+        if (remoteTree) {
+          setTree(remoteTree);
+        }
+      },
+      (err) => {
+        console.error('Real-time sync error:', err);
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isCloudTree, tree.id, userPermission, setTree]);
+
   // Auto-save whenever tree changes
   useEffect(() => {
+    // Only persist if not read-only
+    if (userPermission === 'viewer') return;
+
     saveCurrentTree(tree);
-  }, [tree]);
+
+    // If active tree is a cloud tree and user has write permissions, save to Firestore
+    if (isCloudTree && user && (userPermission === 'owner' || userPermission === 'editor')) {
+      saveTreeToCloud(tree, user).catch((err) => {
+        console.error('Failed to auto-save to cloud:', err);
+      });
+    }
+  }, [tree, isCloudTree, user, userPermission]);
+
+  // Make a Copy handler (Google Drive-style)
+  const handleMakeCopy = useCallback(() => {
+    const newId = generateId('tree');
+    const now = new Date().toISOString();
+    const copy: TreeData = {
+      ...tree,
+      id: newId,
+      name: `${tree.name || 'Family Tree'} (Copy)`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    saveCurrentTree(copy);
+    setTree(copy);
+    resetHistory(copy);
+    setIsCloudTree(false);
+    setUserPermission('owner');
+    setAccessDeniedMessage(null);
+    window.history.replaceState({}, '', window.location.pathname);
+    confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+  }, [tree, setTree, resetHistory]);
 
   // Active tree filtered for focus mode if active
   const activeTree = useMemo(() => {
@@ -512,6 +648,7 @@ export function App() {
   };
 
   const handleAddPerson = () => {
+    if (isReadOnly) return;
     const newPerson = createEmptyPerson({
       firstName: '',
       lastName: '',
@@ -544,9 +681,20 @@ export function App() {
   };
 
   // Switching or loading a tree
-  const handleSwitchTree = (newTree: TreeData) => {
+  const handleSwitchTree = (newTree: TreeData, isCloud: boolean = false) => {
     setTree(newTree);
     resetHistory(newTree);
+    setIsCloudTree(isCloud);
+
+    if (isCloud) {
+      const perm = resolveUserPermission(newTree as CloudTreeData, user);
+      setUserPermission(perm);
+      window.history.pushState({}, '', `?treeId=${encodeURIComponent(newTree.id)}`);
+    } else {
+      setUserPermission('owner');
+      window.history.pushState({}, '', window.location.pathname);
+    }
+
     const initialPersonId = newTree.rootPersonId || Object.keys(newTree.people)[0] || null;
     setSelectedPersonId(initialPersonId);
     setSelectedPersonIds(new Set(initialPersonId ? [initialPersonId] : []));
@@ -555,6 +703,7 @@ export function App() {
     setFocusPersonId(null);
     setCollapsedPersonIds(new Set());
     setContextMenu(null);
+    setAccessDeniedMessage(null);
     const { defaultYear } = getTreeYearBounds(newTree);
     setTemporalYear(defaultYear);
     setActiveHistoricalMoment(null);
@@ -708,34 +857,54 @@ export function App() {
       {/* Top Navbar */}
       <TopNavbar
         tree={tree}
-        layoutStyle={layoutStyle}
-        onToggleLayoutStyle={handleToggleLayoutStyle}
-        groupByFamily={groupByFamily}
-        onToggleGroupByFamily={handleToggleGroupByFamily}
-        adjustSpacing={adjustSpacing}
-        onToggleAdjustSpacing={handleToggleAdjustSpacing}
         onUpdateTreeName={handleUpdateTreeName}
         onSelectPreset={handleSelectPreset}
         onOpenTreeManager={() => setIsTreeManagerOpen(true)}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
+        isReadOnly={isReadOnly}
+        isCloudTree={isCloudTree}
+        userPermission={userPermission}
+        onMakeCopy={handleMakeCopy}
         onAddPerson={handleAddPerson}
         onExportJson={handleExportJson}
         onExportGedcom={handleExportGedcom}
         onImportFile={handleImportFile}
         onExportImage={handleExportImage}
-        onResetLayout={handleResetLayout}
         onSelectPerson={(id) => handleSelectPerson(id)}
         onOpenEdgeCaseModal={() => setIsEdgeCaseModalOpen(true)}
         onUndo={undo}
         onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        isTimelineActive={isTimelineActive}
-        onToggleTimeline={handleToggleTimeline}
-        temporalYear={isTimelineActive ? temporalYear : null}
+        canUndo={canUndo && !isReadOnly}
+        canRedo={canRedo && !isReadOnly}
       />
 
       {/* Main Canvas Area */}
       <main className="flex-1 relative w-full h-full overflow-hidden">
+        {/* Cloud Loading Spinner Overlay */}
+        {cloudLoading && (
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-xs z-50 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+            <span>Loading tree from cloud...</span>
+          </div>
+        )}
+
+        {/* View-Only Mode Banner */}
+        {isReadOnly && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3.5 z-40 text-xs animate-in slide-in-from-top duration-200 border border-amber-400 font-medium">
+            <div className="flex items-center gap-1.5 font-bold">
+              <Eye className="w-4 h-4 text-slate-950 flex-shrink-0" />
+              <span>You have View-Only access to this family tree.</span>
+            </div>
+            <button
+              onClick={handleMakeCopy}
+              className="bg-slate-950 hover:bg-slate-900 text-white px-3 py-1 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer hover:scale-105"
+            >
+              <Copy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Make a Copy to Edit</span>
+            </button>
+          </div>
+        )}
+
         {/* Floating Focus Mode Banner */}
         {focusPersonId && tree.people[focusPersonId] && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-indigo-900/90 text-white backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3 z-40 text-xs animate-in slide-in-from-top duration-200 border border-indigo-700/50">
@@ -849,6 +1018,16 @@ export function App() {
             setPan({ x: 200, y: 100 });
           }}
           onFitToScreen={fitToScreen}
+          layoutStyle={layoutStyle}
+          onToggleLayoutStyle={handleToggleLayoutStyle}
+          onResetLayout={handleResetLayout}
+          groupByFamily={groupByFamily}
+          onToggleGroupByFamily={handleToggleGroupByFamily}
+          adjustSpacing={adjustSpacing}
+          onToggleAdjustSpacing={handleToggleAdjustSpacing}
+          isTimelineActive={isTimelineActive}
+          onToggleTimeline={handleToggleTimeline}
+          temporalYear={isTimelineActive ? temporalYear : null}
         />
 
         {/* Floating Relationship Comparison Card */}
@@ -912,6 +1091,7 @@ export function App() {
           onUnlinkParentFromChild={handleUnlinkParentFromChild}
           onEditUnion={(id) => setSelectedUnionId(id)}
           onJumpToYear={handleJumpToYear}
+          isReadOnly={isReadOnly}
         />
       </main>
 
@@ -921,7 +1101,63 @@ export function App() {
         onClose={() => setIsTreeManagerOpen(false)}
         currentTreeId={tree.id}
         onSwitchTree={handleSwitchTree}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
       />
+
+      {/* Google Drive-Style Share Modal */}
+      <ShareTreeModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        tree={tree}
+        onTreeUpdated={(updatedCloudTree) => {
+          setTree(updatedCloudTree);
+          setIsCloudTree(true);
+          setUserPermission('owner');
+        }}
+      />
+
+      {/* Access Denied Overlay */}
+      {accessDeniedMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto shadow-xs">
+              <Lock className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Access Restricted</h3>
+              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                {accessDeniedMessage}
+              </p>
+            </div>
+            <div className="pt-2 flex flex-col gap-2">
+              {!user ? (
+                <button
+                  onClick={() => signInWithGoogle()}
+                  className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign in with Google</span>
+                </button>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Signed in as <strong>{user.email}</strong>
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  setAccessDeniedMessage(null);
+                  window.history.replaceState({}, '', window.location.pathname);
+                  const local = loadCurrentTree();
+                  handleSwitchTree(local, false);
+                }}
+                className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Return to My Local Trees
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edge Case Solution Modal */}
       <EdgeCaseModal

@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(resourceData) {
+      return isAuthenticated() && resourceData.ownerId == request.auth.uid;
+    }
+
+    function isSharedEmail(resourceData) {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             request.auth.token.email.lower() in resourceData.sharedEmails;
+    }
+
+    function isSharedEditor(resourceData) {
+      return isSharedEmail(resourceData) &&
+             resourceData.sharedWith[request.auth.token.email.lower().replace('@', '_at_').replace('.', '_dot_')].role == 'editor';
+    }
+
+    function isPublicViewable(resourceData) {
+      return resourceData.isPublic == true;
+    }
+
+    function isPublicEditable(resourceData) {
+      return resourceData.isPublic == true && resourceData.publicRole == 'editor';
+    }
+
+    // Rules for family tree documents
+    match /trees/{treeId} {
+      // Anyone can read if tree is public; otherwise owner or invited email
+      allow read: if isPublicViewable(resource.data) ||
+                     isOwner(resource.data) ||
+                     isSharedEmail(resource.data);
+
+      // Authenticated users can create new trees with themselves as owner
+      allow create: if isAuthenticated() &&
+                       request.resource.data.ownerId == request.auth.uid;
+
+      // Update allowed by owner, public editor, or invited editor
+      allow update: if isOwner(resource.data) ||
+                       isPublicEditable(resource.data) ||
+                       isSharedEditor(resource.data);
+
+      // Delete allowed only by owner
+      allow delete: if isOwner(resource.data);
+    }
+  }
+}

@@ -135,3 +135,46 @@ export interface TreeLayout {
     height: number;
   };
 }
+
+export type ShareRole = 'viewer' | 'editor';
+
+export interface SharedUser {
+  email: string;
+  role: ShareRole;
+  addedAt: string;
+}
+
+export interface SharingSettings {
+  isPublic: boolean;
+  publicRole: ShareRole;
+  sharedWith: Record<string, SharedUser>;
+  sharedEmails: string[];
+}
+
+export type UserPermission = 'owner' | 'editor' | 'viewer' | 'none';
+
+export interface CloudTreeMetadata {
+  ownerId: string;
+  ownerEmail: string;
+  ownerDisplayName?: string;
+  ownerPhotoURL?: string;
+  isPublic: boolean;
+  publicRole: ShareRole;
+  sharedWith: Record<string, SharedUser>;
+  sharedEmails: string[];
+}
+
+export interface CloudTreeData extends TreeData, CloudTreeMetadata {}
+
+export interface CloudTreeSummary {
+  id: string;
+  name: string;
+  updatedAt: string;
+  ownerId: string;
+  ownerEmail: string;
+  ownerDisplayName?: string;
+  role: UserPermission;
+  isPublic: boolean;
+  peopleCount: number;
+  unionCount: number;
+}

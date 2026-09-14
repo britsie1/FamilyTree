@@ -1,0 +1,339 @@
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  type Unsubscribe,
+} from 'firebase/firestore';
+import { getFirebaseDb } from './firebase';
+import type {
+  TreeData,
+  CloudTreeData,
+  CloudTreeMetadata,
+  CloudTreeSummary,
+  SharingSettings,
+  UserPermission,
+  ShareRole,
+} from '../types/tree';
+import { sanitizeTree } from './treeOperations';
+
+const TREES_COLLECTION = 'trees';
+
+/**
+ * Normalizes email address for consistent matching.
+ */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Escapes email address so it is safe to use as a nested Firestore map key.
+ */
+export function encodeEmailKey(email: string): string {
+  return normalizeEmail(email)
+    .replace(/%/g, '%25')
+    .replace(/\./g, '%2E')
+    .replace(/@/g, '%40')
+    .replace(/\//g, '%2F');
+}
+
+/**
+ * Decodes the encoded email key back to a standard email address.
+ */
+export function decodeEmailKey(key: string): string {
+  return decodeURIComponent(key);
+}
+
+/**
+ * Resolves user's effective permission for a given cloud tree.
+ */
+export function resolveUserPermission(
+  tree: CloudTreeMetadata | CloudTreeData,
+  user: { uid: string; email?: string | null } | null
+): UserPermission {
+  // 1. Owner has full permissions
+  if (user && tree.ownerId && tree.ownerId === user.uid) {
+    return 'owner';
+  }
+
+  // 2. Check if user is in closed shared email list
+  if (user?.email) {
+    const userEmail = normalizeEmail(user.email);
+    const encodedKey = encodeEmailKey(userEmail);
+
+    // Direct check in sharedWith map
+    if (tree.sharedWith && tree.sharedWith[encodedKey]) {
+      return tree.sharedWith[encodedKey].role;
+    }
+
+    // Fallback check by traversing sharedWith
+    if (tree.sharedWith) {
+      for (const entry of Object.values(tree.sharedWith)) {
+        if (normalizeEmail(entry.email) === userEmail) {
+          return entry.role;
+        }
+      }
+    }
+  }
+
+  // 3. Check general public link access
+  if (tree.isPublic) {
+    return tree.publicRole || 'viewer';
+  }
+
+  // 4. Access Denied
+  return 'none';
+}
+
+/**
+ * Recursively cleanses an object of any `undefined` values before writing to Firestore.
+ */
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => cleanForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object') {
+    const result: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (val !== undefined) {
+        result[key] = cleanForFirestore(val);
+      }
+    }
+    return result as T;
+  }
+  return data;
+}
+
+/**
+ * Saves or updates a tree in Firestore.
+ */
+export async function saveTreeToCloud(
+  tree: TreeData,
+  user: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null },
+  existingMetadata?: Partial<CloudTreeMetadata>
+): Promise<CloudTreeData> {
+  const db = getFirebaseDb();
+  if (!db) {
+    throw new Error('Firebase is not configured. Please add your Firebase configuration.');
+  }
+
+  const now = new Date().toISOString();
+  const sanitized = sanitizeTree(tree);
+
+  const metadata: CloudTreeMetadata = {
+    ownerId: existingMetadata?.ownerId || user.uid,
+    ownerEmail: existingMetadata?.ownerEmail || normalizeEmail(user.email || ''),
+    ownerDisplayName: existingMetadata?.ownerDisplayName || user.displayName || 'Anonymous',
+    ownerPhotoURL: existingMetadata?.ownerPhotoURL || user.photoURL || '',
+    isPublic: existingMetadata?.isPublic ?? false,
+    publicRole: existingMetadata?.publicRole || 'viewer',
+    sharedWith: existingMetadata?.sharedWith || {},
+    sharedEmails: existingMetadata?.sharedEmails || [],
+  };
+
+  const cloudTree: CloudTreeData = {
+    ...sanitized,
+    ...metadata,
+    updatedAt: now,
+  };
+
+  const docRef = doc(db, TREES_COLLECTION, cloudTree.id);
+  const cleanedData = cleanForFirestore(cloudTree);
+  await setDoc(docRef, cleanedData, { merge: true });
+
+  return cloudTree;
+}
+
+/**
+ * Loads a tree document from Firestore by its ID.
+ */
+export async function getCloudTree(treeId: string): Promise<CloudTreeData | null> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) return null;
+
+  try {
+    const docRef = doc(db, TREES_COLLECTION, treeId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as CloudTreeData;
+      return {
+        ...sanitizeTree(data),
+        ownerId: data.ownerId,
+        ownerEmail: data.ownerEmail,
+        ownerDisplayName: data.ownerDisplayName,
+        ownerPhotoURL: data.ownerPhotoURL,
+        isPublic: data.isPublic ?? false,
+        publicRole: data.publicRole || 'viewer',
+        sharedWith: data.sharedWith || {},
+        sharedEmails: data.sharedEmails || [],
+      };
+    }
+  } catch (err) {
+    console.error(`Error loading cloud tree ${treeId}:`, err);
+    throw err;
+  }
+  return null;
+}
+
+/**
+ * Subscribes to real-time changes of a cloud tree.
+ */
+export function subscribeToCloudTree(
+  treeId: string,
+  onUpdate: (tree: CloudTreeData | null) => void,
+  onError: (err: Error) => void
+): Unsubscribe | null {
+  const db = getFirebaseDb();
+  if (!db || !treeId) return null;
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as CloudTreeData;
+        const parsed: CloudTreeData = {
+          ...sanitizeTree(data),
+          ownerId: data.ownerId,
+          ownerEmail: data.ownerEmail,
+          ownerDisplayName: data.ownerDisplayName,
+          ownerPhotoURL: data.ownerPhotoURL,
+          isPublic: data.isPublic ?? false,
+          publicRole: data.publicRole || 'viewer',
+          sharedWith: data.sharedWith || {},
+          sharedEmails: data.sharedEmails || [],
+        };
+        onUpdate(parsed);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (err) => {
+      console.error(`Realtime subscription error for tree ${treeId}:`, err);
+      onError(err);
+    }
+  );
+}
+
+/**
+ * Lists all cloud trees owned by the user.
+ */
+export async function listUserCloudTrees(user: { uid: string }): Promise<CloudTreeSummary[]> {
+  const db = getFirebaseDb();
+  if (!db || !user?.uid) return [];
+
+  try {
+    const q = query(collection(db, TREES_COLLECTION), where('ownerId', '==', user.uid));
+    const querySnapshot = await getDocs(q);
+    const summaries: CloudTreeSummary[] = [];
+
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      summaries.push({
+        id: docSnap.id,
+        name: data.name || 'Untitled Tree',
+        updatedAt: data.updatedAt || new Date().toISOString(),
+        ownerId: data.ownerId,
+        ownerEmail: data.ownerEmail,
+        ownerDisplayName: data.ownerDisplayName,
+        role: 'owner',
+        isPublic: Boolean(data.isPublic),
+        peopleCount: data.people ? Object.keys(data.people).length : 0,
+        unionCount: data.unions ? Object.keys(data.unions).length : 0,
+      });
+    });
+
+    return summaries.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  } catch (err) {
+    console.error('Error listing user cloud trees:', err);
+    return [];
+  }
+}
+
+/**
+ * Lists all cloud trees shared with the user's email address.
+ */
+export async function listSharedWithMeTrees(user: { email?: string | null; uid: string }): Promise<CloudTreeSummary[]> {
+  const db = getFirebaseDb();
+  if (!db || !user?.email) return [];
+
+  try {
+    const normEmail = normalizeEmail(user.email);
+    const q = query(collection(db, TREES_COLLECTION), where('sharedEmails', 'array-contains', normEmail));
+    const querySnapshot = await getDocs(q);
+    const summaries: CloudTreeSummary[] = [];
+
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      // Skip if current user happens to be the owner
+      if (data.ownerId === user.uid) return;
+
+      const encodedKey = encodeEmailKey(normEmail);
+      const role: ShareRole = data.sharedWith?.[encodedKey]?.role || 'viewer';
+
+      summaries.push({
+        id: docSnap.id,
+        name: data.name || 'Untitled Tree',
+        updatedAt: data.updatedAt || new Date().toISOString(),
+        ownerId: data.ownerId,
+        ownerEmail: data.ownerEmail,
+        ownerDisplayName: data.ownerDisplayName,
+        role,
+        isPublic: Boolean(data.isPublic),
+        peopleCount: data.people ? Object.keys(data.people).length : 0,
+        unionCount: data.unions ? Object.keys(data.unions).length : 0,
+      });
+    });
+
+    return summaries.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  } catch (err) {
+    console.error('Error listing shared with me trees:', err);
+    return [];
+  }
+}
+
+/**
+ * Updates the sharing settings (general access + invited email list) of a cloud tree.
+ */
+export async function updateTreeSharingSettings(
+  treeId: string,
+  settings: SharingSettings
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not available');
+  }
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const now = new Date().toISOString();
+
+  await updateDoc(docRef, cleanForFirestore({
+    isPublic: settings.isPublic,
+    publicRole: settings.publicRole,
+    sharedWith: settings.sharedWith,
+    sharedEmails: settings.sharedEmails,
+    updatedAt: now,
+  }));
+}
+
+/**
+ * Deletes a cloud tree from Firestore.
+ */
+export async function deleteCloudTree(treeId: string): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) return;
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  await deleteDoc(docRef);
+}

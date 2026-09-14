@@ -8,7 +8,6 @@ import {
   getHistoricalMoments,
   computeRoomStats,
   getTreeYearBounds,
-  MAJOR_WORLD_EVENTS,
 } from '../src/services/temporalEngine';
 import type { Person, TreeData, Union } from '../src/types/tree';
 
