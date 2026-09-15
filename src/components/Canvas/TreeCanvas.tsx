@@ -1,8 +1,12 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { TreeData, LayoutNode, TreeLayout, LayoutStyle } from '../../types/tree';
 import { PersonCard } from './PersonCard';
 import { ConnectorLines } from './ConnectorLines';
 import { FamilyGroupEnclosures } from './FamilyGroupEnclosures';
+import { ConnectionCable, type PortType } from './ConnectionCable';
+import { QuickLinkMenu, type QuickLinkType } from './QuickLinkMenu';
+import { MiniMap } from './MiniMap';
+import { getPersonDisplayName } from '../../services/treeOperations';
 import {
   calculatePinchTransform,
   getTouchDistance,
@@ -38,10 +42,18 @@ interface TreeCanvasProps {
   canvasContainerRef: React.RefObject<HTMLDivElement | null>;
   temporalYear?: number | null;
   activeMoment?: any | null;
+  onQuickLink?: (sourcePersonId: string, targetPersonId: string, type: QuickLinkType) => void;
+  onQuickSpawnRelative?: (
+    sourcePersonId: string,
+    portType: PortType,
+    worldPosition: { x: number; y: number }
+  ) => void;
+  isMiniMapOpen?: boolean;
+  onToggleMiniMap?: () => void;
 }
 
 export const TreeCanvas: React.FC<TreeCanvasProps> = ({
-  tree: _tree,
+  tree,
   layout,
   layoutStyle = 'vertical',
   selectedPersonId,
@@ -68,8 +80,75 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   canvasContainerRef,
   temporalYear = null,
   activeMoment = null,
+  onQuickLink,
+  onQuickSpawnRelative,
+  isMiniMapOpen = true,
+  onToggleMiniMap,
 }) => {
   const [hoveredPersonId, setHoveredPersonId] = useState<string | null>(null);
+
+  // Interactive Cable Wiring & Port Connecting State
+  const [connectingState, setConnectingState] = useState<{
+    sourcePersonId: string;
+    portType: PortType;
+    startWorldX: number;
+    startWorldY: number;
+    currentWorldX: number;
+    currentWorldY: number;
+    hoveredTargetPersonId: string | null;
+    hasMoved: boolean;
+    startClientX: number;
+    startClientY: number;
+  } | null>(null);
+  const connectingStateRef = useRef(connectingState);
+
+  useEffect(() => {
+    connectingStateRef.current = connectingState;
+  }, [connectingState]);
+
+  // Floating QuickLink menu state
+  const [quickLinkMenu, setQuickLinkMenu] = useState<{
+    sourcePersonId: string;
+    targetPersonId: string;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  // Click suppression ref after dragging
+  const suppressClickRef = useRef(false);
+
+  // Container Dimensions for MiniMap
+  const [containerDimensions, setContainerDimensions] = useState<{ width: number; height: number }>({
+    width: 1200,
+    height: 800,
+  });
+
+  // Intercept click phase to suppress phantom clicks after dragging
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const handleClickCapture = (e: MouseEvent) => {
+      if (suppressClickRef.current) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+
+    container.addEventListener('click', handleClickCapture, true);
+    return () => container.removeEventListener('click', handleClickCapture, true);
+  }, [canvasContainerRef]);
+
+  // Keyboard shortcut: Escape cancels active cable drag or quick link menu
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (connectingStateRef.current) setConnectingState(null);
+        if (quickLinkMenu) setQuickLinkMenu(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [quickLinkMenu]);
 
   // Dragging Canvas (Panning)
   const [isPanning, setIsPanning] = useState(false);
@@ -127,6 +206,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
     const updateViewport = () => {
       const rect = container.getBoundingClientRect();
+      setContainerDimensions({ width: rect.width, height: rect.height });
       const currentZoom = zoomRef.current;
       const currentPan = panRef.current;
       const margin = 350 / currentZoom;
@@ -143,6 +223,31 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     ro.observe(container);
     return () => ro.disconnect();
   }, [pan.x, pan.y, zoom, canvasContainerRef]);
+
+  // Port mouse down initiates drag-to-connect visual cable
+  const handlePortMouseDown = useCallback((
+    e: React.MouseEvent,
+    personId: string,
+    portType: PortType,
+    startX: number,
+    startY: number
+  ) => {
+    e.stopPropagation();
+    const newConnecting = {
+      sourcePersonId: personId,
+      portType,
+      startWorldX: startX,
+      startWorldY: startY,
+      currentWorldX: startX,
+      currentWorldY: startY,
+      hoveredTargetPersonId: null,
+      hasMoved: false,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+    };
+    setConnectingState(newConnecting);
+    connectingStateRef.current = newConnecting;
+  }, []);
 
   // Viewport-culled visible nodes for rendering scalability
   const visibleNodes = useMemo(() => {
@@ -398,6 +503,9 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   // Mouse Down on Canvas (Start Panning or Marquee Selection)
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // Only left-click starts pan or marquee
+    if (quickLinkMenu) {
+      setQuickLinkMenu(null);
+    }
 
     // Only pan or marquee if clicking on empty background
     if (e.target === canvasContainerRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
@@ -438,6 +546,54 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   // Global Mouse Move & Mouse Up
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      if (connectingStateRef.current) {
+        const cs = connectingStateRef.current;
+        const clientDist = Math.hypot(e.clientX - cs.startClientX, e.clientY - cs.startClientY);
+        const hasMoved = cs.hasMoved || clientDist > 5;
+        if (hasMoved) {
+          suppressClickRef.current = true;
+        }
+
+        const currentZoom = zoomRef.current;
+        const currentPan = panRef.current;
+        const rawWorldX = (e.clientX - currentPan.x) / currentZoom;
+        const rawWorldY = (e.clientY - currentPan.y) / currentZoom;
+
+        // Detect candidate target card
+        let candidateTargetId: string | null = null;
+        for (const node of Object.values(layout.nodes)) {
+          if (node.id === cs.sourcePersonId) continue;
+          if (
+            rawWorldX >= node.x - 12 &&
+            rawWorldX <= node.x + node.width + 12 &&
+            rawWorldY >= node.y - 12 &&
+            rawWorldY <= node.y + node.height + 12
+          ) {
+            candidateTargetId = node.id;
+            break;
+          }
+        }
+
+        let snappedX = rawWorldX;
+        let snappedY = rawWorldY;
+        if (candidateTargetId && layout.nodes[candidateTargetId]) {
+          const targetNode = layout.nodes[candidateTargetId];
+          snappedX = targetNode.x + targetNode.width / 2;
+          snappedY = targetNode.y + targetNode.height / 2;
+        }
+
+        const updated = {
+          ...cs,
+          currentWorldX: snappedX,
+          currentWorldY: snappedY,
+          hoveredTargetPersonId: candidateTargetId,
+          hasMoved,
+        };
+        connectingStateRef.current = updated;
+        setConnectingState(updated);
+        return;
+      }
+
       if (isMarqueeRef.current) {
         const container = canvasContainerRef.current;
         if (container) {
@@ -468,7 +624,44 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      if (connectingStateRef.current) {
+        const cs = connectingStateRef.current;
+        const hasMoved = cs.hasMoved;
+        const targetId = cs.hoveredTargetPersonId;
+        const sourceId = cs.sourcePersonId;
+        const port = cs.portType;
+        const finalWorldX = cs.currentWorldX;
+        const finalWorldY = cs.currentWorldY;
+
+        setConnectingState(null);
+        connectingStateRef.current = null;
+
+        if (hasMoved) {
+          suppressClickRef.current = true;
+          setTimeout(() => {
+            suppressClickRef.current = false;
+          }, 150);
+
+          if (targetId) {
+            setQuickLinkMenu({
+              sourcePersonId: sourceId,
+              targetPersonId: targetId,
+              position: { x: e.clientX, y: e.clientY },
+            });
+          } else {
+            const screenDist = Math.hypot(e.clientX - cs.startClientX, e.clientY - cs.startClientY);
+            if (screenDist > 30 && onQuickSpawnRelative) {
+              onQuickSpawnRelative(sourceId, port, {
+                x: Math.round(finalWorldX - 100),
+                y: Math.round(finalWorldY - 45),
+              });
+            }
+          }
+        }
+        return;
+      }
+
       if (isMarqueeRef.current) {
         const box = marqueeBoxRef.current;
         if (box && Math.hypot(box.currentX - box.startX, box.currentY - box.startY) > 6) {
@@ -539,7 +732,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, draggingPersonId, zoom, setPan, onUpdatePersonPosition, onFinishDragPerson, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson]);
+  }, [isPanning, draggingPersonId, zoom, setPan, onUpdatePersonPosition, onFinishDragPerson, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson, onQuickSpawnRelative]);
 
   return (
     <div
@@ -617,17 +810,46 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           onSelectUnion={onSelectUnion}
         />
 
+        {/* Dynamic Drag-to-Connect Visual Cable */}
+        {connectingState && (
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              overflow: 'visible',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          >
+            <ConnectionCable
+              startX={connectingState.startWorldX}
+              startY={connectingState.startWorldY}
+              currentX={connectingState.currentWorldX}
+              currentY={connectingState.currentWorldY}
+              portType={connectingState.portType}
+              hoveredTargetName={
+                connectingState.hoveredTargetPersonId && tree.people[connectingState.hoveredTargetPersonId]
+                  ? getPersonDisplayName(tree.people[connectingState.hoveredTargetPersonId])
+                  : null
+              }
+            />
+          </svg>
+        )}
+
         {/* HTML Interactive Person Cards (Culled to visible viewport) */}
         {visibleNodes.map((node: LayoutNode) => {
           const person = node.data;
           const hasDescendants = (person.unionIds || []).some(
-            (uId) => (_tree.unions[uId]?.childrenIds?.length || 0) > 0
+            (uId) => (tree.unions[uId]?.childrenIds?.length || 0) > 0
           );
 
           const isRoomHonoree = Boolean(
             activeMoment &&
               ((activeMoment.personId && activeMoment.personId === node.id) ||
-                (activeMoment.unionId && _tree.unions[activeMoment.unionId]?.partnerIds.includes(node.id)))
+                (activeMoment.unionId && tree.unions[activeMoment.unionId]?.partnerIds.includes(node.id)))
           );
 
           return (
@@ -648,21 +870,58 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               activeMoment={activeMoment}
               onToggleCollapse={onToggleCollapse}
               onSelect={(id, e) => {
-                if (!hasMovedCardRef.current) {
+                if (!hasMovedCardRef.current && !suppressClickRef.current) {
                   onSelectPerson(id, e);
                 }
               }}
               onContextMenu={onPersonContextMenu}
-              onHover={setHoveredPersonId}
+              onHover={(id) => {
+                if (!connectingStateRef.current) {
+                  setHoveredPersonId(id);
+                }
+              }}
               onAddChild={onAddChild}
               onAddPartner={onAddPartner}
               onAddSibling={onAddSibling}
               onAddParent={onAddParent}
               onDragStart={handleCardDragStart}
+              onPortMouseDown={handlePortMouseDown}
+              isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
             />
           );
         })}
       </div>
+
+      {/* Floating QuickLink Menu HUD */}
+      {quickLinkMenu && (
+        <QuickLinkMenu
+          tree={tree}
+          sourcePersonId={quickLinkMenu.sourcePersonId}
+          targetPersonId={quickLinkMenu.targetPersonId}
+          position={quickLinkMenu.position}
+          onLink={(type) => {
+            onQuickLink?.(quickLinkMenu.sourcePersonId, quickLinkMenu.targetPersonId, type);
+            setQuickLinkMenu(null);
+          }}
+          onClose={() => setQuickLinkMenu(null)}
+        />
+      )}
+
+      {/* MiniMap Radar Navigator HUD */}
+      {isMiniMapOpen && (
+        <div className="absolute bottom-5 left-5 z-20 pointer-events-auto">
+          <MiniMap
+            layout={layout}
+            pan={pan}
+            zoom={zoom}
+            containerWidth={containerDimensions.width}
+            containerHeight={containerDimensions.height}
+            onPanChange={setPan}
+            isOpen={isMiniMapOpen}
+            onToggleOpen={onToggleMiniMap}
+          />
+        </div>
+      )}
     </div>
   );
 };

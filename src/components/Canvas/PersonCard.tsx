@@ -27,6 +27,14 @@ interface PersonCardProps {
   onAddParent: (personId: string) => void;
   onDragStart: (e: React.MouseEvent, personId: string) => void;
   dragOffset?: { x: number; y: number } | null;
+  onPortMouseDown?: (
+    e: React.MouseEvent,
+    personId: string,
+    portType: 'parent' | 'child' | 'partner' | 'sibling',
+    startX: number,
+    startY: number
+  ) => void;
+  isConnectTarget?: boolean;
 }
 
 export const PersonCard: React.FC<PersonCardProps> = ({
@@ -52,6 +60,8 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   onAddParent,
   onDragStart,
   dragOffset = null,
+  onPortMouseDown,
+  isConnectTarget = false,
 }) => {
   const { data: person, x, y, width, height } = node;
   const currentX = dragOffset ? x + dragOffset.x : x;
@@ -140,7 +150,9 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         height: `${height}px`,
       }}
       className={`group select-none pointer-events-auto transition-all duration-150 cursor-grab active:cursor-grabbing rounded-xl bg-white border border-l-4 shadow-sm ${cardStateClasses} ${
-        isSelected || isMultiSelected
+        isConnectTarget
+          ? 'ring-4 ring-indigo-500/80 border-indigo-500 shadow-2xl z-40 scale-[1.03] animate-pulse'
+          : isSelected || isMultiSelected
           ? 'ring-2 ring-indigo-600 border-indigo-600 shadow-lg z-30'
           : isCompared
           ? 'ring-2 ring-purple-600 border-purple-600 shadow-lg z-30'
@@ -311,10 +323,14 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         >
         {layoutStyle === 'horizontal' ? (
           <>
-            {/* Left: + Parent (in horizontal layout, previous generation is to the left) */}
+            {/* Left: + Parent */}
             <button
-              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Parent"
+              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add parent or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'parent', currentX, currentY + height / 2);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddParent(person.id);
@@ -323,10 +339,14 @@ export const PersonCard: React.FC<PersonCardProps> = ({
               <ArrowLeft className="w-3.5 h-3.5" />
             </button>
 
-            {/* Right: + Child (in horizontal layout, next generation is to the right) */}
+            {/* Right: + Child */}
             <button
-              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-105 text-xs font-medium"
-              title="Add Child"
+              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-95"
+              title="Click to add child or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'child', currentX + width, currentY + height / 2);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddChild(person.id);
@@ -338,8 +358,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Top: + Partner */}
             <button
-              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Spouse / Partner"
+              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add spouse or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'partner', currentX + width / 2, currentY);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddPartner(person.id);
@@ -350,8 +374,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Bottom: + Sibling */}
             <button
-              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Sibling"
+              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add sibling or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'sibling', currentX + width / 2, currentY + height);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddSibling(person.id);
@@ -364,8 +392,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           <>
             {/* Top: + Parent */}
             <button
-              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Parent"
+              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add parent or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'parent', currentX + width / 2, currentY);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddParent(person.id);
@@ -376,8 +408,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Bottom: + Child */}
             <button
-              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-105 text-xs font-medium"
-              title="Add Child"
+              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-95"
+              title="Click to add child or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'child', currentX + width / 2, currentY + height);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddChild(person.id);
@@ -389,8 +425,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Right: + Partner */}
             <button
-              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Spouse / Partner"
+              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add spouse or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'partner', currentX + width, currentY + height / 2);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddPartner(person.id);
@@ -401,8 +441,12 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Left: + Sibling */}
             <button
-              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105"
-              title="Add Sibling"
+              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              title="Click to add sibling or drag cable to connect"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onPortMouseDown?.(e, person.id, 'sibling', currentX, currentY + height / 2);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddSibling(person.id);

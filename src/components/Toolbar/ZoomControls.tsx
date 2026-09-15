@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   Users,
   Clock,
+  Map,
 } from 'lucide-react';
 
 interface ZoomControlsProps {
@@ -29,6 +30,10 @@ interface ZoomControlsProps {
   onToggleGroupByFamily?: () => void;
   adjustSpacing?: boolean;
   onToggleAdjustSpacing?: () => void;
+
+  // MiniMap Navigator
+  isMiniMapOpen?: boolean;
+  onToggleMiniMap?: () => void;
 
   // 4D Timeline
   isTimelineActive?: boolean;
@@ -49,6 +54,8 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
   onToggleGroupByFamily,
   adjustSpacing = true,
   onToggleAdjustSpacing,
+  isMiniMapOpen = true,
+  onToggleMiniMap,
   isTimelineActive = false,
   onToggleTimeline,
   temporalYear,
@@ -210,6 +217,21 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
+
+        {/* Toggle MiniMap Radar Navigator */}
+        {onToggleMiniMap && (
+          <button
+            onClick={onToggleMiniMap}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0 ${
+              isMiniMapOpen
+                ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+            title={isMiniMapOpen ? 'Hide MiniMap radar navigator' : 'Show MiniMap radar navigator'}
+          >
+            <Map className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Reset Pan & Zoom */}
         <button

@@ -39,6 +39,11 @@ export interface CanvasStoreState {
   toggleCollapse: (personId: string) => void;
   clearSelection: () => void;
 
+  // MiniMap Radar Navigator
+  isMiniMapOpen: boolean;
+  toggleMiniMap: () => void;
+  setIsMiniMapOpen: (isOpen: boolean) => void;
+
   // Transient drag state (isolated from canonical tree mutations)
   draggingPersonId: string | null;
   dragOffset: { x: number; y: number } | null;
@@ -49,6 +54,13 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   // Viewport
   zoom: 0.9,
   pan: { x: 400, y: 150 },
+  isMiniMapOpen: true,
+  toggleMiniMap: () => {
+    set((state) => ({ isMiniMapOpen: !state.isMiniMapOpen }));
+  },
+  setIsMiniMapOpen: (isMiniMapOpen) => {
+    set({ isMiniMapOpen });
+  },
   setZoom: (zoomOrUpdater) => {
     set((state) => ({
       zoom: typeof zoomOrUpdater === 'function' ? zoomOrUpdater(state.zoom) : zoomOrUpdater,

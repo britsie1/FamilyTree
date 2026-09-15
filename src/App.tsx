@@ -18,6 +18,8 @@ import {
 import { getBranchPersonIds } from './services/layoutEngine';
 import { useAsyncLayout } from './services/layoutClient';
 import { TreeCanvas } from './components/Canvas/TreeCanvas';
+import type { QuickLinkType } from './components/Canvas/QuickLinkMenu';
+import type { PortType } from './components/Canvas/ConnectionCable';
 import { ContextMenu } from './components/Canvas/ContextMenu';
 import { TopNavbar } from './components/Toolbar/TopNavbar';
 import { ZoomControls } from './components/Toolbar/ZoomControls';
@@ -140,6 +142,8 @@ function FamilyTreeMain() {
   const clearFocus = useCanvasStore((s) => s.clearFocus);
   const toggleCollapse = useCanvasStore((s) => s.toggleCollapse);
   const clearSelection = useCanvasStore((s) => s.clearSelection);
+  const isMiniMapOpen = useCanvasStore((s) => s.isMiniMapOpen);
+  const toggleMiniMap = useCanvasStore((s) => s.toggleMiniMap);
 
   // Collab Store
   const isCloudTree = useCollabStore((s) => s.isCloudTree);
@@ -702,6 +706,61 @@ function FamilyTreeMain() {
     setTemporalYear,
   ]);
 
+  // Interactive Drag-to-Connect Quick Linking
+  const handleQuickLink = useCallback((
+    sourcePersonId: string,
+    targetPersonId: string,
+    type: QuickLinkType
+  ) => {
+    if (isReadOnly || sourcePersonId === targetPersonId) return;
+
+    if (type === 'child') {
+      linkChild(sourcePersonId, targetPersonId);
+    } else if (type === 'parent') {
+      linkParent(sourcePersonId, targetPersonId);
+    } else if (type === 'partner') {
+      linkPartner(sourcePersonId, targetPersonId);
+    } else if (type === 'sibling') {
+      linkSibling(sourcePersonId, targetPersonId);
+    }
+
+    confetti({
+      particleCount: 35,
+      spread: 55,
+      origin: { y: 0.65 },
+    });
+  }, [isReadOnly, linkChild, linkParent, linkPartner, linkSibling]);
+
+  // Interactive Drop-on-Empty-Space Quick Spawning
+  const handleQuickSpawnRelative = useCallback((
+    sourcePersonId: string,
+    portType: PortType,
+    worldPosition: { x: number; y: number }
+  ) => {
+    if (isReadOnly) return;
+
+    let newId = '';
+    if (portType === 'child') {
+      newId = addChild(sourcePersonId);
+    } else if (portType === 'parent') {
+      newId = addParent(sourcePersonId);
+    } else if (portType === 'partner') {
+      newId = addPartner(sourcePersonId);
+    } else if (portType === 'sibling') {
+      newId = addSibling(sourcePersonId);
+    }
+
+    if (newId) {
+      updatePersonPosition(newId, worldPosition.x, worldPosition.y, layoutStyle);
+      selectPerson(newId);
+      confetti({
+        particleCount: 30,
+        spread: 45,
+        origin: { y: 0.65 },
+      });
+    }
+  }, [isReadOnly, addChild, addParent, addPartner, addSibling, updatePersonPosition, layoutStyle, selectPerson]);
+
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-slate-50 relative">
       {/* Top Navbar */}
@@ -809,6 +868,10 @@ function FamilyTreeMain() {
           onAddParent={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'parent' })}
           onAddChildToUnion={handleAddChildToUnion}
           onSelectUnion={setSelectedUnionId}
+          onQuickLink={handleQuickLink}
+          onQuickSpawnRelative={handleQuickSpawnRelative}
+          isMiniMapOpen={isMiniMapOpen}
+          onToggleMiniMap={toggleMiniMap}
           zoom={zoom}
           setZoom={setZoom}
           pan={pan}
@@ -891,6 +954,8 @@ function FamilyTreeMain() {
             toggleAdjustSpacing();
             setTimeout(fitToScreen, 50);
           }}
+          isMiniMapOpen={isMiniMapOpen}
+          onToggleMiniMap={toggleMiniMap}
           isTimelineActive={isTimelineActive}
           onToggleTimeline={() => {
             const { defaultYear } = getTreeYearBounds(tree);
