@@ -2,6 +2,7 @@ import React from 'react';
 import type { TreeData, UnionType } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import { X, Calendar, Trash2, Plus, Heart, HeartCrack, MinusCircle } from 'lucide-react';
+import { DatePartsInput } from '../Common/DatePartsInput';
 
 interface EditUnionModalProps {
   isOpen: boolean;
@@ -127,29 +128,25 @@ export const EditUnionModal: React.FC<EditUnionModalProps> = ({
               Dates
             </label>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" /> Marriage Date
-                </label>
-                <input
-                  type="date"
-                  value={union.marriageDate || ''}
-                  onChange={(e) => onUpdateUnion(union.id, { marriageDate: e.target.value })}
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
+            <div className="space-y-2.5">
+              <div className="bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+                <DatePartsInput
+                  label="Marriage Date"
+                  icon={<Calendar className="w-3.5 h-3.5 text-slate-400" />}
+                  value={union.marriageDate}
+                  onChange={(val) => onUpdateUnion(union.id, { marriageDate: val })}
+                  yearPlaceholder="Marriage Year (YYYY)"
                 />
               </div>
 
               {(unionType === 'divorced' || unionType === 'separated' || union.divorceDate) && (
-                <div className="animate-in fade-in duration-150">
-                  <label className="block text-xs font-medium text-red-600 mb-1 flex items-center gap-1">
-                    <HeartCrack className="w-3.5 h-3.5 text-red-400" /> Divorce Date
-                  </label>
-                  <input
-                    type="date"
-                    value={union.divorceDate || ''}
-                    onChange={(e) => onUpdateUnion(union.id, { divorceDate: e.target.value })}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-red-200 focus:outline-none focus:border-red-500 bg-red-50/30"
+                <div className="bg-red-50/30 p-2.5 rounded-xl border border-red-200 animate-in fade-in duration-150">
+                  <DatePartsInput
+                    label="Divorce Date"
+                    icon={<HeartCrack className="w-3.5 h-3.5 text-red-400" />}
+                    value={union.divorceDate}
+                    onChange={(val) => onUpdateUnion(union.id, { divorceDate: val })}
+                    yearPlaceholder="Divorce Year (YYYY)"
                   />
                 </div>
               )}

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { RelationshipResult } from '../../services/relationshipFinder';
 import { extractYear } from '../../services/temporalEngine';
+import { DatePartsInput } from '../Common/DatePartsInput';
 
 interface PersonInspectorProps {
   tree: TreeData;
@@ -386,18 +387,15 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
           </div>
 
           {/* Birth */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-slate-400" /> Birth Date
-              </label>
-              <input
-                type="date"
-                value={person.birthDate || ''}
-                onChange={(e) => onUpdatePerson(person.id, { birthDate: e.target.value })}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+          <div className="space-y-2 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+            <DatePartsInput
+              label="Birth Date"
+              icon={<Calendar className="w-3 h-3 text-slate-400" />}
+              value={person.birthDate}
+              onChange={(val) => onUpdatePerson(person.id, { birthDate: val })}
+              disabled={isReadOnly}
+              yearPlaceholder="Birth Year (YYYY)"
+            />
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-slate-400" /> Birth Place
@@ -407,25 +405,23 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                 value={person.birthPlace || ''}
                 onChange={(e) => onUpdatePerson(person.id, { birthPlace: e.target.value })}
                 placeholder="City, Country"
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
+                disabled={isReadOnly}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50"
               />
             </div>
           </div>
 
           {/* Death (if deceased) */}
           {person.isDeceased && (
-            <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-150">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-slate-400" /> Death Date
-                </label>
-                <input
-                  type="date"
-                  value={person.deathDate || ''}
-                  onChange={(e) => onUpdatePerson(person.id, { deathDate: e.target.value })}
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
+            <div className="space-y-2 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100 animate-in fade-in duration-150">
+              <DatePartsInput
+                label="Death Date"
+                icon={<Calendar className="w-3 h-3 text-slate-400" />}
+                value={person.deathDate}
+                onChange={(val) => onUpdatePerson(person.id, { deathDate: val })}
+                disabled={isReadOnly}
+                yearPlaceholder="Death Year (YYYY)"
+              />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
                   <MapPin className="w-3 h-3 text-slate-400" /> Death Place
@@ -435,7 +431,8 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                   value={person.deathPlace || ''}
                   onChange={(e) => onUpdatePerson(person.id, { deathPlace: e.target.value })}
                   placeholder="City, Country"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
+                  disabled={isReadOnly}
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50"
                 />
               </div>
             </div>
