@@ -314,7 +314,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       {/* Right: Actions */}
       <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 flex-shrink-0">
         {/* Undo / Redo buttons */}
-        <div className="hidden xs:flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
           <button
             onClick={onUndo}
             disabled={!canUndo}

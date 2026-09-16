@@ -661,6 +661,24 @@ function FamilyTreeMain() {
         return;
       }
 
+      // Undo / Redo shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        if (isReadOnly) return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (canRedo) redo();
+        } else {
+          if (canUndo) undo();
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+        if (isReadOnly) return;
+        e.preventDefault();
+        if (canRedo) redo();
+        return;
+      }
+
       if (e.key === 'Escape') {
         if (contextMenu) {
           setContextMenu(null);
@@ -692,6 +710,11 @@ function FamilyTreeMain() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    isReadOnly,
     comparisonPersonId,
     focusPersonId,
     isTimelineActive,
