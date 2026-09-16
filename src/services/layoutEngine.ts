@@ -37,6 +37,44 @@ export function getUnionColors(
   return unionColors;
 }
 
+export interface IntervalItem {
+  id: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Assigns tracks (0, 1, 2, ...) to items with 1D intervals [start, end]
+ * using greedy interval graph coloring so that overlapping intervals
+ * receive distinct tracks.
+ */
+export function assignIntervalTracks(items: IntervalItem[], padding: number = 5): Record<string, number> {
+  const trackMap: Record<string, number> = {};
+  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end);
+  const trackIntervals: Array<Array<{ start: number; end: number }>> = [];
+
+  for (const item of sorted) {
+    let assignedTrack = -1;
+    for (let t = 0; t < trackIntervals.length; t++) {
+      const hasOverlap = trackIntervals[t].some(
+        (existing) => Math.max(existing.start, item.start) < Math.min(existing.end, item.end) + padding
+      );
+      if (!hasOverlap) {
+        assignedTrack = t;
+        trackIntervals[t].push({ start: item.start, end: item.end });
+        break;
+      }
+    }
+    if (assignedTrack === -1) {
+      assignedTrack = trackIntervals.length;
+      trackIntervals.push([{ start: item.start, end: item.end }]);
+    }
+    trackMap[item.id] = assignedTrack;
+  }
+
+  return trackMap;
+}
+
 /**
  * Computes multi-lane Y positions for all union child buses in vertical layout
  * to avoid collinear or overlapping bus bars at the same generational gap.
@@ -149,12 +187,13 @@ export function computeMultiLaneBusY(
     const channelHeight = channelBottom - channelTop;
     const baseMidY = maxTopBoundaryOverall + (minChildYOverall - maxTopBoundaryOverall) / 2;
 
-    if (numTracks <= 1 || channelHeight <= 20) {
+    if (numTracks <= 1) {
       for (const item of intervals) {
         busYMap[item.union.id] = Math.round(baseMidY);
       }
     } else {
-      const trackSpacing = Math.min(26, channelHeight / (numTracks + 1));
+      const minSpacing = 18;
+      const trackSpacing = Math.max(minSpacing, Math.min(26, channelHeight / (numTracks + 1)));
       for (const item of intervals) {
         const t = unionTrackMap[item.union.id] ?? 0;
         const offset = (t - (numTracks - 1) / 2) * trackSpacing;
@@ -273,12 +312,13 @@ export function computeMultiLaneBusX(
     const channelWidth = channelRight - channelLeft;
     const baseMidX = maxLeftBoundaryOverall + (minChildXOverall - maxLeftBoundaryOverall) / 2;
 
-    if (numTracks <= 1 || channelWidth <= 20) {
+    if (numTracks <= 1) {
       for (const item of intervals) {
         busXMap[item.union.id] = Math.round(baseMidX);
       }
     } else {
-      const trackSpacing = Math.min(26, channelWidth / (numTracks + 1));
+      const minSpacing = 18;
+      const trackSpacing = Math.max(minSpacing, Math.min(26, channelWidth / (numTracks + 1)));
       for (const item of intervals) {
         const t = unionTrackMap[item.union.id] ?? 0;
         const offset = (t - (numTracks - 1) / 2) * trackSpacing;
@@ -1454,6 +1494,63 @@ export function computeVerticalLayout(
     }
   }
 
+  // Helper to group unions by partner signature so multiple unions for the same pair/single person are staggered
+  const partnerGroupUnions: Record<string, string[]> = {};
+  for (const [uId, union] of Object.entries(tree.unions)) {
+    let key: string;
+    if (union.partnerIds.length >= 2) {
+      key = 'pair_' + [...union.partnerIds].sort().join('_');
+    } else if (union.partnerIds.length === 1) {
+      key = 'single_' + union.partnerIds[0];
+    } else {
+      key = 'orphan_' + [...union.childrenIds].sort().join('_');
+    }
+    if (!partnerGroupUnions[key]) partnerGroupUnions[key] = [];
+    partnerGroupUnions[key].push(uId);
+  }
+
+  // Pre-calculate non-adjacent intervals and assign multi-lane tracks per generation
+  const nonAdjIntervalsByGen: Record<number, IntervalItem[]> = {};
+  const personBottomUnionsMap: Record<string, string[]> = {};
+
+  for (const [uId, union] of Object.entries(tree.unions)) {
+    const partnerNodes = union.partnerIds
+      .map((id) => nodes[id])
+      .filter((n): n is LayoutNode => Boolean(n));
+
+    if (partnerNodes.length === 2) {
+      const p1 = partnerNodes[0];
+      const p2 = partnerNodes[1];
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const hasIntervening = Object.values(nodes).some(
+        (n) => n.generation === p1.generation && n.id !== p1.id && n.id !== p2.id && n.x > minX && n.x < maxX
+      );
+      if (hasIntervening) {
+        const gen = p1.generation;
+        if (!nonAdjIntervalsByGen[gen]) nonAdjIntervalsByGen[gen] = [];
+        const startX = Math.min(p1.x + p1.width / 2, p2.x + p2.width / 2);
+        const endX = Math.max(p1.x + p1.width / 2, p2.x + p2.width / 2);
+        nonAdjIntervalsByGen[gen].push({ id: uId, start: startX, end: endX });
+
+        if (!personBottomUnionsMap[p1.id]) personBottomUnionsMap[p1.id] = [];
+        personBottomUnionsMap[p1.id].push(uId);
+        if (!personBottomUnionsMap[p2.id]) personBottomUnionsMap[p2.id] = [];
+        personBottomUnionsMap[p2.id].push(uId);
+      }
+    } else if (partnerNodes.length === 1) {
+      const p = partnerNodes[0];
+      if (!personBottomUnionsMap[p.id]) personBottomUnionsMap[p.id] = [];
+      personBottomUnionsMap[p.id].push(uId);
+    }
+  }
+
+  const nonAdjTrackMap: Record<string, number> = {};
+  for (const intervals of Object.values(nonAdjIntervalsByGen)) {
+    const tracks = assignIntervalTracks(intervals, 10);
+    Object.assign(nonAdjTrackMap, tracks);
+  }
+
   // Second pass: position union anchor nodes
   for (const [uId, union] of Object.entries(tree.unions)) {
     const partnerNodes = union.partnerIds
@@ -1468,6 +1565,18 @@ export function computeVerticalLayout(
     let unionY = 0;
     let unionGen = 0;
 
+    let key: string;
+    if (partnerNodes.length >= 2) {
+      key = 'pair_' + [...union.partnerIds].sort().join('_');
+    } else if (partnerNodes.length === 1) {
+      key = 'single_' + union.partnerIds[0];
+    } else {
+      key = 'orphan_' + [...union.childrenIds].sort().join('_');
+    }
+    const group = partnerGroupUnions[key] || [uId];
+    const groupIndex = group.indexOf(uId);
+    const groupCount = group.length;
+
     if (partnerNodes.length === 2) {
       const p1 = partnerNodes[0];
       const p2 = partnerNodes[1];
@@ -1479,22 +1588,30 @@ export function computeVerticalLayout(
         (n) => n.generation === p1.generation && n.id !== p1.id && n.id !== p2.id && n.x > minX && n.x < maxX
       );
 
+      const p1Center = { x: p1.x + p1.width / 2, y: p1.y + p1.height / 2 };
+      const p2Center = { x: p2.x + p2.width / 2, y: p2.y + p2.height / 2 };
+
       if (!hasIntervening) {
         // Direct adjacent partners: union sits at midpoint in the horizontal gap
-        const p1Center = { x: p1.x + p1.width / 2, y: p1.y + p1.height / 2 };
-        const p2Center = { x: p2.x + p2.width / 2, y: p2.y + p2.height / 2 };
         unionX = (p1Center.x + p2Center.x) / 2;
-        unionY = (p1Center.y + p2Center.y) / 2;
+        const baseY = (p1Center.y + p2Center.y) / 2;
+        const yOffset = groupCount > 1 ? (groupIndex - (groupCount - 1) / 2) * 32 : 0;
+        unionY = baseY + yOffset;
       } else {
-        // Non-adjacent partners: union anchor sits below cards to avoid overlapping intervening people
-        unionX = (p1.x + p1.width / 2 + p2.x + p2.width / 2) / 2;
-        unionY = p1.y + CARD_HEIGHT + 24;
+        // Non-adjacent partners: multi-lane bypass rails under cards
+        unionX = (p1Center.x + p2Center.x) / 2;
+        const track = nonAdjTrackMap[uId] ?? 0;
+        const baseY = p1.y + CARD_HEIGHT + 24;
+        unionY = baseY + track * 24;
       }
       unionGen = p1.generation;
     } else if (partnerNodes.length === 1) {
       // Single parent union
       const p = partnerNodes[0];
-      unionX = p.x + p.width / 2;
+      const bottomUnions = personBottomUnionsMap[p.id] || [uId];
+      const pIndex = bottomUnions.indexOf(uId);
+      const xOffset = bottomUnions.length > 1 ? (pIndex - (bottomUnions.length - 1) / 2) * 36 : 0;
+      unionX = p.x + p.width / 2 + xOffset;
       unionY = p.y + p.height + 25;
       unionGen = p.generation;
     } else if (childrenNodes.length > 0) {
@@ -1502,9 +1619,15 @@ export function computeVerticalLayout(
       const avgChildX =
         childrenNodes.reduce((sum, c) => sum + (c.x + c.width / 2), 0) / childrenNodes.length;
       const minChildY = Math.min(...childrenNodes.map((c) => c.y));
+      const targetGen = childrenNodes[0].generation;
       unionX = avgChildX;
-      unionY = minChildY - 40;
-      unionGen = childrenNodes[0].generation - 1;
+      if (targetGen <= 0) {
+        unionY = minChildY - 40;
+      } else {
+        const parentGenBottom = minChildY - VERTICAL_SPACING;
+        unionY = parentGenBottom + 24;
+      }
+      unionGen = targetGen - 1;
     }
 
     unions[uId] = {
@@ -1517,6 +1640,24 @@ export function computeVerticalLayout(
       partnerNodes,
       childrenNodes,
     };
+  }
+
+  // Avoid collinear vertical stems between unions in the same tier
+  const unionList = Object.values(unions);
+  for (let i = 0; i < unionList.length; i++) {
+    for (let j = i + 1; j < unionList.length; j++) {
+      const u1 = unionList[i];
+      const u2 = unionList[j];
+      if (u1.generation === u2.generation && Math.abs(u1.x - u2.x) < 20) {
+        if (u2.partnerNodes.length === 0) {
+          u2.x += 28;
+        } else if (u1.partnerNodes.length === 0) {
+          u1.x += 28;
+        } else {
+          u2.x += 28;
+        }
+      }
+    }
   }
 
   // Multi-lane bus coordination & branch color assignment for vertical layout
@@ -1798,6 +1939,51 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
     }
   }
 
+  // Helper to group unions by partner signature so multiple unions for the same pair/single person are staggered
+  const partnerGroupUnionsH: Record<string, string[]> = {};
+  for (const [uId, union] of Object.entries(tree.unions)) {
+    let key: string;
+    if (union.partnerIds.length >= 2) {
+      key = 'pair_' + [...union.partnerIds].sort().join('_');
+    } else if (union.partnerIds.length === 1) {
+      key = 'single_' + union.partnerIds[0];
+    } else {
+      key = 'orphan_' + [...union.childrenIds].sort().join('_');
+    }
+    if (!partnerGroupUnionsH[key]) partnerGroupUnionsH[key] = [];
+    partnerGroupUnionsH[key].push(uId);
+  }
+
+  // Pre-calculate non-adjacent intervals and assign multi-lane tracks per generation column
+  const nonAdjIntervalsByGenH: Record<number, IntervalItem[]> = {};
+  for (const [uId, union] of Object.entries(tree.unions)) {
+    const partnerNodes = union.partnerIds
+      .map((id) => nodes[id])
+      .filter((n): n is LayoutNode => Boolean(n));
+    if (partnerNodes.length === 2) {
+      const p1 = partnerNodes[0];
+      const p2 = partnerNodes[1];
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+      const hasIntervening = Object.values(nodes).some(
+        (n) => n.generation === p1.generation && n.id !== p1.id && n.id !== p2.id && n.y > minY && n.y < maxY
+      );
+      if (hasIntervening) {
+        const gen = p1.generation;
+        if (!nonAdjIntervalsByGenH[gen]) nonAdjIntervalsByGenH[gen] = [];
+        const startY = Math.min(p1.y + p1.height / 2, p2.y + p2.height / 2);
+        const endY = Math.max(p1.y + p1.height / 2, p2.y + p2.height / 2);
+        nonAdjIntervalsByGenH[gen].push({ id: uId, start: startY, end: endY });
+      }
+    }
+  }
+
+  const nonAdjTrackMapH: Record<string, number> = {};
+  for (const intervals of Object.values(nonAdjIntervalsByGenH)) {
+    const tracks = assignIntervalTracks(intervals, 10);
+    Object.assign(nonAdjTrackMapH, tracks);
+  }
+
   // Second pass: position union anchor nodes
   for (const [uId, union] of Object.entries(tree.unions)) {
     const partnerNodes = union.partnerIds
@@ -1812,6 +1998,18 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
     let unionY = 0;
     let unionGen = 0;
 
+    let key: string;
+    if (partnerNodes.length >= 2) {
+      key = 'pair_' + [...union.partnerIds].sort().join('_');
+    } else if (partnerNodes.length === 1) {
+      key = 'single_' + union.partnerIds[0];
+    } else {
+      key = 'orphan_' + [...union.childrenIds].sort().join('_');
+    }
+    const group = partnerGroupUnionsH[key] || [uId];
+    const groupIndex = group.indexOf(uId);
+    const groupCount = group.length;
+
     if (partnerNodes.length === 2) {
       const p1 = partnerNodes[0];
       const p2 = partnerNodes[1];
@@ -1824,26 +2022,36 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
       );
 
       const maxXCard = Math.max(p1.x + p1.width, p2.x + p2.width);
-      unionY = (p1.y + p1.height / 2 + p2.y + p2.height / 2) / 2;
+      const baseY = (p1.y + p1.height / 2 + p2.y + p2.height / 2) / 2;
+      const yOffset = groupCount > 1 ? (groupIndex - (groupCount - 1) / 2) * 32 : 0;
+      unionY = baseY + yOffset;
 
       if (!hasIntervening) {
-        unionX = maxXCard + 28;
+        unionX = maxXCard + 28 + (groupCount > 1 ? groupIndex * 24 : 0);
       } else {
-        unionX = maxXCard + 44;
+        const track = nonAdjTrackMapH[uId] ?? 0;
+        unionX = maxXCard + 44 + track * 24;
       }
       unionGen = p1.generation;
     } else if (partnerNodes.length === 1) {
       const p = partnerNodes[0];
-      unionX = p.x + p.width + 28;
-      unionY = p.y + p.height / 2;
+      const yOffset = groupCount > 1 ? (groupIndex - (groupCount - 1) / 2) * 32 : 0;
+      unionX = p.x + p.width + 28 + (groupCount > 1 ? groupIndex * 24 : 0);
+      unionY = p.y + p.height / 2 + yOffset;
       unionGen = p.generation;
     } else if (childrenNodes.length > 0) {
       const minChildX = Math.min(...childrenNodes.map((c) => c.x));
       const avgChildY =
         childrenNodes.reduce((sum, c) => sum + (c.y + c.height / 2), 0) / childrenNodes.length;
-      unionX = minChildX - 42;
+      const targetGen = childrenNodes[0].generation;
+      if (targetGen <= 0) {
+        unionX = minChildX - 42;
+      } else {
+        const parentGenRight = minChildX - HORIZONTAL_COL_SPACING;
+        unionX = parentGenRight + 28;
+      }
       unionY = avgChildY;
-      unionGen = childrenNodes[0].generation - 1;
+      unionGen = targetGen - 1;
     }
 
     unions[uId] = {
@@ -1858,12 +2066,39 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
     };
   }
 
+  // Avoid collinear horizontal stems between unions in the same tier
+  const unionListH = Object.values(unions);
+  for (let i = 0; i < unionListH.length; i++) {
+    for (let j = i + 1; j < unionListH.length; j++) {
+      const u1 = unionListH[i];
+      const u2 = unionListH[j];
+      if (u1.generation === u2.generation && Math.abs(u1.y - u2.y) < 20) {
+        if (u2.partnerNodes.length === 0) {
+          u2.y += 28;
+        } else if (u1.partnerNodes.length === 0) {
+          u1.y += 28;
+        } else {
+          u2.y += 28;
+        }
+      }
+    }
+  }
+
   // Multi-lane vertical bus coordination & branch color assignment for horizontal layout
   const busXMap = computeMultiLaneBusX(unions);
   const unionColors = getUnionColors(unions);
   for (const [uId, u] of Object.entries(unions)) {
     u.busCoord = busXMap[uId];
     u.color = unionColors[uId];
+  }
+
+  // Track person union count and indices for port offsets in horizontal layout
+  const personUnionsMapH: Record<string, string[]> = {};
+  for (const union of Object.values(unions)) {
+    for (const pNode of union.partnerNodes) {
+      if (!personUnionsMapH[pNode.id]) personUnionsMapH[pNode.id] = [];
+      personUnionsMapH[pNode.id].push(union.id);
+    }
   }
 
   // Third pass: generate edges for horizontal layout
@@ -1890,12 +2125,23 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
       );
 
       const p1RightX = p1.x + p1.width;
-      const p1CenterY = p1.y + p1.height / 2;
+      const p1Unions = personUnionsMapH[p1.id] || [union.id];
+      const p1Index = p1Unions.indexOf(union.id);
+      const p1Offset = p1Unions.length > 1 ? (p1Index - (p1Unions.length - 1) / 2) * 16 : 0;
+      const p1CenterY = p1.y + p1.height / 2 + p1Offset;
+
       const p2RightX = p2.x + p2.width;
-      const p2CenterY = p2.y + p2.height / 2;
+      const p2Unions = personUnionsMapH[p2.id] || [union.id];
+      const p2Index = p2Unions.indexOf(union.id);
+      const p2Offset = p2Unions.length > 1 ? (p2Index - (p2Unions.length - 1) / 2) * 16 : 0;
+      const p2CenterY = p2.y + p2.height / 2 + p2Offset;
+
+      const uIndex = Math.max(p1Index, p2Index);
+      const maxUnions = Math.max(p1Unions.length, p2Unions.length);
+      const midXOffset = maxUnions > 1 ? (uIndex - (maxUnions - 1) / 2) * 8 : 0;
 
       if (!hasIntervening) {
-        const midX = (Math.max(p1RightX, p2RightX) + ux) / 2;
+        const midX = (Math.max(p1RightX, p2RightX) + ux) / 2 + midXOffset;
         edges.push({
           id: `edge_${p1.id}_${union.id}`,
           sourceId: p1.id,
@@ -1910,12 +2156,13 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
           sourceId: p2.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p2RightX} ${p2CenterY} L ${midX} ${p2CenterY} L ${midX} ${uy} L ${ux} ${uy}`,
+          pathD: `M ${p2RightX} ${p2CenterY} L ${midX} ${p2CenterY} L ${midX} ${uy}`,
           unionType,
           color: partnerColor,
         });
       } else {
-        const routeX = Math.max(p1RightX, p2RightX) + 16;
+        const track = nonAdjTrackMapH[union.id] ?? 0;
+        const routeX = Math.max(p1RightX, p2RightX) + 16 + track * 24 + midXOffset;
         edges.push({
           id: `edge_${p1.id}_${union.id}`,
           sourceId: p1.id,
@@ -1930,15 +2177,18 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
           sourceId: p2.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p2RightX} ${p2CenterY} L ${routeX} ${p2CenterY} L ${routeX} ${uy} L ${ux} ${uy}`,
+          pathD: `M ${p2RightX} ${p2CenterY} L ${routeX} ${p2CenterY} L ${routeX} ${uy}`,
           unionType,
           color: partnerColor,
         });
       }
     } else if (partnerNodes.length === 1) {
       const p = partnerNodes[0];
+      const pUnions = personUnionsMapH[p.id] || [union.id];
+      const pIndex = pUnions.indexOf(union.id);
+      const pOffset = pUnions.length > 1 ? (pIndex - (pUnions.length - 1) / 2) * 16 : 0;
       const px = p.x + p.width;
-      const py = p.y + p.height / 2;
+      const py = p.y + p.height / 2 + pOffset;
       edges.push({
         id: `edge_${p.id}_${union.id}`,
         sourceId: p.id,
@@ -2280,9 +2530,99 @@ function generateEdgesWithBridgeHops(
 ): { edges: LayoutEdge[] } {
   const edges: LayoutEdge[] = [];
   const horizontalSegments: RawSegment[] = [];
-  const verticalSegments: RawSegment[] = [];
+  const HOP_RADIUS = 7;
 
-  // 1. Partner to Union lines
+  // Track bottom-exiting unions (non-adjacent unions and single-parent unions) per person
+  const personBottomUnionsMap: Record<string, string[]> = {};
+  for (const [uId, union] of Object.entries(unions)) {
+    if (union.partnerNodes.length === 2) {
+      const p1 = union.partnerNodes[0];
+      const p2 = union.partnerNodes[1];
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const hasIntervening = Object.values(nodes).some(
+        (n) => n.generation === p1.generation && n.id !== p1.id && n.id !== p2.id && n.x > minX && n.x < maxX
+      );
+      if (hasIntervening) {
+        if (!personBottomUnionsMap[p1.id]) personBottomUnionsMap[p1.id] = [];
+        personBottomUnionsMap[p1.id].push(uId);
+        if (!personBottomUnionsMap[p2.id]) personBottomUnionsMap[p2.id] = [];
+        personBottomUnionsMap[p2.id].push(uId);
+      }
+    } else if (union.partnerNodes.length === 1) {
+      const p = union.partnerNodes[0];
+      if (!personBottomUnionsMap[p.id]) personBottomUnionsMap[p.id] = [];
+      personBottomUnionsMap[p.id].push(uId);
+    }
+  }
+
+  // 1. Collect all horizontal segments (partner rails and child buses)
+  for (const union of Object.values(unions)) {
+    const { partnerNodes, x: ux, y: uy } = union;
+
+    if (partnerNodes.length === 2) {
+      const p1 = partnerNodes[0];
+      const p2 = partnerNodes[1];
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const hasIntervening = Object.values(nodes).some(
+        (n) => n.generation === p1.generation && n.id !== p1.id && n.id !== p2.id && n.x > minX && n.x < maxX
+      );
+
+      if (!hasIntervening) {
+        const p1X = p1.x < ux ? p1.x + p1.width : p1.x;
+        const p2X = p2.x < ux ? p2.x + p2.width : p2.x;
+        horizontalSegments.push({
+          edgeId: `partner_bus_${union.id}`,
+          x1: Math.min(p1X, p2X),
+          y1: uy,
+          x2: Math.max(p1X, p2X),
+          y2: uy,
+          isVertical: false,
+        });
+      } else {
+        const p1BottomUnions = personBottomUnionsMap[p1.id] || [union.id];
+        const p1Index = p1BottomUnions.indexOf(union.id);
+        const p1Offset = p1BottomUnions.length > 1 ? (p1Index - (p1BottomUnions.length - 1) / 2) * 18 : 0;
+        const p1BottomX = p1.x + p1.width / 2 + p1Offset;
+
+        const p2BottomUnions = personBottomUnionsMap[p2.id] || [union.id];
+        const p2Index = p2BottomUnions.indexOf(union.id);
+        const p2Offset = p2BottomUnions.length > 1 ? (p2Index - (p2BottomUnions.length - 1) / 2) * 18 : 0;
+        const p2BottomX = p2.x + p2.width / 2 + p2Offset;
+
+        horizontalSegments.push({
+          edgeId: `partner_bus_${union.id}`,
+          x1: Math.min(p1BottomX, p2BottomX),
+          y1: uy,
+          x2: Math.max(p1BottomX, p2BottomX),
+          y2: uy,
+          isVertical: false,
+        });
+      }
+    }
+
+    if (union.childrenNodes.length > 0) {
+      const children = union.childrenNodes;
+      const minChildY = Math.min(...children.map((c) => c.y));
+      const busY = union.busCoord ?? Math.max(uy + 20, uy + (minChildY - uy) / 2);
+      const childCenterXList = children.map((c) => c.x + c.width / 2);
+      const minX = Math.min(ux, ...childCenterXList);
+      const maxX = Math.max(ux, ...childCenterXList);
+      if (maxX > minX) {
+        horizontalSegments.push({
+          edgeId: `bus_${union.id}`,
+          x1: minX,
+          y1: busY,
+          x2: maxX,
+          y2: busY,
+          isVertical: false,
+        });
+      }
+    }
+  }
+
+  // 2. Generate Partner to Union lines (with bridge hops for non-adjacent drops crossing horizontal rails)
   for (const union of Object.values(unions)) {
     const { partnerNodes, x: ux, y: uy } = union;
     const unionType = union.data.type || 'married';
@@ -2295,7 +2635,6 @@ function generateEdgesWithBridgeHops(
     if (partnerNodes.length === 2) {
       const p1 = partnerNodes[0];
       const p2 = partnerNodes[1];
-
       const minX = Math.min(p1.x, p2.x);
       const maxX = Math.max(p1.x, p2.x);
       const hasIntervening = Object.values(nodes).some(
@@ -2303,18 +2642,15 @@ function generateEdgesWithBridgeHops(
       );
 
       if (!hasIntervening) {
-        // Direct adjacent partners
         const p1X = p1.x < ux ? p1.x + p1.width : p1.x;
-        const p1Y = p1.y + p1.height / 2;
         const p2X = p2.x < ux ? p2.x + p2.width : p2.x;
-        const p2Y = p2.y + p2.height / 2;
 
         edges.push({
           id: `edge_${p1.id}_${union.id}`,
           sourceId: p1.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p1X} ${p1Y} L ${ux} ${uy}`,
+          pathD: `M ${p1X} ${uy} L ${ux} ${uy}`,
           unionType,
           color: partnerColor,
         });
@@ -2324,32 +2660,57 @@ function generateEdgesWithBridgeHops(
           sourceId: p2.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p2X} ${p2Y} L ${ux} ${uy}`,
+          pathD: `M ${p2X} ${uy} L ${ux} ${uy}`,
           unionType,
           color: partnerColor,
-        });
-
-        horizontalSegments.push({
-          edgeId: `partner_bus_${union.id}`,
-          x1: Math.min(p1X, p2X),
-          y1: uy,
-          x2: Math.max(p1X, p2X),
-          y2: uy,
-          isVertical: false,
         });
       } else {
-        // Non-adjacent partners: route under intervening cards
-        const p1BottomX = p1.x + p1.width / 2;
+        const p1BottomUnions = personBottomUnionsMap[p1.id] || [union.id];
+        const p1Index = p1BottomUnions.indexOf(union.id);
+        const p1Offset = p1BottomUnions.length > 1 ? (p1Index - (p1BottomUnions.length - 1) / 2) * 18 : 0;
+        const p1BottomX = p1.x + p1.width / 2 + p1Offset;
         const p1BottomY = p1.y + p1.height;
-        const p2BottomX = p2.x + p2.width / 2;
+
+        const p2BottomUnions = personBottomUnionsMap[p2.id] || [union.id];
+        const p2Index = p2BottomUnions.indexOf(union.id);
+        const p2Offset = p2BottomUnions.length > 1 ? (p2Index - (p2BottomUnions.length - 1) / 2) * 18 : 0;
+        const p2BottomX = p2.x + p2.width / 2 + p2Offset;
         const p2BottomY = p2.y + p2.height;
+
+        const p1Crossings: number[] = [];
+        for (const hSeg of horizontalSegments) {
+          if (
+            hSeg.edgeId !== `partner_bus_${union.id}` &&
+            hSeg.y1 > p1BottomY + 4 &&
+            hSeg.y1 < uy - 4 &&
+            p1BottomX > Math.min(hSeg.x1, hSeg.x2) + 2 &&
+            p1BottomX < Math.max(hSeg.x1, hSeg.x2) - 2
+          ) {
+            p1Crossings.push(hSeg.y1);
+          }
+        }
+        const p1Path = buildVerticalPathWithHops(p1BottomX, p1BottomY, uy, p1Crossings, HOP_RADIUS) + ` L ${ux} ${uy}`;
+
+        const p2Crossings: number[] = [];
+        for (const hSeg of horizontalSegments) {
+          if (
+            hSeg.edgeId !== `partner_bus_${union.id}` &&
+            hSeg.y1 > p2BottomY + 4 &&
+            hSeg.y1 < uy - 4 &&
+            p2BottomX > Math.min(hSeg.x1, hSeg.x2) + 2 &&
+            p2BottomX < Math.max(hSeg.x1, hSeg.x2) - 2
+          ) {
+            p2Crossings.push(hSeg.y1);
+          }
+        }
+        const p2Path = buildVerticalPathWithHops(p2BottomX, p2BottomY, uy, p2Crossings, HOP_RADIUS) + ` L ${ux} ${uy}`;
 
         edges.push({
           id: `edge_${p1.id}_${union.id}`,
           sourceId: p1.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p1BottomX} ${p1BottomY} L ${p1BottomX} ${uy} L ${ux} ${uy}`,
+          pathD: p1Path,
           unionType,
           color: partnerColor,
         });
@@ -2359,86 +2720,42 @@ function generateEdgesWithBridgeHops(
           sourceId: p2.id,
           targetId: union.id,
           edgeType: 'partner-union',
-          pathD: `M ${p2BottomX} ${p2BottomY} L ${p2BottomX} ${uy} L ${ux} ${uy}`,
+          pathD: p2Path,
           unionType,
           color: partnerColor,
-        });
-
-        horizontalSegments.push({
-          edgeId: `partner_bus_${union.id}`,
-          x1: Math.min(p1BottomX, p2BottomX),
-          y1: uy,
-          x2: Math.max(p1BottomX, p2BottomX),
-          y2: uy,
-          isVertical: false,
         });
       }
     } else if (partnerNodes.length === 1) {
       const p = partnerNodes[0];
-      const px = p.x + p.width / 2;
+      const px = ux;
       const py = p.y + p.height;
+      const singleCrossings: number[] = [];
+      for (const hSeg of horizontalSegments) {
+        if (
+          hSeg.edgeId !== `bus_${union.id}` &&
+          hSeg.y1 > py + 4 &&
+          hSeg.y1 < uy - 4 &&
+          px > Math.min(hSeg.x1, hSeg.x2) + 2 &&
+          px < Math.max(hSeg.x1, hSeg.x2) - 2
+        ) {
+          singleCrossings.push(hSeg.y1);
+        }
+      }
+      const singlePath = buildVerticalPathWithHops(px, py, uy, singleCrossings, HOP_RADIUS);
 
       edges.push({
         id: `edge_${p.id}_${union.id}`,
         sourceId: p.id,
         targetId: union.id,
         edgeType: 'partner-union',
-        pathD: `M ${px} ${py} L ${ux} ${uy}`,
+        pathD: singlePath,
         unionType,
         color: partnerColor,
-      });
-    }
-
-    // 2. Union to Children lines (Hierarchical Bus)
-    if (union.childrenNodes.length > 0) {
-      const children = union.childrenNodes;
-      const minChildY = Math.min(...children.map((c) => c.y));
-      const busY = union.busCoord ?? Math.max(uy + 20, uy + (minChildY - uy) / 2);
-
-      const stemEdgeId = `edge_stem_${union.id}`;
-      verticalSegments.push({
-        edgeId: stemEdgeId,
-        x1: ux,
-        y1: uy,
-        x2: ux,
-        y2: busY,
-        isVertical: true,
-      });
-
-      const childCenterXList = children.map((c) => c.x + c.width / 2);
-      const minX = Math.min(ux, ...childCenterXList);
-      const maxX = Math.max(ux, ...childCenterXList);
-
-      if (maxX > minX) {
-        horizontalSegments.push({
-          edgeId: `bus_${union.id}`,
-          x1: minX,
-          y1: busY,
-          x2: maxX,
-          y2: busY,
-          isVertical: false,
-        });
-      }
-
-      children.forEach((child) => {
-        const cx = child.x + child.width / 2;
-        const cy = child.y;
-
-        verticalSegments.push({
-          edgeId: `edge_drop_${union.id}_${child.id}`,
-          x1: cx,
-          y1: busY,
-          x2: cx,
-          y2: cy,
-          isVertical: true,
-        });
       });
     }
   }
 
   // 3. Process Union Stems and Drops with Bridge Hops
-  const HOP_RADIUS = 7;
-
   for (const union of Object.values(unions)) {
     if (union.childrenNodes.length === 0) continue;
 
