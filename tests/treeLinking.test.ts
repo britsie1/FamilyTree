@@ -181,4 +181,67 @@ describe('Tree Linking & Branch Moving (Ancestry-style)', () => {
     assert.strictEqual(restored.people['mom'].linkedTrees[0].treeName, 'External In-Laws');
     assert.strictEqual(restored.people['mom'].linkedTrees[0].relationshipNote, 'Maternal side');
   });
+
+  it('sets isCloud: true on mutual links when splitting a cloud tree branch', () => {
+    const cloudTree = createThreeGenSampleTree();
+    (cloudTree as any).ownerId = 'user_google_123';
+    cloudTree.id = 'tree_cloud_lineage';
+
+    const { newTree, updatedSourceTree, bridgePersonId } = splitBranchToNewTree(
+      cloudTree,
+      ['p3', 'p7', 'p8'],
+      'Charles Branch Cloud',
+      {
+        bridgePersonId: 'p3',
+        isCloud: true,
+      }
+    );
+
+    assert.strictEqual(bridgePersonId, 'p3');
+
+    // Link in source tree points to new cloud tree
+    const linkInSource = updatedSourceTree.people['p3'].linkedTrees?.[0];
+    assert.ok(linkInSource);
+    assert.strictEqual(linkInSource.treeId, newTree.id);
+    assert.strictEqual(linkInSource.isCloud, true);
+
+    // Link in new tree points back to original cloud tree
+    const linkInNew = newTree.people['p3'].linkedTrees?.[0];
+    assert.ok(linkInNew);
+    assert.strictEqual(linkInNew.treeId, cloudTree.id);
+    assert.strictEqual(linkInNew.isCloud, true);
+  });
+
+  it('preserves isCloud flags when manually linking two trees', () => {
+    const treeA = createDoubleInLawPreset();
+    treeA.id = 'tree_local_a';
+
+    const treeB = createThreeGenSampleTree();
+    treeB.id = 'tree_cloud_b';
+    (treeB as any).ownerId = 'cloud_owner_999';
+
+    // Link tree A (local) with tree B (cloud)
+    const { updatedTreeA, updatedTreeB } = linkPeopleAcrossTrees(
+      treeA,
+      'dad',
+      treeB,
+      'p3',
+      {
+        isCloudA: false,
+        isCloudB: true,
+      }
+    );
+
+    // Link on dad points to Tree B which is a cloud tree
+    const dadLink = updatedTreeA.people['dad'].linkedTrees?.[0];
+    assert.ok(dadLink);
+    assert.strictEqual(dadLink.treeId, 'tree_cloud_b');
+    assert.strictEqual(dadLink.isCloud, true);
+
+    // Link on p3 points to Tree A which is local
+    const p3Link = updatedTreeB.people['p3'].linkedTrees?.[0];
+    assert.ok(p3Link);
+    assert.strictEqual(p3Link.treeId, 'tree_local_a');
+    assert.strictEqual(p3Link.isCloud, false);
+  });
 });

@@ -5,7 +5,6 @@ import {
   loadTreeById,
   saveCurrentTree,
   saveTreeWithoutActivating,
-  linkTreesBetweenPeople,
   exportTreeToJsonFile,
   importTreeFromJsonString,
   createDoubleInLawPreset,
@@ -17,6 +16,7 @@ import {
   getPersonDisplayName,
   splitBranchToNewTree,
   removeTreeLink,
+  linkPeopleAcrossTrees,
 } from './services/treeOperations';
 import { getBranchPersonIds } from './services/layoutEngine';
 import { useAsyncLayout } from './services/layoutClient';
@@ -37,6 +37,7 @@ import { ShareTreeModal } from './components/Modal/ShareTreeModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import {
   getCloudTree,
+  saveTreeToCloud,
   updateCloudTreeData,
   subscribeToCloudTree,
   resolveUserPermission,
@@ -457,16 +458,17 @@ function FamilyTreeMain() {
   }, [makeCopyAction, setIsCloudTree, setUserPermission, setAccessDeniedMessage]);
 
   const handleSwitchTree = useCallback(
-    (newTree: TreeData, isCloud: boolean = false, focusPersonId?: string | null) => {
+    (newTree: TreeData, isCloud?: boolean, focusPersonId?: string | null) => {
+      const resolvedIsCloud = isCloud !== undefined ? isCloud : Boolean((newTree as any)?.ownerId);
       hasInitialFitRef.current = false;
-      if (isCloud) {
+      if (resolvedIsCloud) {
         lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(newTree);
         isRemoteSyncRef.current = true;
       }
       resetHistory(newTree);
-      setIsCloudTree(isCloud);
+      setIsCloudTree(resolvedIsCloud);
 
-      if (isCloud) {
+      if (resolvedIsCloud) {
         const perm = resolveUserPermission(newTree as any, user);
         setUserPermission(perm);
         window.history.pushState({}, '', `?treeId=${encodeURIComponent(newTree.id)}`);
@@ -500,6 +502,33 @@ function FamilyTreeMain() {
       setActiveHistoricalMoment,
     ]
   );
+
+  // Synchronize tree on browser Back/Forward (popstate)
+  useEffect(() => {
+    const handlePopState = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlTreeId = params.get('treeId');
+      if (urlTreeId) {
+        if (urlTreeId === tree.id && isCloudTree) return;
+        let loaded: TreeData | null = await getCloudTree(urlTreeId).catch(() => null);
+        let isCloud = true;
+        if (!loaded) {
+          loaded = loadTreeById(urlTreeId);
+          isCloud = Boolean((loaded as any)?.ownerId);
+        }
+        if (loaded) {
+          handleSwitchTree(loaded, isCloud);
+        }
+      } else {
+        if (!isCloudTree) return;
+        const local = loadCurrentTree();
+        handleSwitchTree(local, false);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [tree.id, isCloudTree, handleSwitchTree]);
 
   const handleSelectPreset = (presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => {
     let nextTree: TreeData;
@@ -599,16 +628,30 @@ function FamilyTreeMain() {
 
   const handleOpenTreeLink = useCallback(
     async (_person: Person, link: TreeLink) => {
-      let targetTree = loadTreeById(link.treeId);
-      let isCloud = false;
+      let targetTree: TreeData | null = null;
+      let isCloud = Boolean(link.isCloud);
 
-      if (!targetTree && (link.isCloud || user)) {
+      // 1. If flagged as cloud or user is logged in, try loading cloud tree from Firestore
+      if (isCloud || user) {
         try {
-          targetTree = await getCloudTree(link.treeId);
-          isCloud = true;
+          const cloudTree = await getCloudTree(link.treeId);
+          if (cloudTree) {
+            targetTree = cloudTree;
+            isCloud = true;
+          }
         } catch (err) {
           console.warn('Could not fetch cloud tree for link:', err);
         }
+      }
+
+      // 2. If not found in cloud, check local storage
+      if (!targetTree) {
+        targetTree = loadTreeById(link.treeId);
+      }
+
+      // 3. If targetTree has ownerId (cloud metadata), it is a cloud tree
+      if (targetTree && (targetTree as any).ownerId) {
+        isCloud = true;
       }
 
       if (targetTree) {
@@ -633,29 +676,81 @@ function FamilyTreeMain() {
   );
 
   const handleLinkTrees = useCallback(
-    (targetTreeId: string, targetPersonId: string) => {
+    async (
+      targetTreeId: string,
+      targetPersonId: string,
+      isTargetCloud?: boolean,
+      preloadedTargetTree?: TreeData
+    ) => {
       if (!personToLink) return;
 
-      const { updatedCurrentTree } = linkTreesBetweenPeople(
+      let targetTree = preloadedTargetTree || loadTreeById(targetTreeId);
+      let isCloudTarget = isTargetCloud ?? Boolean((targetTree as any)?.ownerId);
+
+      if (!targetTree && (isCloudTarget || user)) {
+        try {
+          const cloudTree = await getCloudTree(targetTreeId);
+          if (cloudTree) {
+            targetTree = cloudTree;
+            isCloudTarget = true;
+          }
+        } catch (err) {
+          console.warn('Could not fetch cloud tree for linking:', err);
+        }
+      }
+
+      if (!targetTree) {
+        alert('Could not locate the target tree to establish link.');
+        return;
+      }
+
+      const isCurrentCloud = isCloudTree && Boolean(user);
+
+      const { updatedTreeA, updatedTreeB } = linkPeopleAcrossTrees(
         tree,
         personToLink.id,
-        targetTreeId,
-        targetPersonId
+        targetTree,
+        targetPersonId,
+        {
+          isCloudA: isCurrentCloud,
+          isCloudB: isCloudTarget,
+        }
       );
 
-      setTree(updatedCurrentTree);
+      // Persist target tree to cloud if cloud target
+      if (isCloudTarget && user) {
+        try {
+          await updateCloudTreeData(updatedTreeB);
+        } catch (err) {
+          console.warn('Could not update cloud target tree:', err);
+        }
+      }
+      saveTreeWithoutActivating(updatedTreeB);
+
+      // Persist current tree
+      setTree(updatedTreeA);
       selectPerson(personToLink.id);
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
     },
-    [personToLink, tree, setTree, selectPerson]
+    [personToLink, tree, isCloudTree, user, setTree, selectPerson]
   );
 
   const handleRemoveTreeLink = useCallback(
-    (personId: string, targetTreeId: string) => {
+    async (personId: string, targetTreeId: string) => {
       const updated = removeTreeLink(tree, personId, targetTreeId);
       setTree(updated);
 
-      const targetTree = loadTreeById(targetTreeId);
+      let targetTree = loadTreeById(targetTreeId);
+      let isCloudTarget = false;
+      if (!targetTree && user) {
+        try {
+          targetTree = await getCloudTree(targetTreeId);
+          if (targetTree) isCloudTarget = true;
+        } catch (err) {
+          console.warn('Could not fetch cloud tree to remove reverse link:', err);
+        }
+      }
+
       if (targetTree) {
         let modified = false;
         for (const p of Object.values(targetTree.people)) {
@@ -668,17 +763,26 @@ function FamilyTreeMain() {
           }
         }
         if (modified) {
+          if ((isCloudTarget || (targetTree as any).ownerId) && user) {
+            try {
+              await updateCloudTreeData(targetTree);
+            } catch (err) {
+              console.warn('Could not update reverse link in cloud:', err);
+            }
+          }
           saveTreeWithoutActivating(targetTree);
         }
       }
     },
-    [tree, setTree]
+    [tree, setTree, user]
   );
 
   const handleCreateTreeFromSelection = useCallback(
-    (options: CreateTreeOptions) => {
+    async (options: CreateTreeOptions) => {
       const selectedArray = Array.from(selectedPersonIds);
       if (selectedArray.length === 0) return;
+
+      const isCurrentCloud = isCloudTree && Boolean(user);
 
       const { newTree, updatedSourceTree, bridgePersonId } = splitBranchToNewTree(
         tree,
@@ -688,24 +792,39 @@ function FamilyTreeMain() {
           bridgePersonId: options.bridgePersonId,
           removeMovedFromSource: options.removeMovedFromSource,
           linkTrees: options.linkTrees,
+          isCloud: isCurrentCloud,
         }
       );
 
+      let targetNewTree = newTree;
+      let targetSourceTree = updatedSourceTree;
+
+      // If working on a cloud tree and authenticated, save new branch to cloud and update source in cloud
+      if (isCurrentCloud && user) {
+        try {
+          const savedCloudNew = await saveTreeToCloud(newTree, user);
+          targetNewTree = savedCloudNew;
+          await updateCloudTreeData(updatedSourceTree);
+        } catch (err) {
+          console.error('Failed to sync newly split branch to cloud:', err);
+        }
+      }
+
       // Persist the updated source tree
-      saveCurrentTree(updatedSourceTree);
+      saveCurrentTree(targetSourceTree);
 
       if (options.switchImmediately) {
-        saveCurrentTree(newTree);
-        handleSwitchTree(newTree, false, bridgePersonId);
+        saveCurrentTree(targetNewTree);
+        handleSwitchTree(targetNewTree, isCurrentCloud, bridgePersonId);
         confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
       } else {
-        saveTreeWithoutActivating(newTree);
-        setTree(updatedSourceTree);
+        saveTreeWithoutActivating(targetNewTree);
+        setTree(targetSourceTree);
         selectPerson(bridgePersonId);
         confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
       }
     },
-    [selectedPersonIds, tree, handleSwitchTree, setTree, selectPerson]
+    [selectedPersonIds, tree, isCloudTree, user, handleSwitchTree, setTree, selectPerson]
   );
 
 
@@ -1268,6 +1387,7 @@ function FamilyTreeMain() {
           onClose={() => setIsCreateTreeModalOpen(false)}
           tree={tree}
           selectedPersonIds={Array.from(selectedPersonIds)}
+          isCloudTree={isCloudTree && Boolean(user)}
           onCreateTree={handleCreateTreeFromSelection}
         />
       )}

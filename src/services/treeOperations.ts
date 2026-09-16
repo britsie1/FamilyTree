@@ -1280,7 +1280,8 @@ export function linkPeopleAcrossTrees(
   treeA: TreeData,
   personAId: string,
   treeB: TreeData,
-  personBId: string
+  personBId: string,
+  options?: { isCloudA?: boolean; isCloudB?: boolean; relationshipNote?: string }
 ): { updatedTreeA: TreeData; updatedTreeB: TreeData } {
   const personA = treeA.people[personAId];
   const personB = treeB.people[personBId];
@@ -1288,11 +1289,16 @@ export function linkPeopleAcrossTrees(
     return { updatedTreeA: treeA, updatedTreeB: treeB };
   }
 
+  const isCloudA = options?.isCloudA ?? Boolean((treeA as any).ownerId);
+  const isCloudB = options?.isCloudB ?? Boolean((treeB as any).ownerId);
+
   const linkToB: TreeLink = {
     treeId: treeB.id,
     treeName: treeB.name || 'Linked Tree',
     personId: personBId,
     personName: getPersonDisplayName(personB),
+    relationshipNote: options?.relationshipNote,
+    isCloud: isCloudB,
     createdAt: new Date().toISOString(),
   };
 
@@ -1301,6 +1307,8 @@ export function linkPeopleAcrossTrees(
     treeName: treeA.name || 'Linked Tree',
     personId: personAId,
     personName: getPersonDisplayName(personA),
+    relationshipNote: options?.relationshipNote,
+    isCloud: isCloudA,
     createdAt: new Date().toISOString(),
   };
 
@@ -1314,6 +1322,9 @@ export interface SplitBranchOptions {
   bridgePersonId?: string;
   removeMovedFromSource?: boolean; // Default true: removes moved members from initial tree
   linkTrees?: boolean;             // Default true: establishes mutual TreeLink
+  isCloud?: boolean;               // General flag if branch operation is in cloud context
+  sourceIsCloud?: boolean;         // Explicit flag if source tree is cloud
+  targetIsCloud?: boolean;         // Explicit flag if target tree is cloud
 }
 
 /**
@@ -1365,12 +1376,16 @@ export function splitBranchToNewTree(
     const bridgeInSource = updatedSourceTree.people[bridgePersonId];
     const bridgeInNew = newTree.people[bridgePersonId];
 
+    const isSourceCloud = options.sourceIsCloud ?? options.isCloud ?? Boolean((sourceTree as any).ownerId);
+    const isTargetCloud = options.targetIsCloud ?? options.isCloud ?? isSourceCloud;
+
     const linkToNewTree: TreeLink = {
       treeId: newTree.id,
       treeName: newTree.name,
       personId: bridgePersonId,
       personName: getPersonDisplayName(bridgeInNew),
       relationshipNote: 'Branch Tree',
+      isCloud: isTargetCloud,
       createdAt: new Date().toISOString(),
     };
 
@@ -1380,6 +1395,7 @@ export function splitBranchToNewTree(
       personId: bridgePersonId,
       personName: getPersonDisplayName(bridgeInSource),
       relationshipNote: 'Initial Tree',
+      isCloud: isSourceCloud,
       createdAt: new Date().toISOString(),
     };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { TreeData } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
-import { X, GitFork, Check, Users, ArrowRight, Link2, MoveRight, Copy } from 'lucide-react';
+import { X, GitFork, Check, Users, ArrowRight, Link2, MoveRight, Copy, Cloud } from 'lucide-react';
 
 export interface CreateTreeOptions {
   name: string;
@@ -16,7 +16,8 @@ interface CreateTreeFromSelectionModalProps {
   onClose: () => void;
   tree: TreeData;
   selectedPersonIds: string[];
-  onCreateTree: (options: CreateTreeOptions) => void;
+  isCloudTree?: boolean;
+  onCreateTree: (options: CreateTreeOptions) => void | Promise<void>;
 }
 
 export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModalProps> = ({
@@ -24,6 +25,7 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
   onClose,
   tree,
   selectedPersonIds,
+  isCloudTree = false,
   onCreateTree,
 }) => {
   const [customName, setCustomName] = useState<string | null>(null);
@@ -127,6 +129,15 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
               and parent-child connections between them will be preserved.
             </div>
           </div>
+
+          {isCloudTree && (
+            <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-3 text-xs text-blue-900 flex items-center gap-2.5">
+              <Cloud className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <span>
+                <strong>Cloud Tree Branch:</strong> This new tree will be created in your cloud account, preserving URL parameters and real-time syncing.
+              </span>
+            </div>
+          )}
 
           {/* Tree Name Input */}
           <div>

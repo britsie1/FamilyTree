@@ -309,6 +309,12 @@ export const useTreeStore = create<TreeStoreState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     };
+    delete (copy as any).ownerId;
+    delete (copy as any).ownerEmail;
+    delete (copy as any).ownerDisplayName;
+    delete (copy as any).ownerPhotoURL;
+    delete (copy as any).sharedWith;
+    delete (copy as any).sharedEmails;
     get().resetHistory(copy);
     return copy;
   },

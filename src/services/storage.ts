@@ -600,9 +600,14 @@ export function linkTreesBetweenPeople(
   currentTree: TreeData,
   currentPersonId: string,
   targetTreeId: string,
-  targetPersonId: string
+  targetPersonId: string,
+  options?: {
+    isCloudCurrent?: boolean;
+    isCloudTarget?: boolean;
+    targetTreeData?: TreeData;
+  }
 ): { updatedCurrentTree: TreeData; updatedTargetTree: TreeData | null } {
-  const targetTree = loadTreeById(targetTreeId);
+  const targetTree = options?.targetTreeData || loadTreeById(targetTreeId);
   if (!targetTree) {
     return { updatedCurrentTree: currentTree, updatedTargetTree: null };
   }
@@ -611,7 +616,11 @@ export function linkTreesBetweenPeople(
     currentTree,
     currentPersonId,
     targetTree,
-    targetPersonId
+    targetPersonId,
+    {
+      isCloudA: options?.isCloudCurrent,
+      isCloudB: options?.isCloudTarget,
+    }
   );
 
   saveTreeWithoutActivating(updatedTreeB);
