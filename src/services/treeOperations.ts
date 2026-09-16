@@ -1,4 +1,4 @@
-import type { TreeData, Person, Union } from '../types/tree';
+import type { TreeData, Person, Union, TreeLink } from '../types/tree';
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
@@ -1223,5 +1223,172 @@ export function createTreeFromPeople(
 
   return sanitizeTree(rawTree);
 }
+
+/**
+ * Adds or updates a TreeLink on a person in a tree.
+ */
+export function addTreeLink(tree: TreeData, personId: string, link: TreeLink): TreeData {
+  const person = tree.people[personId];
+  if (!person) return tree;
+
+  const currentLinks = person.linkedTrees || [];
+  // Deduplicate by target treeId
+  const nextLinks = currentLinks.filter((l) => l.treeId !== link.treeId);
+  nextLinks.push(link);
+
+  return {
+    ...tree,
+    people: {
+      ...tree.people,
+      [personId]: {
+        ...person,
+        linkedTrees: nextLinks,
+      },
+    },
+  };
+}
+
+/**
+ * Removes a TreeLink from a person by target treeId.
+ */
+export function removeTreeLink(
+  tree: TreeData,
+  personId: string,
+  targetTreeId: string
+): TreeData {
+  const person = tree.people[personId];
+  if (!person || !person.linkedTrees) return tree;
+
+  const nextLinks = person.linkedTrees.filter((l) => l.treeId !== targetTreeId);
+
+  return {
+    ...tree,
+    people: {
+      ...tree.people,
+      [personId]: {
+        ...person,
+        linkedTrees: nextLinks.length > 0 ? nextLinks : undefined,
+      },
+    },
+  };
+}
+
+/**
+ * Establishes bidirectional TreeLinks between two people across two trees.
+ */
+export function linkPeopleAcrossTrees(
+  treeA: TreeData,
+  personAId: string,
+  treeB: TreeData,
+  personBId: string
+): { updatedTreeA: TreeData; updatedTreeB: TreeData } {
+  const personA = treeA.people[personAId];
+  const personB = treeB.people[personBId];
+  if (!personA || !personB) {
+    return { updatedTreeA: treeA, updatedTreeB: treeB };
+  }
+
+  const linkToB: TreeLink = {
+    treeId: treeB.id,
+    treeName: treeB.name || 'Linked Tree',
+    personId: personBId,
+    personName: getPersonDisplayName(personB),
+    createdAt: new Date().toISOString(),
+  };
+
+  const linkToA: TreeLink = {
+    treeId: treeA.id,
+    treeName: treeA.name || 'Linked Tree',
+    personId: personAId,
+    personName: getPersonDisplayName(personA),
+    createdAt: new Date().toISOString(),
+  };
+
+  const updatedTreeA = addTreeLink(treeA, personAId, linkToB);
+  const updatedTreeB = addTreeLink(treeB, personBId, linkToA);
+
+  return { updatedTreeA, updatedTreeB };
+}
+
+export interface SplitBranchOptions {
+  bridgePersonId?: string;
+  removeMovedFromSource?: boolean; // Default true: removes moved members from initial tree
+  linkTrees?: boolean;             // Default true: establishes mutual TreeLink
+}
+
+/**
+ * Moves or copies selected people into a new independent tree, keeping the bridge person
+ * as an interconnected anchor between both trees with mutual TreeLinks.
+ */
+export function splitBranchToNewTree(
+  sourceTree: TreeData,
+  selectedPersonIds: string[],
+  treeName?: string,
+  options: SplitBranchOptions = {}
+): { newTree: TreeData; updatedSourceTree: TreeData; bridgePersonId: string } {
+  const {
+    bridgePersonId: requestedBridge,
+    removeMovedFromSource = true,
+    linkTrees = true,
+  } = options;
+
+  // 1. Create the new independent branch tree
+  let newTree = createTreeFromPeople(sourceTree, selectedPersonIds, treeName);
+
+  // 2. Identify the bridge person (the anchor connecting both trees)
+  let bridgePersonId = requestedBridge && selectedPersonIds.includes(requestedBridge)
+    ? requestedBridge
+    : selectedPersonIds[0] || '';
+
+  if (!bridgePersonId && newTree.rootPersonId) {
+    bridgePersonId = newTree.rootPersonId;
+  }
+
+  let updatedSourceTree: TreeData = {
+    ...sourceTree,
+    people: { ...sourceTree.people },
+    unions: { ...sourceTree.unions },
+  };
+
+  // 3. If removeMovedFromSource is true, delete non-bridge members from source tree
+  if (removeMovedFromSource) {
+    for (const pId of selectedPersonIds) {
+      if (pId !== bridgePersonId && updatedSourceTree.people[pId]) {
+        updatedSourceTree = deletePersonFromTree(updatedSourceTree, pId);
+      }
+    }
+    updatedSourceTree = sanitizeTree(updatedSourceTree);
+  }
+
+  // 4. Establish bidirectional link on bridge person
+  if (linkTrees && bridgePersonId && updatedSourceTree.people[bridgePersonId] && newTree.people[bridgePersonId]) {
+    const bridgeInSource = updatedSourceTree.people[bridgePersonId];
+    const bridgeInNew = newTree.people[bridgePersonId];
+
+    const linkToNewTree: TreeLink = {
+      treeId: newTree.id,
+      treeName: newTree.name,
+      personId: bridgePersonId,
+      personName: getPersonDisplayName(bridgeInNew),
+      relationshipNote: 'Branch Tree',
+      createdAt: new Date().toISOString(),
+    };
+
+    const linkToSourceTree: TreeLink = {
+      treeId: updatedSourceTree.id,
+      treeName: updatedSourceTree.name,
+      personId: bridgePersonId,
+      personName: getPersonDisplayName(bridgeInSource),
+      relationshipNote: 'Initial Tree',
+      createdAt: new Date().toISOString(),
+    };
+
+    updatedSourceTree = addTreeLink(updatedSourceTree, bridgePersonId, linkToNewTree);
+    newTree = addTreeLink(newTree, bridgePersonId, linkToSourceTree);
+  }
+
+  return { newTree, updatedSourceTree, bridgePersonId };
+}
+
 
 

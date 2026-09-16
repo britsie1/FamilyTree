@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { TreeData, Union, Person } from './types/tree';
+import type { TreeData, Union, Person, TreeLink } from './types/tree';
 import {
   loadCurrentTree,
   loadTreeById,
   saveCurrentTree,
+  saveTreeWithoutActivating,
+  linkTreesBetweenPeople,
   exportTreeToJsonFile,
   importTreeFromJsonString,
   createDoubleInLawPreset,
@@ -13,7 +15,8 @@ import {
 } from './services/storage';
 import {
   getPersonDisplayName,
-  createTreeFromPeople,
+  splitBranchToNewTree,
+  removeTreeLink,
 } from './services/treeOperations';
 import { getBranchPersonIds } from './services/layoutEngine';
 import { useAsyncLayout } from './services/layoutClient';
@@ -28,7 +31,8 @@ import { EdgeCaseModal } from './components/Modal/EdgeCaseModal';
 import { AddRelationshipModal, type RelationType } from './components/Modal/AddRelationshipModal';
 import { EditUnionModal } from './components/Modal/EditUnionModal';
 import { TreeManagerModal } from './components/Modal/TreeManagerModal';
-import { CreateTreeFromSelectionModal } from './components/Modal/CreateTreeFromSelectionModal';
+import { CreateTreeFromSelectionModal, type CreateTreeOptions } from './components/Modal/CreateTreeFromSelectionModal';
+import { LinkExistingTreeModal } from './components/Modal/LinkExistingTreeModal';
 import { ShareTreeModal } from './components/Modal/ShareTreeModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import {
@@ -175,6 +179,8 @@ function FamilyTreeMain() {
   const [isEdgeCaseModalOpen, setIsEdgeCaseModalOpen] = useState(false);
   const [isTreeManagerOpen, setIsTreeManagerOpen] = useState(false);
   const [isCreateTreeModalOpen, setIsCreateTreeModalOpen] = useState(false);
+  const [isLinkTreeModalOpen, setIsLinkTreeModalOpen] = useState(false);
+  const [personToLink, setPersonToLink] = useState<Person | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     x: number;
@@ -451,7 +457,7 @@ function FamilyTreeMain() {
   }, [makeCopyAction, setIsCloudTree, setUserPermission, setAccessDeniedMessage]);
 
   const handleSwitchTree = useCallback(
-    (newTree: TreeData, isCloud: boolean = false) => {
+    (newTree: TreeData, isCloud: boolean = false, focusPersonId?: string | null) => {
       hasInitialFitRef.current = false;
       if (isCloud) {
         lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(newTree);
@@ -469,7 +475,9 @@ function FamilyTreeMain() {
         window.history.pushState({}, '', window.location.pathname);
       }
 
-      const initialPersonId = newTree.rootPersonId || Object.keys(newTree.people)[0] || null;
+      const initialPersonId = focusPersonId && newTree.people[focusPersonId]
+        ? focusPersonId
+        : (newTree.rootPersonId || Object.keys(newTree.people)[0] || null);
       selectPerson(initialPersonId);
       setSelectedUnionId(null);
       clearFocus();
@@ -589,23 +597,117 @@ function FamilyTreeMain() {
     [selectedPersonIds.size]
   );
 
+  const handleOpenTreeLink = useCallback(
+    async (_person: Person, link: TreeLink) => {
+      let targetTree = loadTreeById(link.treeId);
+      let isCloud = false;
+
+      if (!targetTree && (link.isCloud || user)) {
+        try {
+          targetTree = await getCloudTree(link.treeId);
+          isCloud = true;
+        } catch (err) {
+          console.warn('Could not fetch cloud tree for link:', err);
+        }
+      }
+
+      if (targetTree) {
+        handleSwitchTree(targetTree, isCloud, link.personId);
+        confetti({ particleCount: 35, spread: 45, origin: { y: 0.65 } });
+      } else {
+        alert(`Linked family tree "${link.treeName}" could not be found.`);
+      }
+    },
+    [handleSwitchTree, user]
+  );
+
+  const handleOpenLinkTreeModal = useCallback(
+    (person?: Person | null) => {
+      const target = person || (selectedPersonId ? tree.people[selectedPersonId] : null);
+      if (target) {
+        setPersonToLink(target);
+        setIsLinkTreeModalOpen(true);
+      }
+    },
+    [selectedPersonId, tree.people]
+  );
+
+  const handleLinkTrees = useCallback(
+    (targetTreeId: string, targetPersonId: string) => {
+      if (!personToLink) return;
+
+      const { updatedCurrentTree } = linkTreesBetweenPeople(
+        tree,
+        personToLink.id,
+        targetTreeId,
+        targetPersonId
+      );
+
+      setTree(updatedCurrentTree);
+      selectPerson(personToLink.id);
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+    },
+    [personToLink, tree, setTree, selectPerson]
+  );
+
+  const handleRemoveTreeLink = useCallback(
+    (personId: string, targetTreeId: string) => {
+      const updated = removeTreeLink(tree, personId, targetTreeId);
+      setTree(updated);
+
+      const targetTree = loadTreeById(targetTreeId);
+      if (targetTree) {
+        let modified = false;
+        for (const p of Object.values(targetTree.people)) {
+          if (p.linkedTrees?.some((l) => l.treeId === tree.id)) {
+            targetTree.people[p.id] = {
+              ...p,
+              linkedTrees: p.linkedTrees.filter((l) => l.treeId !== tree.id),
+            };
+            modified = true;
+          }
+        }
+        if (modified) {
+          saveTreeWithoutActivating(targetTree);
+        }
+      }
+    },
+    [tree, setTree]
+  );
+
   const handleCreateTreeFromSelection = useCallback(
-    (name: string, switchImmediately: boolean) => {
+    (options: CreateTreeOptions) => {
       const selectedArray = Array.from(selectedPersonIds);
       if (selectedArray.length === 0) return;
 
-      const newTree = createTreeFromPeople(tree, selectedArray, name);
-      saveCurrentTree(newTree);
+      const { newTree, updatedSourceTree, bridgePersonId } = splitBranchToNewTree(
+        tree,
+        selectedArray,
+        options.name,
+        {
+          bridgePersonId: options.bridgePersonId,
+          removeMovedFromSource: options.removeMovedFromSource,
+          linkTrees: options.linkTrees,
+        }
+      );
 
-      if (switchImmediately) {
-        handleSwitchTree(newTree);
+      // Persist the updated source tree
+      saveCurrentTree(updatedSourceTree);
+
+      if (options.switchImmediately) {
+        saveCurrentTree(newTree);
+        handleSwitchTree(newTree, false, bridgePersonId);
         confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
       } else {
-        confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
+        saveTreeWithoutActivating(newTree);
+        setTree(updatedSourceTree);
+        selectPerson(bridgePersonId);
+        confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
       }
     },
-    [selectedPersonIds, tree, handleSwitchTree]
+    [selectedPersonIds, tree, handleSwitchTree, setTree, selectPerson]
   );
+
 
   const handleImportFile = (file: File) => {
     const reader = new FileReader();
@@ -895,6 +997,7 @@ function FamilyTreeMain() {
           onQuickSpawnRelative={handleQuickSpawnRelative}
           isMiniMapOpen={isMiniMapOpen}
           onToggleMiniMap={toggleMiniMap}
+          onOpenTreeLink={handleOpenTreeLink}
           zoom={zoom}
           setZoom={setZoom}
           pan={pan}
@@ -939,6 +1042,13 @@ function FamilyTreeMain() {
             onCreateNewTree={() => {
               setContextMenu(null);
               setIsCreateTreeModalOpen(true);
+            }}
+            onLinkExistingTree={() => {
+              const target = contextMenu.targetPersonId
+                ? tree.people[contextMenu.targetPersonId]
+                : (selectedPersonId ? tree.people[selectedPersonId] : null);
+              setContextMenu(null);
+              handleOpenLinkTreeModal(target);
             }}
             onDeselectAll={() => {
               setContextMenu(null);
@@ -1049,6 +1159,9 @@ function FamilyTreeMain() {
           onEditUnion={setSelectedUnionId}
           onJumpToYear={jumpToYear}
           isReadOnly={isReadOnly}
+          onOpenTreeLink={handleOpenTreeLink}
+          onLinkExistingTree={handleOpenLinkTreeModal}
+          onRemoveTreeLink={handleRemoveTreeLink}
         />
       </main>
 
@@ -1158,7 +1271,21 @@ function FamilyTreeMain() {
           onCreateTree={handleCreateTreeFromSelection}
         />
       )}
+
+      {isLinkTreeModalOpen && personToLink && (
+        <LinkExistingTreeModal
+          isOpen={isLinkTreeModalOpen}
+          onClose={() => {
+            setIsLinkTreeModalOpen(false);
+            setPersonToLink(null);
+          }}
+          currentTree={tree}
+          currentPerson={personToLink}
+          onLinkTrees={handleLinkTrees}
+        />
+      )}
     </div>
+
   );
 }
 

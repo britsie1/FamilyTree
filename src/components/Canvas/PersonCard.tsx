@@ -1,8 +1,7 @@
-import React from 'react';
-import type { LayoutNode, Gender, LayoutStyle } from '../../types/tree';
+import type { LayoutNode, Gender, LayoutStyle, Person, TreeLink } from '../../types/tree';
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
-import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check } from 'lucide-react';
+import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink } from 'lucide-react';
 
 interface PersonCardProps {
   node: LayoutNode;
@@ -35,6 +34,7 @@ interface PersonCardProps {
     startY: number
   ) => void;
   isConnectTarget?: boolean;
+  onOpenTreeLink?: (person: Person, link: TreeLink) => void;
 }
 
 export const PersonCard: React.FC<PersonCardProps> = ({
@@ -62,6 +62,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   dragOffset = null,
   onPortMouseDown,
   isConnectTarget = false,
+  onOpenTreeLink,
 }) => {
   const { data: person, x, y, width, height } = node;
   const currentX = dragOffset ? x + dragOffset.x : x;
@@ -222,6 +223,27 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         </span>
       )}
 
+      {/* Linked Trees Indicator Badge */}
+      {person.linkedTrees && person.linkedTrees.length > 0 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenTreeLink?.(person, person.linkedTrees![0]);
+          }}
+          title={`Linked to: ${person.linkedTrees.map((l) => l.treeName).join(', ')}\nClick to jump to this family tree`}
+          className={`absolute ${
+            isRoomHonoree || isCompared ? '-top-2.5 right-14' : '-top-2.5 right-2'
+          } bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md z-35 flex items-center gap-1 border border-indigo-400 hover:scale-105 transition-all cursor-pointer pointer-events-auto group/treebtn animate-in fade-in duration-150`}
+        >
+          <GitFork className="w-3 h-3 rotate-90" />
+          <span className="max-w-[85px] truncate">
+            {person.linkedTrees.length === 1 ? person.linkedTrees[0].treeName : `${person.linkedTrees.length} trees`}
+          </span>
+          <ExternalLink className="w-2.5 h-2.5 opacity-80 group-hover/treebtn:opacity-100" />
+        </button>
+      )}
+
       <div className="flex items-center gap-3 p-2.5 h-full relative">
         {/* Avatar */}
         <div
@@ -265,7 +287,20 @@ export const PersonCard: React.FC<PersonCardProps> = ({
                 ✝
               </span>
             )}
+            {person.linkedTrees && person.linkedTrees.length > 0 && (
+              <span
+                title={`Linked to: ${person.linkedTrees.map((t) => t.treeName).join(', ')}. Click to jump.`}
+                className="text-indigo-600 hover:text-indigo-800 cursor-pointer flex items-center flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenTreeLink?.(person, person.linkedTrees![0]);
+                }}
+              >
+                <GitFork className="w-3.5 h-3.5 rotate-90" />
+              </span>
+            )}
           </div>
+
 
           {person.maidenName && (
             <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">

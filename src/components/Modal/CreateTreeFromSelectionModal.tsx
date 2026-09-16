@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { TreeData } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
-import { X, GitFork, Check, Users, ArrowRight } from 'lucide-react';
+import { X, GitFork, Check, Users, ArrowRight, Link2, MoveRight, Copy } from 'lucide-react';
+
+export interface CreateTreeOptions {
+  name: string;
+  switchImmediately: boolean;
+  removeMovedFromSource: boolean;
+  linkTrees: boolean;
+  bridgePersonId: string;
+}
 
 interface CreateTreeFromSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   tree: TreeData;
   selectedPersonIds: string[];
-  onCreateTree: (name: string, switchImmediately: boolean) => void;
+  onCreateTree: (options: CreateTreeOptions) => void;
 }
 
 export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModalProps> = ({
@@ -20,6 +28,9 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
 }) => {
   const [customName, setCustomName] = useState<string | null>(null);
   const [switchImmediately, setSwitchImmediately] = useState(true);
+  const [branchMode, setBranchMode] = useState<'move' | 'copy'>('move');
+  const [linkTrees, setLinkTrees] = useState(true);
+  const [bridgePersonId, setBridgePersonId] = useState<string>(selectedPersonIds[0] || '');
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Compute suggested default name derived directly from selected people
@@ -51,12 +62,25 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
     return () => clearTimeout(timer);
   }, []);
 
+  // Sync bridgePersonId if selection changes
+  useEffect(() => {
+    if (selectedPersonIds.length > 0 && !selectedPersonIds.includes(bridgePersonId)) {
+      setBridgePersonId(selectedPersonIds[0]);
+    }
+  }, [selectedPersonIds, bridgePersonId]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!treeName.trim()) return;
-    onCreateTree(treeName.trim(), switchImmediately);
+    onCreateTree({
+      name: treeName.trim(),
+      switchImmediately,
+      removeMovedFromSource: branchMode === 'move',
+      linkTrees,
+      bridgePersonId: bridgePersonId || selectedPersonIds[0] || '',
+    });
     setCustomName(null);
     onClose();
   };
@@ -145,19 +169,111 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
             </div>
           </div>
 
-          {/* Switch Immediately Checkbox */}
-          <label className="flex items-center gap-3 cursor-pointer select-none pt-1">
-            <input
-              type="checkbox"
-              checked={switchImmediately}
-              onChange={(e) => setSwitchImmediately(e.target.checked)}
-              className="w-4 h-4 rounded-md text-indigo-600 focus:ring-indigo-500 border-slate-300"
-            />
-            <span className="text-xs font-medium text-slate-700">
-              Switch to this new tree immediately
-            </span>
-          </label>
+          {/* Branch Extraction Mode (Move vs Copy) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Branch Action
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setBranchMode('move')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  branchMode === 'move'
+                    ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/20 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <MoveRight className="w-4 h-4 text-indigo-600" />
+                  <span className="text-xs font-bold text-slate-900">Move to New Tree</span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Extract selection into new tree and remove them from current tree, keeping the bridge person linked.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBranchMode('copy')}
+                className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  branchMode === 'copy'
+                    ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/20 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Copy className="w-4 h-4 text-slate-600" />
+                  <span className="text-xs font-bold text-slate-900">Copy to New Tree</span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Keep all members in the current tree and create a linked copy in the new tree.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Bridge / Anchor Person Selector */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="bridgePersonSelect" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Bridge Person Linking Trees
+              </label>
+              <span className="text-[11px] text-indigo-600 font-medium flex items-center gap-1">
+                <Link2 className="w-3 h-3" /> Connects both trees
+              </span>
+            </div>
+            {selectedPeople.length > 1 ? (
+              <select
+                id="bridgePersonSelect"
+                value={bridgePersonId}
+                onChange={(e) => setBridgePersonId(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all cursor-pointer shadow-inner"
+              >
+                {selectedPeople.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {getPersonDisplayName(p)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800">
+                {selectedPeople[0] ? getPersonDisplayName(selectedPeople[0]) : 'Selected person'}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400 mt-1">
+              This person stays in both trees with an interactive link badge to jump between them.
+            </p>
+          </div>
+
+          {/* Options Checkboxes */}
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={linkTrees}
+                onChange={(e) => setLinkTrees(e.target.checked)}
+                className="w-4 h-4 rounded-md text-indigo-600 focus:ring-indigo-500 border-slate-300"
+              />
+              <span className="text-xs font-medium text-slate-700">
+                Create interactive link badge on cards linking both trees
+              </span>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={switchImmediately}
+                onChange={(e) => setSwitchImmediately(e.target.checked)}
+                className="w-4 h-4 rounded-md text-indigo-600 focus:ring-indigo-500 border-slate-300"
+              />
+              <span className="text-xs font-medium text-slate-700">
+                Switch to this new tree immediately
+              </span>
+            </label>
+          </div>
         </form>
+
 
         {/* Footer */}
         <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3">

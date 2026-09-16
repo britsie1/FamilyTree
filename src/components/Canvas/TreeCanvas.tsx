@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { TreeData, LayoutNode, TreeLayout, LayoutStyle } from '../../types/tree';
+import type { TreeData, LayoutNode, TreeLayout, LayoutStyle, TreeLink, Person } from '../../types/tree';
 import { PersonCard } from './PersonCard';
 import { ConnectorLines } from './ConnectorLines';
 import { FamilyGroupEnclosures } from './FamilyGroupEnclosures';
@@ -50,6 +50,7 @@ interface TreeCanvasProps {
   ) => void;
   isMiniMapOpen?: boolean;
   onToggleMiniMap?: () => void;
+  onOpenTreeLink?: (person: Person, link: TreeLink) => void;
 }
 
 export const TreeCanvas: React.FC<TreeCanvasProps> = ({
@@ -84,6 +85,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   onQuickSpawnRelative,
   isMiniMapOpen = true,
   onToggleMiniMap,
+  onOpenTreeLink,
 }) => {
   const [hoveredPersonId, setHoveredPersonId] = useState<string | null>(null);
 
@@ -887,6 +889,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               onDragStart={handleCardDragStart}
               onPortMouseDown={handlePortMouseDown}
               isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
+              onOpenTreeLink={onOpenTreeLink}
             />
           );
         })}

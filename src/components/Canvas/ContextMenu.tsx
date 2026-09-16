@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { GitFork, XCircle, Users } from 'lucide-react';
+import { GitFork, XCircle, Users, Link2 } from 'lucide-react';
 
 interface ContextMenuProps {
   isOpen: boolean;
@@ -7,6 +7,7 @@ interface ContextMenuProps {
   y: number;
   selectedCount: number;
   onCreateNewTree: () => void;
+  onLinkExistingTree?: () => void;
   onDeselectAll: () => void;
   onClose: () => void;
 }
@@ -17,6 +18,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   y,
   selectedCount,
   onCreateNewTree,
+  onLinkExistingTree,
   onDeselectAll,
   onClose,
 }) => {
@@ -79,7 +81,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       </div>
 
       {/* Main Action: Create new tree */}
-      <div className="p-1">
+      <div className="p-1 space-y-1">
         <button
           onClick={() => {
             onClose();
@@ -99,7 +101,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </div>
           </div>
         </button>
+
+        {onLinkExistingTree && selectedCount === 1 && (
+          <button
+            onClick={() => {
+              onClose();
+              onLinkExistingTree();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-indigo-50/80 text-slate-800 hover:text-indigo-700 transition-colors group text-left cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors flex-shrink-0">
+              <Link2 className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold leading-snug text-slate-900 group-hover:text-emerald-700">
+                Link existing tree...
+              </div>
+              <div className="text-[10px] text-slate-400 group-hover:text-emerald-600 leading-snug">
+                Connect to person on another tree
+              </div>
+            </div>
+          </button>
+        )}
       </div>
+
 
       {/* Secondary Actions */}
       <div className="border-t border-slate-100 p-1">

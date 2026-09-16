@@ -1,5 +1,5 @@
 import React from 'react';
-import type { TreeData, Person, Gender } from '../../types/tree';
+import type { TreeData, Person, Gender, TreeLink } from '../../types/tree';
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import {
   X,
@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Clock,
   Eye,
+  GitFork,
 } from 'lucide-react';
 import type { RelationshipResult } from '../../services/relationshipFinder';
 import { extractYear } from '../../services/temporalEngine';
@@ -48,6 +49,9 @@ interface PersonInspectorProps {
   onEditUnion?: (unionId: string) => void;
   onJumpToYear?: (year: number, moment?: any) => void;
   isReadOnly?: boolean;
+  onOpenTreeLink?: (person: Person, link: TreeLink) => void;
+  onLinkExistingTree?: (person: Person) => void;
+  onRemoveTreeLink?: (personId: string, targetTreeId: string) => void;
 }
 
 export const PersonInspector: React.FC<PersonInspectorProps> = ({
@@ -74,6 +78,9 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
   onEditUnion,
   onJumpToYear,
   isReadOnly = false,
+  onOpenTreeLink,
+  onLinkExistingTree,
+  onRemoveTreeLink,
 }) => {
   if (!selectedPersonId) return null;
 
@@ -734,6 +741,80 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                         <Unlink className="w-3 h-3" />
                       </button>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Linked Trees */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-slate-700 flex items-center gap-1">
+                <GitFork className="w-3 h-3 text-indigo-600 rotate-90" /> Linked Trees
+              </span>
+              {onLinkExistingTree && (
+                <button
+                  type="button"
+                  onClick={() => onLinkExistingTree(person)}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-0.5 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" /> Link Tree
+                </button>
+              )}
+            </div>
+            {(!person.linkedTrees || person.linkedTrees.length === 0) ? (
+              <p className="text-xs text-slate-400 italic">No external tree linked to this person</p>
+            ) : (
+              <div className="space-y-1.5">
+                {person.linkedTrees.map((link) => (
+                  <div
+                    key={link.treeId}
+                    className="flex items-center justify-between px-2.5 py-2 bg-indigo-50/40 hover:bg-indigo-50/80 border border-indigo-100 rounded-lg group transition-colors"
+                  >
+                    <div
+                      onClick={() => onOpenTreeLink?.(person, link)}
+                      className="flex-1 min-w-0 cursor-pointer pr-2"
+                      title={`Click to jump to ${link.treeName}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-indigo-950 truncate">
+                          {link.treeName}
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-indigo-500 group-hover:text-indigo-700 flex-shrink-0" />
+                      </div>
+                      {link.personName && (
+                        <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                          Matches: {link.personName}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onOpenTreeLink?.(person, link)}
+                        className="px-2 py-1 text-[10px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors cursor-pointer shadow-2xs"
+                        title="Open this tree"
+                      >
+                        Open
+                      </button>
+                      {onRemoveTreeLink && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Remove link to "${link.treeName}"?`)) {
+                              onRemoveTreeLink(person.id, link.treeId);
+                            }
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
+                          title="Unlink this tree"
+                        >
+                          <Unlink className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

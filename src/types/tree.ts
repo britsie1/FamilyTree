@@ -2,6 +2,16 @@ export type Gender = 'male' | 'female' | 'other' | 'unspecified';
 
 export type LayoutStyle = 'vertical' | 'horizontal';
 
+export interface TreeLink {
+  treeId: string;
+  treeName: string;
+  personId?: string; // Target person's ID in the linked tree
+  personName?: string; // Display name of matching person for UI hints
+  relationshipNote?: string; // Optional context (e.g. "Spouse branch", "Root of tree")
+  isCloud?: boolean;
+  createdAt?: string;
+}
+
 export interface Person {
   id: string;
   firstName?: string;
@@ -27,7 +37,10 @@ export interface Person {
   parentUnionId?: string; // Union of this person's biological/adoptive parents
   unionIds: string[];     // IDs of unions where this person is a partner/parent
   generation?: number;    // Generational rank level (supports negative for ancestors above root)
+  // Cross-tree links
+  linkedTrees?: TreeLink[];
 }
+
 
 export type UnionType = 'married' | 'divorced' | 'separated' | 'partner' | 'other';
 

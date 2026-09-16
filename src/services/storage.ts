@@ -1,5 +1,5 @@
 import type { TreeData, Person, Union } from '../types/tree';
-import { sanitizeTree } from './treeOperations';
+import { sanitizeTree, linkPeopleAcrossTrees } from './treeOperations';
 
 export const STORAGE_KEY = 'family_tree_current_v1';
 
@@ -539,6 +539,86 @@ export function saveCurrentTree(tree: TreeData): void {
     console.error('Failed to save tree to storage:', err);
   }
 }
+
+/**
+ * Saves a tree and updates its metadata in the index without setting it as active.
+ */
+export function saveTreeWithoutActivating(tree: TreeData): void {
+  const store = getLocalStorage();
+  const sanitized = sanitizeTree(tree);
+  sanitized.updatedAt = new Date().toISOString();
+
+  if (!store) return;
+
+  try {
+    store.setItem(`${TREE_DATA_PREFIX}${sanitized.id}`, JSON.stringify(sanitized));
+    const summaries = listStoredTrees();
+    const existingIdx = summaries.findIndex((s) => s.id === sanitized.id);
+    const summary: TreeSummary = {
+      id: sanitized.id,
+      name: sanitized.name || 'Untitled Tree',
+      updatedAt: sanitized.updatedAt,
+      peopleCount: Object.keys(sanitized.people).length,
+      unionCount: Object.keys(sanitized.unions).length,
+    };
+
+    if (existingIdx >= 0) {
+      summaries[existingIdx] = summary;
+    } else {
+      summaries.unshift(summary);
+    }
+    saveTreeIndex(summaries);
+  } catch (err) {
+    console.error('Failed to save tree without activating:', err);
+  }
+}
+
+/**
+ * Updates a person in a stored tree directly in local storage.
+ */
+export function updatePersonInStoredTree(
+  treeId: string,
+  personId: string,
+  updates: Partial<Person>
+): TreeData | null {
+  const target = loadTreeById(treeId);
+  if (!target || !target.people[personId]) return null;
+
+  target.people[personId] = {
+    ...target.people[personId],
+    ...updates,
+  };
+
+  saveTreeWithoutActivating(target);
+  return target;
+}
+
+/**
+ * Links a person on current tree with a person on another stored tree bidirectionally.
+ */
+export function linkTreesBetweenPeople(
+  currentTree: TreeData,
+  currentPersonId: string,
+  targetTreeId: string,
+  targetPersonId: string
+): { updatedCurrentTree: TreeData; updatedTargetTree: TreeData | null } {
+  const targetTree = loadTreeById(targetTreeId);
+  if (!targetTree) {
+    return { updatedCurrentTree: currentTree, updatedTargetTree: null };
+  }
+
+  const { updatedTreeA, updatedTreeB } = linkPeopleAcrossTrees(
+    currentTree,
+    currentPersonId,
+    targetTree,
+    targetPersonId
+  );
+
+  saveTreeWithoutActivating(updatedTreeB);
+
+  return { updatedCurrentTree: updatedTreeA, updatedTargetTree: updatedTreeB };
+}
+
 
 /**
  * Automatically migrates legacy single-tree storage (STORAGE_KEY) to multi-tree index if needed.
