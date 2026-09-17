@@ -108,7 +108,7 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
   return (
     <div className={`space-y-1 ${className}`}>
       {label && (
-        <label className="block text-xs font-medium text-slate-600 flex items-center gap-1">
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1">
           {icon}
           <span>{label}</span>
         </label>
@@ -127,7 +127,7 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
             onBlur={handleYearBlur}
             disabled={disabled}
             maxLength={4}
-            className="w-full px-2 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50 font-mono"
+            className="w-full px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/50 font-mono"
             title="4-digit Year (e.g. 1945)"
           />
         </div>
@@ -138,11 +138,11 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
             value={month}
             onChange={handleMonthChange}
             disabled={disabled}
-            className="w-full px-1.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50 bg-white cursor-pointer truncate"
+            className="w-full px-1.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/50 cursor-pointer truncate"
             title="Month (Optional)"
           >
             {MONTH_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
+              <option key={opt.value} value={opt.value} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
                 {opt.label}
               </option>
             ))}
@@ -159,7 +159,7 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
             value={day}
             onChange={handleDayChange}
             disabled={disabled}
-            className="w-full px-1.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50 font-mono text-center"
+            className="w-full px-1.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/50 font-mono text-center"
             title={`Day 1-${maxDays} (Optional)`}
           />
         </div>

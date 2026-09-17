@@ -7,6 +7,7 @@ import { ConnectionCable, type PortType } from './ConnectionCable';
 import { QuickLinkMenu, type QuickLinkType } from './QuickLinkMenu';
 import { MiniMap } from './MiniMap';
 import { getPersonDisplayName } from '../../services/treeOperations';
+import { useThemeStore } from '../../stores/useThemeStore';
 import {
   calculatePinchTransform,
   getTouchDistance,
@@ -87,6 +88,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   onToggleMiniMap,
   onOpenTreeLink,
 }) => {
+  const isDark = useThemeStore((s) => s.isDark);
   const [hoveredPersonId, setHoveredPersonId] = useState<string | null>(null);
 
   // Interactive Cable Wiring & Port Connecting State
@@ -744,7 +746,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         e.preventDefault();
         onCanvasContextMenu?.(e);
       }}
-      className={`relative w-full h-full overflow-hidden bg-slate-50 canvas-background touch-none select-none overscroll-none ${
+      className={`relative w-full h-full overflow-hidden bg-slate-50 dark:bg-slate-950 canvas-background touch-none select-none overscroll-none ${
         isPanning ? 'cursor-grabbing' : isMarqueeSelecting ? 'cursor-crosshair' : 'cursor-grab'
       }`}
     >
@@ -765,7 +767,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       )}
       {/* Background Architectural Grid Pattern */}
       <svg
-        className="absolute inset-0 w-full h-full pointer-events-none opacity-40 canvas-background"
+        className={`absolute inset-0 w-full h-full pointer-events-none ${isDark ? 'opacity-30' : 'opacity-40'} canvas-background`}
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
@@ -776,7 +778,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             patternUnits="userSpaceOnUse"
             patternTransform={`translate(${pan.x % (32 * zoom)}, ${pan.y % (32 * zoom)})`}
           >
-            <circle cx={1.5} cy={1.5} r={1.2} fill="#94a3b8" />
+            <circle cx={1.5} cy={1.5} r={1.2} fill={isDark ? '#475569' : '#94a3b8'} />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#dot-grid)" />

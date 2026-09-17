@@ -229,27 +229,27 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-200">
       <div
-        className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center shadow-xs">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
               <GitFork className="w-5 h-5 rotate-90" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-800">Link to Existing Tree</h2>
-              <p className="text-xs text-slate-500">
-                Connect <span className="font-semibold text-slate-700">{currentDisplayName}</span> to another family tree
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Link to Existing Tree</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Connect <span className="font-semibold text-slate-700 dark:text-slate-300">{currentDisplayName}</span> to another family tree
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -258,8 +258,8 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {/* Informational Callout */}
-          <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-3.5 text-xs text-indigo-900 flex items-start gap-3">
-            <FolderTree className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+          <div className="bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-3.5 text-xs text-indigo-900 dark:text-indigo-200 flex items-start gap-3">
+            <FolderTree className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold">Cross-Tree Relationship Link: </span>
               Linking trees creates an interactive navigation badge on both people. You can jump directly between trees while keeping each tree lightweight and focused.
@@ -269,10 +269,10 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
           {/* Step 1: Select Tree */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 1. Select Target Family Tree
               </label>
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                 {availableTrees.length} {availableTrees.length === 1 ? 'tree' : 'trees'} available
               </span>
             </div>
@@ -280,19 +280,19 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
             {/* Tree search */}
             {availableTrees.length > 3 && (
               <div className="relative mb-2.5">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={treeSearch}
                   onChange={(e) => setTreeSearch(e.target.value)}
                   placeholder="Search family trees..."
-                  className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-xl focus:bg-white dark:focus:bg-slate-750 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
             )}
 
             {availableTrees.length === 0 ? (
-              <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 bg-slate-50/50">
+              <div className="p-6 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-center text-xs text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-850/50">
                 No other family trees found in your storage or cloud account. Create a new tree first or duplicate an existing one.
               </div>
             ) : (
@@ -310,26 +310,26 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
                       }}
                       className={`p-3 rounded-2xl border text-left transition-all flex items-start justify-between cursor-pointer ${
                         isSelected
-                          ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       <div className="min-w-0 pr-2">
-                        <div className="text-xs font-bold text-slate-800 truncate">
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
                           {t.name}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                            <Users className="w-3 h-3 text-slate-400" />
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            <Users className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                             <span>{t.peopleCount} {t.peopleCount === 1 ? 'person' : 'people'}</span>
                           </div>
                           {t.isCloud ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100/80 px-1.5 py-0.2 rounded-md">
-                              <Cloud className="w-2.5 h-2.5 text-blue-500" /> Cloud
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 border border-blue-100/80 dark:border-blue-900 px-1.5 py-0.2 rounded-md">
+                              <Cloud className="w-2.5 h-2.5 text-blue-500 dark:text-blue-400" /> Cloud
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 border border-slate-200/60 px-1.5 py-0.2 rounded-md">
-                              <HardDrive className="w-2.5 h-2.5 text-slate-400" /> Local
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-1.5 py-0.2 rounded-md">
+                              <HardDrive className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500" /> Local
                             </span>
                           )}
                         </div>
@@ -350,19 +350,19 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
           {selectedTreeId && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   2. Select Matching Person in "{targetTreeData?.name || 'Target Tree'}"
                 </label>
                 {targetTreeData && (
-                  <span className="text-xs text-slate-400 font-medium">
+                  <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                     {candidatePeople.length} people
                   </span>
                 )}
               </div>
 
               {loadingTargetTree ? (
-                <div className="p-8 border border-slate-200 rounded-2xl flex items-center justify-center gap-2.5 text-xs text-slate-500 bg-slate-50/50">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                <div className="p-8 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-850/50">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
                   <span>Loading tree members from cloud...</span>
                 </div>
               ) : targetTreeData ? (
@@ -370,13 +370,13 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
                   {/* Person Search */}
                   {candidatePeople.length > 4 && (
                     <div className="relative mb-2.5">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
                         value={personSearch}
                         onChange={(e) => setPersonSearch(e.target.value)}
                         placeholder="Search people in target tree..."
-                        className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-xl focus:bg-white dark:focus:bg-slate-750 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     </div>
                   )}
@@ -401,23 +401,23 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
                       onClick={() => setSelectedPersonId(p.id)}
                       className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
                         isSelected
-                          ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       <div className="min-w-0 pr-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-semibold text-slate-800 truncate">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">
                             {pName}
                           </span>
                           {isNameMatch && (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full flex-shrink-0">
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded-full flex-shrink-0">
                               <Sparkles className="w-2.5 h-2.5" /> Match
                             </span>
                           )}
                         </div>
                         {lifeSpan && (
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          <div className="text-[10px] text-slate-400 dark:text-slate-400 font-mono mt-0.5">
                             {lifeSpan}
                           </div>
                         )}
@@ -433,7 +433,7 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
               </div>
                 </>
               ) : (
-                <div className="p-6 border border-dashed border-rose-200 rounded-2xl text-center text-xs text-rose-500 bg-rose-50/30">
+                <div className="p-6 border border-dashed border-rose-200 dark:border-rose-800 rounded-2xl text-center text-xs text-rose-500 dark:text-rose-400 bg-rose-50/30 dark:bg-rose-950/30">
                   Could not load data for the selected tree.
                 </div>
               )}
@@ -442,10 +442,10 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between">
-          <div className="text-xs text-slate-500 truncate max-w-[280px]">
+        <div className="px-6 py-4 bg-slate-50/80 dark:bg-slate-850/80 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[280px]">
             {selectedTreeId && selectedPersonId && targetTreeData ? (
-              <span className="text-indigo-700 font-medium">
+              <span className="text-indigo-700 dark:text-indigo-400 font-medium">
                 Links {currentDisplayName} ↔ {getPersonDisplayName(targetTreeData.people[selectedPersonId])}
               </span>
             ) : (
@@ -456,7 +456,7 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>

@@ -149,23 +149,23 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
 
   return (
     <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-35 max-w-[96vw] w-[920px] select-none">
-      <div className="bg-slate-900/92 backdrop-blur-xl border border-slate-700/70 shadow-2xl rounded-2xl p-3 sm:p-3.5 text-white flex flex-col gap-2.5 transition-all">
+      <div className="bg-white/95 dark:bg-slate-900/92 backdrop-blur-xl border border-slate-200 dark:border-slate-700/70 shadow-2xl rounded-2xl p-3 sm:p-3.5 text-slate-900 dark:text-white flex flex-col gap-2.5 transition-all">
         {/* Top Header Row */}
-        <div className="flex items-center justify-between gap-2 sm:gap-3 border-b border-slate-800/80 pb-2.5">
+        <div className="flex items-center justify-between gap-2 sm:gap-3 border-b border-slate-200 dark:border-slate-800/80 pb-2.5">
           {/* Left: Mode Title & Quick Counts */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold text-xs tracking-wide shadow-xs flex-shrink-0">
-              <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-semibold text-xs tracking-wide shadow-xs flex-shrink-0">
+              <Clock className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 animate-pulse" />
               <span className="hidden xs:inline">4D Temporal Scrub</span>
               <span className="xs:hidden">4D Scrub</span>
             </div>
 
-            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300 font-medium">
-              <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-800/50">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+              <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50">
                 <Users className="w-3 h-3" />
                 <strong>{roomStats.livingCount}</strong> alive in room
               </span>
-              <span className="text-slate-500 text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400 text-[11px]">
                 {roomStats.unbornCount} unborn • {roomStats.deceasedCount} deceased
               </span>
             </div>
@@ -174,7 +174,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Center: Year Display & World Event Badge */}
           <div className="flex items-center gap-2 flex-1 justify-center max-w-[420px]">
             <div className="flex items-baseline gap-1">
-              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-400 drop-shadow-sm">
+              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-500 dark:text-amber-400 drop-shadow-sm">
                 {currentYear}
               </span>
             </div>
@@ -182,7 +182,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
             {/* World Event Pill */}
             {currentWorldEvents.length > 0 && (
               <div
-                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-950/60 border border-indigo-700/50 text-indigo-200 text-xs font-medium truncate max-w-[260px] shadow-xs cursor-pointer hover:bg-indigo-900/60 transition-colors"
+                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-700/50 text-indigo-700 dark:text-indigo-200 text-xs font-medium truncate max-w-[260px] shadow-xs cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors"
                 title={currentWorldEvents[0].description}
                 onClick={() => {
                   const ev = currentWorldEvents[0];
@@ -195,7 +195,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                   });
                 }}
               >
-                <Globe className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                 <span className="truncate">{currentWorldEvents[0].title}</span>
               </div>
             )}
@@ -210,53 +210,53 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                 className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                   isMomentsOpen || activeMoment
                     ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
-                    : 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border-slate-700 hover:border-slate-600'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/90 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                 }`}
                 title="Historical Moments: Click to see who was physically in the room"
               >
-                <Sparkles className={`w-3.5 h-3.5 ${activeMoment ? 'text-slate-950' : 'text-amber-400'}`} />
+                <Sparkles className={`w-3.5 h-3.5 ${activeMoment ? 'text-slate-950' : 'text-amber-500 dark:text-amber-400'}`} />
                 <span className="hidden sm:inline">Who Was in the Room?</span>
                 <span className="sm:hidden">Moments</span>
               </button>
 
               {/* Historical Moments Popover Menu */}
               {isMomentsOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-[calc(100vw-2rem)] max-w-sm sm:w-96 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 animate-in slide-in-from-bottom-2 duration-150">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                <div className="absolute bottom-full right-0 mb-2 w-[calc(100vw-2rem)] max-w-sm sm:w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/90 rounded-2xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 animate-in slide-in-from-bottom-2 duration-150">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-bold text-xs">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Historical Moments & Life Events</span>
                     </div>
                     <button
                       onClick={() => setIsMomentsOpen(false)}
-                      className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
+                      className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
                   {/* Filter tabs & Search */}
-                  <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-[11px]">
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950/70 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px]">
                     <button
                       onClick={() => setMomentsFilter('all')}
-                      className={`flex-1 py-1 rounded-lg font-medium transition-colors ${
-                        momentsFilter === 'all' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      className={`flex-1 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        momentsFilter === 'all' ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       All
                     </button>
                     <button
                       onClick={() => setMomentsFilter('family')}
-                      className={`flex-1 py-1 rounded-lg font-medium transition-colors ${
-                        momentsFilter === 'family' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      className={`flex-1 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        momentsFilter === 'family' ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       Family
                     </button>
                     <button
                       onClick={() => setMomentsFilter('world')}
-                      className={`flex-1 py-1 rounded-lg font-medium transition-colors ${
-                        momentsFilter === 'world' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      className={`flex-1 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        momentsFilter === 'world' ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       World Events
@@ -264,21 +264,21 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                   </div>
 
                   {/* Search bar */}
-                  <div className="flex items-center bg-slate-950/70 rounded-xl px-2.5 py-1.5 border border-slate-800 text-xs text-slate-200">
-                    <Search className="w-3.5 h-3.5 text-slate-500 mr-2 flex-shrink-0" />
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-950/70 rounded-xl px-2.5 py-1.5 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-slate-200">
+                    <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 mr-2 flex-shrink-0" />
                     <input
                       type="text"
                       placeholder="Search milestone, relative, or event..."
                       value={momentsSearch}
                       onChange={(e) => setMomentsSearch(e.target.value)}
-                      className="bg-transparent text-xs text-slate-200 placeholder-slate-500 focus:outline-none w-full"
+                      className="bg-transparent text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none w-full"
                     />
                   </div>
 
                   {/* Moments List */}
                   <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
                     {filteredMoments.length === 0 ? (
-                      <div className="p-4 text-xs text-slate-500 text-center">
+                      <div className="p-4 text-xs text-slate-400 dark:text-slate-500 text-center">
                         No events found matching your search
                       </div>
                     ) : (
@@ -293,35 +293,35 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                             onClick={() => handleSelectHistoricalMoment(moment)}
                             className={`flex items-start gap-2.5 p-2 rounded-xl cursor-pointer transition-all border ${
                               isCurrentActive
-                                ? 'bg-amber-500/20 border-amber-500/50 text-white'
-                                : 'bg-slate-800/40 hover:bg-slate-800 border-slate-800 hover:border-slate-700 text-slate-300'
+                                ? 'bg-amber-500/20 border-amber-500/50 text-slate-900 dark:text-white'
+                                : 'bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
                             }`}
                           >
-                            <div className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 flex-shrink-0 mt-0.5">
+                            <div className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex-shrink-0 mt-0.5 shadow-2xs">
                               {moment.type === 'wedding' ? (
-                                <Heart className="w-3.5 h-3.5 text-rose-400" />
+                                <Heart className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
                               ) : moment.type === 'birthday' ? (
-                                <Cake className="w-3.5 h-3.5 text-amber-400" />
+                                <Cake className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
                               ) : moment.type === 'birth' ? (
-                                <Baby className="w-3.5 h-3.5 text-emerald-400" />
+                                <Baby className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                               ) : moment.type === 'memorial' ? (
                                 <Sparkles className="w-3.5 h-3.5 text-slate-400" />
                               ) : (
-                                <Globe className="w-3.5 h-3.5 text-indigo-400" />
+                                <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                               )}
                             </div>
 
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-1">
-                                <h4 className="text-xs font-semibold truncate text-white">
+                                <h4 className="text-xs font-semibold truncate text-slate-900 dark:text-white">
                                   {moment.title}
                                 </h4>
-                                <span className="text-[11px] font-mono font-bold text-amber-400 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/50">
+                                <span className="text-[11px] font-mono font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-800/50">
                                   {moment.year}
                                 </span>
                               </div>
                               {moment.subtitle && (
-                                <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                                   {moment.subtitle}
                                 </p>
                               )}
@@ -338,7 +338,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
             {/* Exit Temporal Mode Button */}
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
               title="Close 4D Timeline (return to full tree view)"
             >
               <X className="w-4 h-4" />
@@ -351,10 +351,10 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Play / Pause Button */}
           <button
             onClick={() => setIsPlaying((prev) => !prev)}
-            className={`p-2 rounded-xl flex items-center justify-center transition-all ${
+            className={`p-2 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
               isPlaying
                 ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md font-bold'
-                : 'bg-slate-800 hover:bg-slate-700 text-white'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white'
             }`}
             title={isPlaying ? 'Pause timeline animation (Space)' : 'Play timeline animation through years (Space)'}
           >
@@ -366,7 +366,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
             onClick={() => {
               setPlaybackSpeed((prev) => (prev === 1 ? 2 : prev === 2 ? 0.5 : 1));
             }}
-            className="px-2 py-1 text-[11px] font-mono font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-slate-700"
+            className="px-2 py-1 text-[11px] font-mono font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
             title="Toggle playback speed (0.5x, 1x, 2x)"
           >
             {playbackSpeed}x
@@ -375,7 +375,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: -10 Years */}
           <button
             onClick={() => handleStepYear(-10)}
-            className="hidden sm:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors items-center justify-center"
+            className="hidden sm:flex p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors items-center justify-center cursor-pointer"
             title="Step back 10 years"
           >
             <ChevronsLeft className="w-4 h-4" />
@@ -384,7 +384,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: -1 Year */}
           <button
             onClick={() => handleStepYear(-1)}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
             title="Step back 1 year (Left Arrow)"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -441,7 +441,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                 style={{
                   left: `${((hoveredEvent.year - minYear) / (maxYear - minYear)) * 100}%`,
                 }}
-                className="absolute -top-7 -translate-x-1/2 bg-slate-950 text-slate-100 text-[10px] font-semibold px-2 py-0.5 rounded-md border border-slate-700 pointer-events-none whitespace-nowrap shadow-xl z-30"
+                className="absolute -top-7 -translate-x-1/2 bg-slate-900 dark:bg-slate-950 text-slate-100 text-[10px] font-semibold px-2 py-0.5 rounded-md border border-slate-700 pointer-events-none whitespace-nowrap shadow-xl z-30"
               >
                 {hoveredEvent.year} • {hoveredEvent.title}
               </div>
@@ -454,14 +454,14 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
               max={maxYear}
               value={currentYear}
               onChange={handleSliderChange}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500 focus:outline-none hover:bg-slate-750 transition-colors z-20"
+              className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500 focus:outline-none hover:bg-slate-300 dark:hover:bg-slate-750 transition-colors z-20"
             />
           </div>
 
           {/* Stepper: +1 Year */}
           <button
             onClick={() => handleStepYear(1)}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
             title="Step forward 1 year (Right Arrow)"
           >
             <ChevronRight className="w-4 h-4" />
@@ -470,14 +470,14 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: +10 Years */}
           <button
             onClick={() => handleStepYear(10)}
-            className="hidden sm:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors items-center justify-center"
+            className="hidden sm:flex p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors items-center justify-center cursor-pointer"
             title="Step forward 10 years"
           >
             <ChevronsRight className="w-4 h-4" />
           </button>
 
           {/* Direct Year Input */}
-          <div className="hidden sm:flex items-center gap-1 bg-slate-800/90 px-2 py-1 rounded-xl border border-slate-700">
+          <div className="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
             <input
               type="number"
               min={minYear}
@@ -489,22 +489,22 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
                   onYearChange(Math.max(minYear, Math.min(maxYear, val)));
                 }
               }}
-              className="w-14 bg-transparent text-xs font-mono font-bold text-center text-amber-400 focus:outline-none"
+              className="w-14 bg-transparent text-xs font-mono font-bold text-center text-amber-600 dark:text-amber-400 focus:outline-none"
             />
           </div>
         </div>
 
         {/* Bottom Narrative / Generational Overlap Summary Banner */}
-        <div className="flex items-center justify-between gap-3 bg-slate-950/60 rounded-xl px-3 py-2 border border-slate-800/80 text-xs">
-          <div className="flex items-center gap-2 text-slate-300">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+        <div className="flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-800/80 text-xs">
+          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 flex-shrink-0" />
             <span className="font-normal leading-tight">{roomStats.narrativeSummary}</span>
           </div>
 
           {activeMoment && (
             <button
               onClick={() => onSelectMoment(null)}
-              className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium flex-shrink-0"
+              className="text-[11px] text-amber-600 hover:text-amber-500 dark:text-amber-400 dark:hover:text-amber-300 underline font-medium flex-shrink-0 cursor-pointer"
             >
               Clear Moment Focus
             </button>

@@ -34,7 +34,7 @@ export const FamilyGroupEnclosures: React.FC<FamilyGroupEnclosuresProps> = ({ fa
           >
             {/* Floating Family Branch Legend Badge */}
             <div
-              className="absolute -top-3.5 left-6 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold shadow-sm border bg-white backdrop-blur-sm pointer-events-none select-none"
+              className="absolute -top-3.5 left-6 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold shadow-sm border bg-white dark:bg-slate-900 backdrop-blur-sm pointer-events-none select-none"
               style={{
                 borderColor: group.borderColor,
               }}
@@ -46,7 +46,7 @@ export const FamilyGroupEnclosures: React.FC<FamilyGroupEnclosuresProps> = ({ fa
               <span style={{ color: group.color }} className="font-bold tracking-tight">
                 {group.name}
               </span>
-              <span className="text-[11px] text-slate-500 font-normal">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
                 ({group.memberIds.length} {group.memberIds.length === 1 ? 'member' : 'members'})
               </span>
             </div>

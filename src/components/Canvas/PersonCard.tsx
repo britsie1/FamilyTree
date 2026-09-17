@@ -116,17 +116,17 @@ export const PersonCard: React.FC<PersonCardProps> = ({
     switch (gender) {
       case 'male':
         return {
-          avatarBg: 'bg-blue-100 text-blue-600 border-blue-200',
+          avatarBg: 'bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-800',
           borderAccent: 'border-l-blue-500',
         };
       case 'female':
         return {
-          avatarBg: 'bg-rose-100 text-rose-600 border-rose-200',
+          avatarBg: 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800',
           borderAccent: 'border-l-rose-500',
         };
       default:
         return {
-          avatarBg: 'bg-slate-100 text-slate-600 border-slate-200',
+          avatarBg: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
           borderAccent: 'border-l-indigo-500',
         };
     }
@@ -144,11 +144,11 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   // Compute card style classes based on 4D temporal status
   let cardStateClasses = styles.borderAccent;
   if (isUnborn) {
-    cardStateClasses = 'border-slate-300 border-dashed bg-slate-50/70 opacity-20 hover:opacity-50 grayscale';
+    cardStateClasses = 'border-slate-300 dark:border-slate-700 border-dashed bg-slate-50/70 dark:bg-slate-900/60 opacity-20 hover:opacity-50 grayscale';
   } else if (isDeceasedAtYear) {
-    cardStateClasses = 'border-slate-300 bg-slate-100/80 grayscale opacity-45 hover:opacity-75';
+    cardStateClasses = 'border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900/80 grayscale opacity-45 hover:opacity-75';
   } else if (isRoomHonoree) {
-    cardStateClasses = 'ring-3 ring-amber-500 border-amber-500 bg-amber-50/40 shadow-xl z-35 animate-pulse';
+    cardStateClasses = 'ring-3 ring-amber-500 border-amber-500 bg-amber-50/40 dark:bg-amber-950/40 shadow-xl z-35 animate-pulse';
   } else if (isTemporalActive && isLivingAtYear) {
     cardStateClasses = `${styles.borderAccent} ring-1 ring-emerald-500/70 border-emerald-400 shadow-md`;
   }
@@ -163,7 +163,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         width: `${width}px`,
         height: `${height}px`,
       }}
-      className={`group select-none pointer-events-auto transition-all duration-150 cursor-grab active:cursor-grabbing rounded-xl bg-white border border-l-4 shadow-sm ${cardStateClasses} ${
+      className={`group select-none pointer-events-auto transition-all duration-150 cursor-grab active:cursor-grabbing rounded-xl bg-white dark:bg-slate-900 border border-l-4 shadow-sm ${cardStateClasses} ${
         isConnectTarget
           ? 'ring-4 ring-indigo-500/80 border-indigo-500 shadow-2xl z-40 scale-[1.03] animate-pulse'
           : isSelected || isMultiSelected
@@ -173,8 +173,8 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           : isOnRelationshipPath
           ? 'ring-2 ring-indigo-300 border-indigo-400 shadow-md z-25'
           : isHovered
-          ? 'border-slate-400 shadow-md z-20'
-          : 'border-slate-200 hover:border-slate-300 z-10'
+          ? 'border-slate-400 dark:border-slate-600 shadow-md z-20'
+          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 z-10'
       }`}
       onClick={(e) => {
         e.stopPropagation();
@@ -286,24 +286,24 @@ export const PersonCard: React.FC<PersonCardProps> = ({
             <h4
               className={`text-sm font-semibold truncate leading-tight ${
                 isUnborn
-                  ? 'text-slate-400 font-normal italic'
+                  ? 'text-slate-400 dark:text-slate-500 font-normal italic'
                   : isUnnamed
-                  ? 'text-slate-400 italic'
-                  : 'text-slate-800'
+                  ? 'text-slate-400 dark:text-slate-500 italic'
+                  : 'text-slate-800 dark:text-slate-100'
               }`}
               title={person.knownAs?.trim() && (person.firstName || person.middleNames) ? `${displayName} (${fullName})` : fullName}
             >
               {displayName}
             </h4>
             {person.isDeceased && !isTemporalActive && (
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded font-normal flex-shrink-0">
+              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded font-normal flex-shrink-0">
                 ✝
               </span>
             )}
             {person.linkedTrees && person.linkedTrees.length > 0 && (
               <span
                 title={`Linked to: ${person.linkedTrees.map((t) => t.treeName).join(', ')}. Click to jump.`}
-                className="text-indigo-600 hover:text-indigo-800 cursor-pointer flex items-center flex-shrink-0"
+                className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 cursor-pointer flex items-center flex-shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenTreeLink?.(person, person.linkedTrees![0]);
@@ -316,7 +316,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
 
           {person.maidenName && (
-            <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate leading-tight mt-0.5">
               née {person.maidenName}
             </p>
           )}
@@ -331,31 +331,31 @@ export const PersonCard: React.FC<PersonCardProps> = ({
                     {temporalInfo.ageLabel}
                   </span>
                   {person.notes && (
-                    <span className="text-[10px] text-slate-500 truncate italic">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate italic">
                       {person.notes}
                     </span>
                   )}
                 </div>
               ) : isDeceasedAtYear ? (
-                <span className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
-                  <span className="text-slate-400">✝</span> {temporalInfo.ageLabel}
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium">
+                  <span className="text-slate-400 dark:text-slate-500">✝</span> {temporalInfo.ageLabel}
                 </span>
               ) : (
-                <span className="text-[10px] text-slate-400 italic">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">
                   {temporalInfo.ageLabel}
                 </span>
               )}
             </div>
           ) : (
             dateText && (
-              <p className="text-[11px] text-slate-500 truncate font-mono mt-0.5 leading-tight">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono mt-0.5 leading-tight">
                 {dateText}
               </p>
             )
           )}
 
           {!isTemporalActive && person.birthPlace && !dateText && (
-            <p className="text-[11px] text-slate-400 truncate leading-tight mt-0.5">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate leading-tight mt-0.5">
               {person.birthPlace}
             </p>
           )}
@@ -373,7 +373,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           <>
             {/* Left: + Parent */}
             <button
-              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add parent or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -406,7 +406,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Top: + Partner */}
             <button
-              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-rose-500 dark:hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add spouse or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -422,7 +422,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Bottom: + Sibling */}
             <button
-              className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-amber-500 dark:hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add sibling or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -440,7 +440,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           <>
             {/* Top: + Parent */}
             <button
-              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add parent or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -473,7 +473,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Right: + Partner */}
             <button
-              className="pointer-events-auto absolute -right-4 sm:-right-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -right-4 sm:-right-3.5 top-1/2 -translate-y-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-rose-500 dark:hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add spouse or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -489,7 +489,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Left: + Sibling */}
             <button
-              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
+              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-amber-500 dark:hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add sibling or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -506,7 +506,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
             {/* Collapse toggle button when branch is expanded */}
             {hasDescendants && !node.isCollapsed && onToggleCollapse && (
               <button
-                className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 right-2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-500 hover:text-amber-600 rounded-full w-7 h-7 sm:w-6 sm:h-6 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-105 z-30"
+                className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 right-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-amber-500 dark:hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-full w-7 h-7 sm:w-6 sm:h-6 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-105 z-30"
                 title="Collapse descendants branch"
                 onClick={(e) => {
                   e.stopPropagation();

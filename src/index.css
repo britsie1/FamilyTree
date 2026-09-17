@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --breakpoint-xs: 30rem;
 }
@@ -29,6 +31,11 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior: none;
+  }
+
+  :root.dark body {
+    background-color: #020617;
+    color: #f8fafc;
   }
   
   #root {
@@ -73,6 +80,13 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+:root.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+:root.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 /* Smooth zoom animation when fitting to screen */

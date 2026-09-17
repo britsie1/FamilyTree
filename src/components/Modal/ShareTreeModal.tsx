@@ -303,26 +303,26 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const sharedUsersList = Object.entries(sharedWith);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-w-lg w-full overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/70">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-100 dark:border-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-xs">
               <Share2 className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-bold text-slate-900 truncate">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
                 Share "{tree.name || 'Untitled Tree'}"
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Grant view or edit access via private emails or public link.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -332,19 +332,19 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Case 1: Firebase not configured */}
           {!isConfigured && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 text-xs space-y-3">
-              <div className="flex items-center gap-2 font-bold text-amber-800">
-                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 rounded-2xl p-4 text-xs space-y-3">
+              <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                 <span>Cloud & Sharing Not Configured</span>
               </div>
-              <p className="text-amber-800 leading-relaxed">
+              <p className="text-amber-800 dark:text-amber-300 leading-relaxed">
                 Firebase environment variables were not detected in this build.
               </p>
 
               {diagnostics.missingRequired.length > 0 && (
-                <div className="bg-white/80 rounded-xl p-3 border border-amber-200/60 space-y-1.5 font-mono text-[11px]">
-                  <p className="font-sans font-semibold text-slate-700">Missing required build variables:</p>
-                  <ul className="list-disc list-inside text-rose-600 space-y-0.5">
+                <div className="bg-white/80 dark:bg-slate-900/80 rounded-xl p-3 border border-amber-200/60 dark:border-amber-800/60 space-y-1.5 font-mono text-[11px]">
+                  <p className="font-sans font-semibold text-slate-700 dark:text-slate-300">Missing required build variables:</p>
+                  <ul className="list-disc list-inside text-rose-600 dark:text-rose-400 space-y-0.5">
                     {diagnostics.missingRequired.map((k) => (
                       <li key={k}>{k}</li>
                     ))}
@@ -352,9 +352,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                 </div>
               )}
 
-              <div className="bg-amber-100/70 rounded-xl p-3 text-[11px] space-y-2 text-amber-900">
-                <p className="font-semibold text-slate-900">⚡ How to resolve on Netlify:</p>
-                <ol className="list-decimal list-inside space-y-1 text-amber-800">
+              <div className="bg-amber-100/70 dark:bg-amber-900/30 rounded-xl p-3 text-[11px] space-y-2 text-amber-900 dark:text-amber-200">
+                <p className="font-semibold text-slate-900 dark:text-slate-100">⚡ How to resolve on Netlify:</p>
+                <ol className="list-decimal list-inside space-y-1 text-amber-800 dark:text-amber-300">
                   <li>In Netlify, go to <strong>Site configuration &gt; Environment variables</strong>.</li>
                   <li>Ensure your variables start with <code>VITE_FIREBASE_</code> (e.g. <code>VITE_FIREBASE_API_KEY</code>).</li>
                   <li>
@@ -368,13 +368,13 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
           {/* Case 2: Configured but not logged in */}
           {isConfigured && !user && (
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+            <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
                 <Users className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-slate-800">Sign in to share</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Sign in to share</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
                   Local trees stay saved in your browser. Sign in with Google to save this tree to the cloud and share it with others.
                 </p>
               </div>
@@ -386,7 +386,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                     setErrorMessage(err.message || 'Failed to sign in.');
                   }
                 }}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold px-4 py-2 rounded-xl text-xs shadow-xs hover:shadow transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 font-semibold px-4 py-2 rounded-xl text-xs shadow-xs hover:shadow transition-all cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -416,41 +416,41 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
             <>
               {/* Status Header: Loading, Auto-correction notice, Error with Retry, or Success */}
               {loading && (
-                <div className="flex items-center gap-2.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 p-3 rounded-xl animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
+                <div className="flex items-center gap-2.5 text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3 rounded-xl animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400 flex-shrink-0" />
                   <div className="flex-1">
                     <span className="font-semibold">Connecting to cloud storage...</span>
-                    <span className="text-[11px] text-blue-600 block">Syncing tree permissions and collaborators.</span>
+                    <span className="text-[11px] text-blue-600 dark:text-blue-400 block">Syncing tree permissions and collaborators.</span>
                   </div>
                 </div>
               )}
 
               {/* If Project ID was an App ID and was auto-corrected */}
               {diagnostics.wasAutoCorrected && (
-                <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 text-xs space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-800">
-                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl p-3 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                     <span>Project ID Auto-Detected</span>
                   </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    In Netlify, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">VITE_FIREBASE_PROJECT_ID</code> was set to an App ID (<code className="font-mono text-[10px]">{diagnostics.rawProjectId}</code>).
-                    We automatically resolved your Project ID to <code className="font-mono font-bold text-amber-950">{diagnostics.projectId}</code>.
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                    In Netlify, <code className="bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded font-mono">VITE_FIREBASE_PROJECT_ID</code> was set to an App ID (<code className="font-mono text-[10px]">{diagnostics.rawProjectId}</code>).
+                    We automatically resolved your Project ID to <code className="font-mono font-bold text-amber-950 dark:text-amber-100">{diagnostics.projectId}</code>.
                   </p>
                 </div>
               )}
 
               {/* If Project ID was an App ID and could NOT be auto-corrected */}
               {diagnostics.isProjectIdAppIdFormat && !diagnostics.wasAutoCorrected && (
-                <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-3.5 text-xs space-y-2">
-                  <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 rounded-xl p-3.5 text-xs space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-800 dark:text-rose-300">
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
                     <span>Netlify Variable Error: App ID used instead of Project ID</span>
                   </div>
                   <p className="leading-relaxed">
-                    In Netlify, <code className="bg-rose-100 px-1 py-0.5 rounded font-mono font-bold">VITE_FIREBASE_PROJECT_ID</code> is set to an App ID (<code className="font-mono">{diagnostics.rawProjectId}</code>).
+                    In Netlify, <code className="bg-rose-100 dark:bg-rose-900/60 px-1 py-0.5 rounded font-mono font-bold">VITE_FIREBASE_PROJECT_ID</code> is set to an App ID (<code className="font-mono">{diagnostics.rawProjectId}</code>).
                   </p>
-                  <div className="bg-white/90 border border-rose-200 rounded-lg p-2.5 text-[11px] text-slate-700 space-y-1">
-                    <p className="font-semibold text-slate-900">How to fix:</p>
+                  <div className="bg-white/90 dark:bg-slate-900/90 border border-rose-200 dark:border-rose-800 rounded-lg p-2.5 text-[11px] text-slate-700 dark:text-slate-300 space-y-1">
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">How to fix:</p>
                     <ol className="list-decimal list-inside space-y-0.5">
                       <li>In Firebase Console, go to <strong>Project Settings &gt; General</strong>.</li>
                       <li>Copy the <strong>Project ID</strong> (e.g. <code>my-tree-12345</code>), NOT the App ID.</li>
@@ -461,20 +461,20 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
               )}
 
               {errorMessage && (
-                <div className="text-xs bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl space-y-2.5">
+                <div className="text-xs bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 p-3.5 rounded-xl space-y-2.5">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-1.5">
                       <p className="font-semibold leading-snug">{errorMessage}</p>
-                      <div className="bg-white/80 border border-rose-200 rounded-lg p-2 text-[11px] space-y-1 text-slate-700">
+                      <div className="bg-white/80 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-800 rounded-lg p-2 text-[11px] space-y-1 text-slate-700 dark:text-slate-300">
                         <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Connected Project ID:</span>
-                          <code className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">
+                          <span className="text-slate-500 dark:text-slate-400">Connected Project ID:</span>
+                          <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                             {diagnostics.projectId || 'Not configured'}
                           </code>
                         </div>
                         {diagnostics.isProjectIdAppIdFormat && (
-                          <p className="text-amber-700 font-medium">
+                          <p className="text-amber-700 dark:text-amber-400 font-medium">
                             ⚠️ This value looks like an App ID. In Firebase Console, copy the Project ID (e.g. <code>familytree-xyz</code>).
                           </p>
                         )}
@@ -482,12 +482,12 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
                       {/* Specialized guidance for Firestore Permission Denied */}
                       {isPermissionError && (
-                        <div className="bg-amber-50/95 border border-amber-300 rounded-xl p-3.5 text-[11px] text-amber-950 space-y-2.5 mt-2">
-                          <div className="flex items-center gap-1.5 font-bold text-amber-900 text-xs">
-                            <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                        <div className="bg-amber-50/95 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl p-3.5 text-[11px] text-amber-950 dark:text-amber-200 space-y-2.5 mt-2">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300 text-xs">
+                            <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                             <span>Firestore Security Rules update required</span>
                           </div>
-                          <p className="leading-relaxed text-amber-800">
+                          <p className="leading-relaxed text-amber-800 dark:text-amber-300">
                             Firestore rejected the save operation because security rules in your Firebase Console project are locking database writes (or default Test Mode expired).
                           </p>
                           <div className="flex flex-wrap gap-2 pt-0.5">
@@ -512,14 +512,14 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                                 href={`https://console.firebase.google.com/project/${encodeURIComponent(diagnostics.projectId)}/firestore/rules`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 font-semibold border border-amber-300 rounded-lg shadow-2xs transition-colors cursor-pointer text-xs"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700 rounded-lg shadow-2xs transition-colors cursor-pointer text-xs"
                               >
-                                <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                                <ExternalLink className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
                                 <span>Open Firebase Console Rules ↗</span>
                               </a>
                             )}
                           </div>
-                          <ol className="list-decimal list-inside space-y-1 text-amber-900/90 pt-1 font-sans">
+                          <ol className="list-decimal list-inside space-y-1 text-amber-900/90 dark:text-amber-200/90 pt-1 font-sans">
                             <li>Click <strong>Copy Recommended Rules</strong> above.</li>
                             <li>Open your Firebase Console Rules tab using the button above.</li>
                             <li>Paste the rules into the online editor and click <strong>Publish</strong>.</li>
@@ -529,15 +529,15 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-rose-200/60">
-                    <span className="text-[11px] text-rose-600">
+                  <div className="flex items-center justify-between pt-2 border-t border-rose-200/60 dark:border-rose-800/60">
+                    <span className="text-[11px] text-rose-600 dark:text-rose-400">
                       You can still copy the link or manage settings.
                     </span>
                     <button
                       type="button"
                       onClick={syncWithCloud}
                       disabled={loading}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-semibold text-xs border border-rose-300 dark:border-rose-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                       <span>Retry Cloud Sync</span>
@@ -547,26 +547,26 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
               )}
 
               {cloudTree && !loading && !errorMessage && (
-                <div className="flex items-center justify-between text-xs text-emerald-800 bg-emerald-50/80 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                <div className="flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-xl">
                   <div className="flex items-center gap-1.5 font-medium">
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Tree is synced with Cloud Firestore</span>
                   </div>
-                  <span className="text-[10px] font-mono text-emerald-700">{diagnostics.projectId}</span>
+                  <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">{diagnostics.projectId}</span>
                 </div>
               )}
 
               {!cloudTree && !loading && !errorMessage && (
-                <div className="bg-indigo-50/70 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center justify-between gap-2">
+                <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 rounded-xl p-3 text-xs flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                     <span>This tree will be saved to your cloud storage when shared.</span>
                   </div>
                   <button
                     type="button"
                     onClick={syncWithCloud}
                     disabled={saving || loading}
-                    className="text-[11px] bg-white hover:bg-indigo-50 text-indigo-700 font-semibold px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    className="text-[11px] bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-700 transition-colors cursor-pointer"
                   >
                     Sync now
                   </button>
@@ -575,7 +575,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
               {/* Add people input */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                   Add people with email address
                 </label>
                 <form onSubmit={handleAddPerson} className="flex items-center gap-2">
@@ -584,12 +584,12 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                     placeholder="Add people by email..."
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
-                    className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className="flex-1 text-xs px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                   <select
                     value={inputRole}
                     onChange={(e) => setInputRole(e.target.value as ShareRole)}
-                    className="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2.5 py-2 rounded-xl focus:outline-none cursor-pointer font-medium text-slate-700"
+                    className="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-750 px-2.5 py-2 rounded-xl focus:outline-none cursor-pointer font-medium text-slate-700 dark:text-slate-200"
                   >
                     <option value="viewer">Viewer</option>
                     <option value="editor">Editor</option>
@@ -607,12 +607,12 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
               {/* People with access list */}
               <div>
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
                   People with access
                 </h4>
-                <div className="space-y-2 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
+                <div className="space-y-2 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 bg-slate-50/50 dark:bg-slate-850/50">
                   {/* Owner item */}
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs">
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-750 shadow-2xs">
                     <div className="flex items-center gap-2.5 min-w-0">
                       {user.photoURL ? (
                         <img
@@ -621,39 +621,39 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                           className="w-7 h-7 rounded-full object-cover flex-shrink-0"
                         />
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center flex-shrink-0">
                           {(user.displayName || user.email || 'O')[0].toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 truncate">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
                           {user.displayName || 'You'} (You)
                         </p>
-                        <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
                       Owner
                     </span>
                   </div>
 
                   {/* Shared collaborators */}
                   {sharedUsersList.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 text-center py-2">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center py-2">
                       No collaborators added yet.
                     </p>
                   ) : (
                     sharedUsersList.map(([encodedKey, shared]) => (
                       <div
                         key={encodedKey}
-                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-2xs"
+                        className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-750 shadow-2xs"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                          <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs flex items-center justify-center flex-shrink-0">
                             {shared.email[0].toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-medium text-slate-800 truncate">
+                            <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
                               {shared.email}
                             </p>
                           </div>
@@ -666,7 +666,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                               handleChangeUserRole(encodedKey, e.target.value as ShareRole)
                             }
                             disabled={saving}
-                            className="text-[11px] font-medium bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none cursor-pointer"
+                            className="text-[11px] font-medium bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1 text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
                           >
                             <option value="viewer">Viewer</option>
                             <option value="editor">Editor</option>
@@ -675,7 +675,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                             onClick={() => handleRemoveUser(encodedKey)}
                             title="Remove access"
                             disabled={saving}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -688,14 +688,14 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
               {/* General Access (Drive style) */}
               <div>
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
                   General access
                 </h4>
-                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 flex items-center justify-between">
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-850/50 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                        isPublic ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                        isPublic ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}
                     >
                       {isPublic ? <Globe className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
@@ -706,14 +706,14 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                           value={isPublic ? 'anyone' : 'restricted'}
                           onChange={(e) => handleTogglePublic(e.target.value === 'anyone')}
                           disabled={saving}
-                          className="text-xs font-bold text-slate-900 bg-transparent pr-5 border-none focus:outline-none cursor-pointer appearance-none"
+                          className="text-xs font-bold text-slate-900 dark:text-slate-100 bg-transparent pr-5 border-none focus:outline-none cursor-pointer appearance-none"
                         >
                           <option value="restricted">Restricted</option>
                           <option value="anyone">Anyone with the link</option>
                         </select>
-                        <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-3 h-3 text-slate-400 dark:text-slate-500 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
                         {isPublic
                           ? 'Anyone on the internet with the link can access'
                           : 'Only people with access can open with the link'}
@@ -726,7 +726,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                       value={publicRole}
                       onChange={(e) => handleChangePublicRole(e.target.value as ShareRole)}
                       disabled={saving}
-                      className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                      className="text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer shadow-2xs"
                     >
                       <option value="viewer">Viewer</option>
                       <option value="editor">Editor</option>
@@ -739,13 +739,13 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/70 flex items-center justify-between">
           <button
             onClick={handleCopyLink}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
               copied
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-2xs'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 shadow-2xs'
             }`}
           >
             {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <LinkIcon className="w-4 h-4 text-blue-600" />}

@@ -56,6 +56,7 @@ import { useTreeStore } from './stores/useTreeStore';
 import { useCanvasStore } from './stores/useCanvasStore';
 import { useTemporalStore } from './stores/useTemporalStore';
 import { useCollabStore } from './stores/useCollabStore';
+import { useThemeStore } from './stores/useThemeStore';
 
 export function App() {
   return (
@@ -175,6 +176,9 @@ function FamilyTreeMain() {
   const setActiveHistoricalMoment = useTemporalStore((s) => s.setActiveMoment);
   const jumpToYear = useTemporalStore((s) => s.jumpToYear);
   const closeTimeline = useTemporalStore((s) => s.closeTimeline);
+
+  // Theme Store
+  const isDark = useThemeStore((s) => s.isDark);
 
   // Modals & Context Menu local state
   const [isEdgeCaseModalOpen, setIsEdgeCaseModalOpen] = useState(false);
@@ -864,7 +868,7 @@ function FamilyTreeMain() {
     try {
       const dataUrl = await toPng(container, {
         quality: 0.95,
-        backgroundColor: '#f8fafc',
+        backgroundColor: isDark ? '#020617' : '#f8fafc',
       });
 
       const a = document.createElement('a');
@@ -1012,7 +1016,7 @@ function FamilyTreeMain() {
   }, [isReadOnly, addChild, addParent, addPartner, addSibling, updatePersonPosition, layoutStyle, selectPerson]);
 
   return (
-    <div className="w-full h-full max-h-[100dvh] flex flex-col overflow-hidden bg-slate-50 relative">
+    <div className="w-full h-full max-h-[100dvh] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 relative">
       {/* Top Navbar */}
       <TopNavbar
         tree={tree}
@@ -1049,8 +1053,8 @@ function FamilyTreeMain() {
       {/* Main Canvas Area */}
       <main className="flex-1 relative w-full h-full overflow-hidden touch-none select-none overscroll-none">
         {cloudLoading && (
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-xs z-50 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+          <div className="absolute inset-0 bg-white/60 dark:bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
             <span>Loading tree from cloud...</span>
           </div>
         )}
@@ -1316,13 +1320,13 @@ function FamilyTreeMain() {
       {/* Access Denied Overlay */}
       {accessDeniedMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto shadow-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900 flex items-center justify-center mx-auto shadow-xs">
               <Lock className="w-7 h-7" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Access Restricted</h3>
-              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Access Restricted</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
                 {accessDeniedMessage}
               </p>
             </div>
@@ -1336,7 +1340,7 @@ function FamilyTreeMain() {
                   <span>Sign in with Google</span>
                 </button>
               ) : (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-400 dark:text-slate-500">
                   Signed in as <strong>{user.email}</strong>
                 </p>
               )}
@@ -1347,7 +1351,7 @@ function FamilyTreeMain() {
                   const local = loadCurrentTree();
                   handleSwitchTree(local, false);
                 }}
-                className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 Return to My Local Trees
               </button>
