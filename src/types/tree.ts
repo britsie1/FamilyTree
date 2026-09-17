@@ -98,6 +98,17 @@ export interface TreeData {
   googleDriveConfig?: GoogleDriveConfig;
 }
 
+export interface PersonDisplayInfo {
+  displayName: string;
+  fullName: string;
+  isUnnamed: boolean;
+  initials: string;
+  birthYear: string;
+  deathYear: string;
+  age: number | null;
+  standardDateText: string;
+}
+
 export interface LayoutNode {
   id: string;
   type: 'person';
@@ -111,6 +122,7 @@ export interface LayoutNode {
   familyId?: string;
   isCollapsed?: boolean;
   hiddenCount?: number;
+  displayInfo?: PersonDisplayInfo;
 }
 
 export interface FamilyGroup {

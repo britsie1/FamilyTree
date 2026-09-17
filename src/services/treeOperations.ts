@@ -2,30 +2,8 @@ import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConf
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
-/**
- * Returns the display name of a person for tree cards, headers, and relative lists.
- * Uses `knownAs` with `lastName` if present, falling back to `firstName` with `lastName`.
- */
-export function getPersonDisplayName(person?: Person | null): string {
-  if (!person) return 'Unnamed Person';
-  const namePart = (person.knownAs && person.knownAs.trim()) ? person.knownAs.trim() : (person.firstName?.trim() || '');
-  const surname = person.lastName?.trim() || '';
-  const result = [namePart, surname].filter(Boolean).join(' ');
-  return result || 'Unnamed Person';
-}
-
-/**
- * Returns the full legal name of a person (firstName + middleNames + lastName).
- */
-export function getPersonFullName(person?: Person | null): string {
-  if (!person) return 'Unnamed Person';
-  const parts = [
-    person.firstName?.trim(),
-    person.middleNames?.trim(),
-    person.lastName?.trim()
-  ].filter(Boolean);
-  return parts.join(' ') || 'Unnamed Person';
-}
+import { getPersonDisplayName, getPersonFullName } from './displayUtils';
+export { getPersonDisplayName, getPersonFullName };
 
 /**
  * Creates a blank person with zero required fields.

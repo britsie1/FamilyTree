@@ -1,4 +1,5 @@
 import type { TreeData, Person, Union, LayoutNode, LayoutUnion, LayoutEdge, TreeLayout, LayoutStyle, FamilyGroup } from '../types/tree';
+import { getPersonDisplayInfo } from './displayUtils';
 
 export const CARD_WIDTH = 220;
 export const CARD_HEIGHT = 104;
@@ -1369,6 +1370,7 @@ export function computeVerticalLayout(
           generation: level,
           order: index,
           familyId: personFamilyMap[pId],
+          displayInfo: getPersonDisplayInfo(person),
         };
       });
     }
@@ -1464,6 +1466,7 @@ export function computeVerticalLayout(
             generation: level,
             order: index,
             familyId: fg.id,
+            displayInfo: getPersonDisplayInfo(person),
           };
         });
       }
@@ -1488,6 +1491,7 @@ export function computeVerticalLayout(
             generation: level,
             order: idx,
             familyId: personFamilyMap[pId],
+            displayInfo: getPersonDisplayInfo(person),
           };
         });
       }
@@ -1816,6 +1820,7 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
           generation: level,
           order: index,
           familyId: personFamilyMap[pId],
+          displayInfo: getPersonDisplayInfo(person),
         };
       });
     }
@@ -1909,6 +1914,7 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
             generation: level,
             order: index,
             familyId: fg.id,
+            displayInfo: getPersonDisplayInfo(person),
           };
         });
       }
@@ -1933,6 +1939,7 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
             generation: level,
             order: idx,
             familyId: personFamilyMap[pId],
+            displayInfo: getPersonDisplayInfo(person),
           };
         });
       }

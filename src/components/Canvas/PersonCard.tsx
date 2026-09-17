@@ -1,11 +1,12 @@
-import type { LayoutNode, Gender, LayoutStyle, Person, TreeLink } from '../../types/tree';
-import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
+import React, { memo } from 'react';
+import type { LayoutNode, LayoutStyle, Person, TreeLink } from '../../types/tree';
+import { getPersonDisplayInfo } from '../../services/displayUtils';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
-import { calculateAge, parseDateParts } from '../../services/dateUtils';
 import { getDirectImageUrl } from '../../services/googleDriveService';
+import { arePersonCardPropsEqual } from './personCardMemo';
 import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink } from 'lucide-react';
 
-interface PersonCardProps {
+export interface PersonCardProps {
   node: LayoutNode;
   layoutStyle?: LayoutStyle;
   isSelected: boolean;
@@ -39,7 +40,22 @@ interface PersonCardProps {
   onOpenTreeLink?: (person: Person, link: TreeLink) => void;
 }
 
-export const PersonCard: React.FC<PersonCardProps> = ({
+const GENDER_STYLES: Record<string, { avatarBg: string; borderAccent: string }> = {
+  male: {
+    avatarBg: 'bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    borderAccent: 'border-l-blue-500',
+  },
+  female: {
+    avatarBg: 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+    borderAccent: 'border-l-rose-500',
+  },
+  other: {
+    avatarBg: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+    borderAccent: 'border-l-indigo-500',
+  },
+};
+
+const PersonCardComponent: React.FC<PersonCardProps> = ({
   node,
   layoutStyle = 'vertical',
   isSelected,
@@ -70,9 +86,8 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   const currentX = dragOffset ? x + dragOffset.x : x;
   const currentY = dragOffset ? y + dragOffset.y : y;
 
-  const displayName = getPersonDisplayName(person);
-  const fullName = getPersonFullName(person);
-  const isUnnamed = !person.knownAs?.trim() && !person.firstName?.trim() && !person.lastName?.trim();
+  const displayInfo = node.displayInfo ?? getPersonDisplayInfo(person);
+  const { displayName, fullName, isUnnamed, initials, birthYear, standardDateText } = displayInfo;
 
   // Temporal 4D calculations
   const isTemporalActive = temporalYear !== null && temporalYear !== undefined;
@@ -81,11 +96,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   const isDeceasedAtYear = temporalInfo?.status === 'deceased';
   const isLivingAtYear = temporalInfo?.status === 'living';
 
-  // Format birth - death years and age
-  const birthYear = person.birthDate ? parseDateParts(person.birthDate).year : '';
-  const deathYear = person.deathDate ? parseDateParts(person.deathDate).year : '';
-  let dateText = '';
-
+  let dateText = standardDateText;
   if (isTemporalActive && temporalInfo) {
     if (isUnborn) {
       dateText = temporalInfo.ageLabel;
@@ -94,53 +105,9 @@ export const PersonCard: React.FC<PersonCardProps> = ({
     } else {
       dateText = `Age ${temporalInfo.age ?? '?'} (b. ${birthYear || '?'})`;
     }
-  } else if (birthYear && deathYear) {
-    const ageAtDeath = calculateAge(person.birthDate, person.deathDate);
-    dateText = ageAtDeath !== null
-      ? `${birthYear} – ${deathYear} (age ${ageAtDeath})`
-      : `${birthYear} – ${deathYear}`;
-  } else if (birthYear) {
-    if (person.isDeceased) {
-      dateText = `b. ${birthYear} (deceased)`;
-    } else {
-      const currentAge = calculateAge(person.birthDate);
-      dateText = currentAge !== null
-        ? `b. ${birthYear} (age ${currentAge})`
-        : `b. ${birthYear}`;
-    }
-  } else if (deathYear) {
-    dateText = `d. ${deathYear}`;
   }
 
-  // Gender colors & badges
-  const getGenderStyles = (gender?: Gender) => {
-    switch (gender) {
-      case 'male':
-        return {
-          avatarBg: 'bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-          borderAccent: 'border-l-blue-500',
-        };
-      case 'female':
-        return {
-          avatarBg: 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800',
-          borderAccent: 'border-l-rose-500',
-        };
-      default:
-        return {
-          avatarBg: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
-          borderAccent: 'border-l-indigo-500',
-        };
-    }
-  };
-
-  const styles = getGenderStyles(person.gender);
-
-  // Initials (preferred knownAs or firstName, plus lastName)
-  const namePart = (person.knownAs && person.knownAs.trim()) ? person.knownAs.trim() : (person.firstName?.trim() || '');
-  const initials = (
-    (namePart ? namePart[0] : '') +
-    (person.lastName?.trim() ? person.lastName.trim()[0] : '')
-  ).toUpperCase() || '?';
+  const styles = (person.gender && GENDER_STYLES[person.gender]) || GENDER_STYLES.other;
 
   // Compute card style classes based on 4D temporal status
   let cardStateClasses = styles.borderAccent;
@@ -539,3 +506,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
     </div>
   );
 };
+
+export const PersonCard = memo(PersonCardComponent, arePersonCardPropsEqual);
+
+

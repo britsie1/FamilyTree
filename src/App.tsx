@@ -1023,6 +1023,30 @@ function FamilyTreeMain() {
     }
   }, [isReadOnly, addChild, addParent, addPartner, addSibling, updatePersonPosition, layoutStyle, selectPerson]);
 
+  const handleAddChild = useCallback((id: string) => {
+    setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'child' });
+  }, []);
+
+  const handleAddPartner = useCallback((id: string) => {
+    setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'partner' });
+  }, []);
+
+  const handleAddSibling = useCallback((id: string) => {
+    setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'sibling' });
+  }, []);
+
+  const handleAddParent = useCallback((id: string) => {
+    setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'parent' });
+  }, []);
+
+  const handleUpdatePersonPosition = useCallback((id: string, x: number, y: number) => {
+    updatePersonPosition(id, x, y, layoutStyle);
+  }, [updatePersonPosition, layoutStyle]);
+
+  const handleFinishDragPerson = useCallback(() => {
+    setTree((prev) => ({ ...prev }), true);
+  }, [setTree]);
+
   return (
     <div className="w-full h-full max-h-[100dvh] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 relative">
       {/* Top Navbar */}
@@ -1120,13 +1144,13 @@ function FamilyTreeMain() {
           onMultiSelectPeople={multiSelectPeople}
           onPersonContextMenu={handlePersonContextMenu}
           onCanvasContextMenu={handleCanvasContextMenu}
-          onUpdatePersonPosition={(id, x, y) => updatePersonPosition(id, x, y, layoutStyle)}
-          onFinishDragPerson={() => setTree((prev) => ({ ...prev }), true)}
+          onUpdatePersonPosition={handleUpdatePersonPosition}
+          onFinishDragPerson={handleFinishDragPerson}
           onToggleCollapse={toggleCollapse}
-          onAddChild={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'child' })}
-          onAddPartner={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'partner' })}
-          onAddSibling={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'sibling' })}
-          onAddParent={(id) => setRelModal({ isOpen: true, sourcePersonId: id, relationType: 'parent' })}
+          onAddChild={handleAddChild}
+          onAddPartner={handleAddPartner}
+          onAddSibling={handleAddSibling}
+          onAddParent={handleAddParent}
           onAddChildToUnion={handleAddChildToUnion}
           onSelectUnion={setSelectedUnionId}
           onQuickLink={handleQuickLink}

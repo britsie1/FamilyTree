@@ -196,37 +196,32 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     panRef.current = pan;
   }, [zoom, pan]);
 
-  // Viewport culling bounding box in canvas coordinates
-  const [viewportRect, setViewportRect] = useState<{
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-  } | null>(null);
-
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
 
-    const updateViewport = () => {
+    const updateDimensions = () => {
       const rect = container.getBoundingClientRect();
       setContainerDimensions({ width: rect.width, height: rect.height });
-      const currentZoom = zoomRef.current;
-      const currentPan = panRef.current;
-      const margin = 350 / currentZoom;
-      setViewportRect({
-        minX: -currentPan.x / currentZoom - margin,
-        minY: -currentPan.y / currentZoom - margin,
-        maxX: (rect.width - currentPan.x) / currentZoom + margin,
-        maxY: (rect.height - currentPan.y) / currentZoom + margin,
-      });
     };
 
-    updateViewport();
-    const ro = new ResizeObserver(updateViewport);
+    updateDimensions();
+    const ro = new ResizeObserver(updateDimensions);
     ro.observe(container);
     return () => ro.disconnect();
-  }, [pan.x, pan.y, zoom, canvasContainerRef]);
+  }, [canvasContainerRef]);
+
+  // Viewport culling bounding box in canvas coordinates computed synchronously to avoid extra render cascades
+  const viewportRect = useMemo(() => {
+    if (!containerDimensions.width || !containerDimensions.height) return null;
+    const margin = 350 / zoom;
+    return {
+      minX: -pan.x / zoom - margin,
+      minY: -pan.y / zoom - margin,
+      maxX: (containerDimensions.width - pan.x) / zoom + margin,
+      maxY: (containerDimensions.height - pan.y) / zoom + margin,
+    };
+  }, [containerDimensions.width, containerDimensions.height, pan.x, pan.y, zoom]);
 
   // Port mouse down initiates drag-to-connect visual cable
   const handlePortMouseDown = useCallback((
@@ -531,10 +526,45 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     }
   };
 
-  // Mouse Down on a Card (Start Dragging Node)
-  const handleCardDragStart = (e: React.MouseEvent, personId: string) => {
+  // Stable callback references to prevent PersonCard re-renders
+  const onSelectPersonRef = useRef(onSelectPerson);
+  const onPersonContextMenuRef = useRef(onPersonContextMenu);
+  const onAddChildRef = useRef(onAddChild);
+  const onAddPartnerRef = useRef(onAddPartner);
+  const onAddSiblingRef = useRef(onAddSibling);
+  const onAddParentRef = useRef(onAddParent);
+  const onToggleCollapseRef = useRef(onToggleCollapse);
+  const onOpenTreeLinkRef = useRef(onOpenTreeLink);
+  const layoutRef = useRef(layout);
+
+  useEffect(() => {
+    onSelectPersonRef.current = onSelectPerson;
+    onPersonContextMenuRef.current = onPersonContextMenu;
+    onAddChildRef.current = onAddChild;
+    onAddPartnerRef.current = onAddPartner;
+    onAddSiblingRef.current = onAddSibling;
+    onAddParentRef.current = onAddParent;
+    onToggleCollapseRef.current = onToggleCollapse;
+    onOpenTreeLinkRef.current = onOpenTreeLink;
+    layoutRef.current = layout;
+  });
+
+  const handleCardSelect = useCallback((id: string, e: React.MouseEvent) => {
+    if (!hasMovedCardRef.current && !suppressClickRef.current) {
+      onSelectPersonRef.current?.(id, e);
+    }
+  }, []);
+
+  const handleCardHover = useCallback((id: string | null) => {
+    if (!connectingStateRef.current) {
+      setHoveredPersonId(id);
+    }
+  }, []);
+
+  // Mouse Down on a Card (Start Dragging Node) - referentially stable callback
+  const handleCardDragStart = useCallback((e: React.MouseEvent, personId: string) => {
     e.stopPropagation();
-    const node = layout.nodes[personId];
+    const node = layoutRef.current.nodes[personId];
     if (!node) return;
 
     setDraggingPersonId(personId);
@@ -545,7 +575,66 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       nodeX: node.x,
       nodeY: node.y,
     };
-  };
+  }, []);
+
+  const handleCardContextMenu = useCallback((e: React.MouseEvent, personId: string) => {
+    onPersonContextMenuRef.current?.(e, personId);
+  }, []);
+
+  const handleCardAddChild = useCallback((personId: string) => {
+    onAddChildRef.current?.(personId);
+  }, []);
+
+  const handleCardAddPartner = useCallback((personId: string) => {
+    onAddPartnerRef.current?.(personId);
+  }, []);
+
+  const handleCardAddSibling = useCallback((personId: string) => {
+    onAddSiblingRef.current?.(personId);
+  }, []);
+
+  const handleCardAddParent = useCallback((personId: string) => {
+    onAddParentRef.current?.(personId);
+  }, []);
+
+  const handleCardToggleCollapse = useCallback((personId: string) => {
+    onToggleCollapseRef.current?.(personId);
+  }, []);
+
+  const handleCardOpenTreeLink = useCallback((person: Person, link: TreeLink) => {
+    onOpenTreeLinkRef.current?.(person, link);
+  }, []);
+
+  // Memoized sets for O(1) card lookups
+  const peopleWithDescendants = useMemo(() => {
+    const set = new Set<string>();
+    for (const union of Object.values(tree.unions)) {
+      if (union.childrenIds && union.childrenIds.length > 0) {
+        for (const pId of union.partnerIds) {
+          set.add(pId);
+        }
+      }
+    }
+    return set;
+  }, [tree.unions]);
+
+  const roomHonoreeIds = useMemo(() => {
+    if (!activeMoment) return null;
+    const set = new Set<string>();
+    if (activeMoment.personId) {
+      set.add(activeMoment.personId);
+    }
+    if (activeMoment.unionId && tree.unions[activeMoment.unionId]) {
+      for (const pId of tree.unions[activeMoment.unionId].partnerIds) {
+        set.add(pId);
+      }
+    }
+    return set;
+  }, [activeMoment, tree.unions]);
+
+  const relationshipPathSet = useMemo(() => {
+    return new Set(relationshipPathIds);
+  }, [relationshipPathIds]);
 
   // Global Mouse Move & Mouse Up
   useEffect(() => {
@@ -845,17 +934,6 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
         {/* HTML Interactive Person Cards (Culled to visible viewport) */}
         {visibleNodes.map((node: LayoutNode) => {
-          const person = node.data;
-          const hasDescendants = (person.unionIds || []).some(
-            (uId) => (tree.unions[uId]?.childrenIds?.length || 0) > 0
-          );
-
-          const isRoomHonoree = Boolean(
-            activeMoment &&
-              ((activeMoment.personId && activeMoment.personId === node.id) ||
-                (activeMoment.unionId && tree.unions[activeMoment.unionId]?.partnerIds.includes(node.id)))
-          );
-
           return (
             <PersonCard
               key={node.id}
@@ -865,33 +943,25 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               isSelected={selectedPersonId === node.id}
               isMultiSelected={selectedPersonIds ? selectedPersonIds.has(node.id) : false}
               isCompared={comparisonPersonId === node.id}
-              isOnRelationshipPath={relationshipPathIds.includes(node.id)}
+              isOnRelationshipPath={relationshipPathSet.has(node.id)}
               hasActiveComparison={Boolean(selectedPersonId && comparisonPersonId)}
               isHovered={hoveredPersonId === node.id}
-              hasDescendants={hasDescendants}
+              hasDescendants={peopleWithDescendants.has(node.id)}
               temporalYear={temporalYear}
-              isRoomHonoree={isRoomHonoree}
+              isRoomHonoree={roomHonoreeIds ? roomHonoreeIds.has(node.id) : false}
               activeMoment={activeMoment}
-              onToggleCollapse={onToggleCollapse}
-              onSelect={(id, e) => {
-                if (!hasMovedCardRef.current && !suppressClickRef.current) {
-                  onSelectPerson(id, e);
-                }
-              }}
-              onContextMenu={onPersonContextMenu}
-              onHover={(id) => {
-                if (!connectingStateRef.current) {
-                  setHoveredPersonId(id);
-                }
-              }}
-              onAddChild={onAddChild}
-              onAddPartner={onAddPartner}
-              onAddSibling={onAddSibling}
-              onAddParent={onAddParent}
+              onToggleCollapse={handleCardToggleCollapse}
+              onSelect={handleCardSelect}
+              onContextMenu={handleCardContextMenu}
+              onHover={handleCardHover}
+              onAddChild={handleCardAddChild}
+              onAddPartner={handleCardAddPartner}
+              onAddSibling={handleCardAddSibling}
+              onAddParent={handleCardAddParent}
               onDragStart={handleCardDragStart}
               onPortMouseDown={handlePortMouseDown}
               isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
-              onOpenTreeLink={onOpenTreeLink}
+              onOpenTreeLink={handleCardOpenTreeLink}
             />
           );
         })}
