@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { produceWithPatches, applyPatches, enablePatches, setAutoFreeze, type Patch } from 'immer';
 import type { TreeData, Person, Union, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
+import { useCanvasStore } from './useCanvasStore';
 import {
   loadCurrentTree,
   saveCurrentTree,
@@ -177,12 +178,19 @@ function getTargetKey(patches: Patch[]): string {
 
   const isPos = significant.every(
     (p) =>
-      p.path.length >= 3 &&
-      p.path[0] === 'people' &&
-      (p.path[2] === 'x' || p.path[2] === 'y' || p.path[2] === 'horizontalX' || p.path[2] === 'horizontalY')
+      (p.path.length >= 2 &&
+        (p.path[0] === 'layoutOverrides' || p.path[0] === 'horizontalOverrides')) ||
+      (p.path.length >= 3 &&
+        p.path[0] === 'people' &&
+        (p.path[2] === 'x' || p.path[2] === 'y' || p.path[2] === 'horizontalX' || p.path[2] === 'horizontalY'))
   );
   if (isPos && significant.length > 0) {
-    return `people/${significant[0].path[1]}:pos`;
+    const p = significant[0];
+    const personId =
+      p.path[0] === 'layoutOverrides' || p.path[0] === 'horizontalOverrides'
+        ? p.path[1]
+        : p.path[1];
+    return `layoutOverrides/${personId}:pos`;
   }
 
   return significant.map((p) => p.path.join('/')).sort().join(';');
@@ -538,9 +546,21 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     updatePersonPosition: (personId, x, y, layoutStyle) => {
       get().setTree((prev) => {
         if (layoutStyle === 'horizontal') {
-          return updatePersonInTree(prev, personId, { horizontalX: x, horizontalY: y });
+          return {
+            ...prev,
+            horizontalOverrides: {
+              ...(prev.horizontalOverrides || {}),
+              [personId]: { x, y },
+            },
+          };
         }
-        return updatePersonInTree(prev, personId, { x, y });
+        return {
+          ...prev,
+          layoutOverrides: {
+            ...(prev.layoutOverrides || {}),
+            [personId]: { x, y },
+          },
+        };
       });
     },
 
@@ -657,6 +677,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     },
 
     resetLayout: () => {
+      useCanvasStore.getState().clearLayoutOverrides();
       get().setTree((prev) => clearManualPositions(prev));
     },
 

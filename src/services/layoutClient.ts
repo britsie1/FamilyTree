@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { TreeData, LayoutStyle, TreeLayout } from '../types/tree';
+import type { TreeData, LayoutStyle, TreeLayout, LayoutOverrides } from '../types/tree';
 import { computeLayout } from './layoutEngine';
 
 let workerInstance: Worker | null = null;
@@ -67,7 +67,8 @@ export function computeLayoutAsync(
   layoutStyle: LayoutStyle,
   groupByFamily: boolean,
   collapsedPersonIds: Set<string> | string[],
-  adjustSpacing: boolean
+  adjustSpacing: boolean,
+  layoutOverrides?: LayoutOverrides
 ): Promise<TreeLayout> {
   const collapsedArray = Array.from(collapsedPersonIds);
   const worker = getWorker();
@@ -79,7 +80,8 @@ export function computeLayoutAsync(
         layoutStyle,
         groupByFamily,
         collapsedArray,
-        adjustSpacing
+        adjustSpacing,
+        layoutOverrides
       );
       return Promise.resolve(layout);
     } catch (err) {
@@ -102,6 +104,7 @@ export function computeLayoutAsync(
       groupByFamily,
       collapsedPersonIds: collapsedArray,
       adjustSpacing,
+      layoutOverrides,
     });
   });
 }
@@ -115,11 +118,12 @@ export function useAsyncLayout(
   layoutStyle: LayoutStyle,
   groupByFamily: boolean,
   collapsedPersonIds: Set<string>,
-  adjustSpacing: boolean
+  adjustSpacing: boolean,
+  layoutOverrides?: LayoutOverrides
 ): { layout: TreeLayout; isComputing: boolean } {
   // Initialize with synchronous computation so first render has immediate layout
   const [layout, setLayout] = useState<TreeLayout>(() =>
-    computeLayout(tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing)
+    computeLayout(tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, layoutOverrides)
   );
   const [isComputing, setIsComputing] = useState(false);
   const currentSeqRef = useRef(0);
@@ -135,7 +139,7 @@ export function useAsyncLayout(
     const seq = ++currentSeqRef.current;
     setIsComputing(true);
 
-    computeLayoutAsync(tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing)
+    computeLayoutAsync(tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, layoutOverrides)
       .then((newLayout) => {
         if (seq === currentSeqRef.current) {
           setLayout(newLayout);
@@ -152,7 +156,8 @@ export function useAsyncLayout(
               layoutStyle,
               groupByFamily,
               collapsedPersonIds,
-              adjustSpacing
+              adjustSpacing,
+              layoutOverrides
             );
             setLayout(fallbackLayout);
           } catch (fallbackErr) {
@@ -161,7 +166,7 @@ export function useAsyncLayout(
           setIsComputing(false);
         }
       });
-  }, [tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing]);
+  }, [tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, layoutOverrides]);
 
   return { layout, isComputing };
 }

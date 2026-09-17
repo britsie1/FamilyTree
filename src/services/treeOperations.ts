@@ -1,4 +1,4 @@
-import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConfig } from '../types/tree';
+import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConfig, LayoutOverrides } from '../types/tree';
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
@@ -44,6 +44,35 @@ export function sanitizeTree(tree: TreeData): TreeData {
     people: { ...tree.people },
     unions: { ...tree.unions },
   };
+
+  // Step 0: Backward compatibility migration - extract legacy person.x, person.y, horizontalX, horizontalY into layoutOverrides
+  const layoutOverrides: LayoutOverrides = { ...(tree.layoutOverrides || {}) };
+  const horizontalOverrides: LayoutOverrides = { ...(tree.horizontalOverrides || {}) };
+  let hasLegacyCoordinates = false;
+
+  for (const [pId, person] of Object.entries(nextTree.people)) {
+    const raw = person as any;
+    if (raw.x !== undefined || raw.y !== undefined || raw.horizontalX !== undefined || raw.horizontalY !== undefined) {
+      hasLegacyCoordinates = true;
+      if (raw.x !== undefined && raw.y !== undefined && !layoutOverrides[pId]) {
+        layoutOverrides[pId] = { x: raw.x, y: raw.y };
+      }
+      if (raw.horizontalX !== undefined && raw.horizontalY !== undefined && !horizontalOverrides[pId]) {
+        horizontalOverrides[pId] = { x: raw.horizontalX, y: raw.horizontalY };
+      }
+      const { x: _x, y: _y, horizontalX: _hx, horizontalY: _hy, ...rest } = raw;
+      nextTree.people[pId] = rest;
+    }
+  }
+
+  if (hasLegacyCoordinates || Object.keys(layoutOverrides).length > 0) {
+    if (Object.keys(layoutOverrides).length > 0) {
+      nextTree.layoutOverrides = layoutOverrides;
+    }
+    if (Object.keys(horizontalOverrides).length > 0) {
+      nextTree.horizontalOverrides = horizontalOverrides;
+    }
+  }
 
   // Step 1: Detect and merge duplicate unions for the same partner pair
   const partnerPairToUnions = new Map<string, Union[]>();
@@ -598,13 +627,16 @@ export function updateUnionInTree(
 export function clearManualPositions(tree: TreeData): TreeData {
   const nextPeople: Record<string, Person> = {};
   for (const [id, person] of Object.entries(tree.people)) {
-    const { x: _x, y: _y, horizontalX: _hx, horizontalY: _hy, ...rest } = person;
+    const { x: _x, y: _y, horizontalX: _hx, horizontalY: _hy, ...rest } = person as any;
     nextPeople[id] = rest;
   }
-  return {
+  const nextTree: TreeData = {
     ...tree,
     people: nextPeople,
   };
+  delete nextTree.layoutOverrides;
+  delete nextTree.horizontalOverrides;
+  return nextTree;
 }
 
 /**
@@ -1116,12 +1148,13 @@ export function createTreeFromPeople(
   for (const pId of selectedPersonIds) {
     const orig = sourceTree.people[pId];
     if (orig) {
+      const cloned = JSON.parse(JSON.stringify(orig));
+      delete cloned.x;
+      delete cloned.y;
+      delete cloned.horizontalX;
+      delete cloned.horizontalY;
       newPeople[pId] = {
-        ...JSON.parse(JSON.stringify(orig)),
-        x: undefined,
-        y: undefined,
-        horizontalX: undefined,
-        horizontalY: undefined,
+        ...cloned,
         unionIds: [],
         parentUnionId: undefined,
       };

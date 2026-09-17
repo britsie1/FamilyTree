@@ -117,8 +117,10 @@ describe('Interactive Authoring: Quick Link & Quick Spawn', () => {
       const updated = useTreeStore.getState().tree;
       const child = updated.people[newChildId];
       assert.ok(child);
-      assert.strictEqual(child.x, 500);
-      assert.strictEqual(child.y, 350);
+      assert.strictEqual(updated.layoutOverrides?.[newChildId]?.x, 500);
+      assert.strictEqual(updated.layoutOverrides?.[newChildId]?.y, 350);
+      assert.strictEqual((child as any).x, undefined);
+      assert.strictEqual((child as any).y, undefined);
 
       // Verify connected to parent
       const parentUnion = updated.unions[child.parentUnionId!];
@@ -136,8 +138,10 @@ describe('Interactive Authoring: Quick Link & Quick Spawn', () => {
 
       const updated = useTreeStore.getState().tree;
       const partner = updated.people[newPartnerId];
-      assert.strictEqual(partner.x, 700);
-      assert.strictEqual(partner.y, 200);
+      assert.strictEqual(updated.layoutOverrides?.[newPartnerId]?.x, 700);
+      assert.strictEqual(updated.layoutOverrides?.[newPartnerId]?.y, 200);
+      assert.strictEqual((partner as any).x, undefined);
+      assert.strictEqual((partner as any).y, undefined);
 
       const sharedUnion = Object.values(updated.unions).find(
         (u) => u.partnerIds.includes(person.id) && u.partnerIds.includes(newPartnerId)

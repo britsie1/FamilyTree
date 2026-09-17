@@ -1,4 +1,4 @@
-import type { TreeData, LayoutNode, LayoutUnion, FamilyGroup, TreeLayout } from '../../types/tree';
+import type { TreeData, LayoutNode, LayoutUnion, FamilyGroup, TreeLayout, LayoutOverrides } from '../../types/tree';
 import { getPersonDisplayInfo } from '../displayUtils';
 import {
   CARD_WIDTH,
@@ -241,9 +241,11 @@ export function assignVerticalNodeCoordinates(
   personFamilyMap: Record<string, string>,
   familyGroups: FamilyGroup[],
   groupByFamily: boolean = false,
-  adjustSpacing: boolean = true
+  adjustSpacing: boolean = true,
+  layoutOverrides?: LayoutOverrides
 ): Record<string, LayoutNode> {
   const nodes: Record<string, LayoutNode> = {};
+  const overrides = layoutOverrides || tree.layoutOverrides;
 
   if (!groupByFamily) {
     // If adjustSpacing is active, compute positions based on widest row upwards/downwards
@@ -282,8 +284,9 @@ export function assignVerticalNodeCoordinates(
         const autoY = currentY;
 
         // Use manually dragged position if exists, otherwise auto
-        const x = person.x !== undefined ? person.x : autoX;
-        const y = person.y !== undefined ? person.y : autoY;
+        const override = overrides?.[pId];
+        const x = override?.x !== undefined ? override.x : autoX;
+        const y = override?.y !== undefined ? override.y : autoY;
 
         nodes[pId] = {
           id: pId,
@@ -378,8 +381,9 @@ export function assignVerticalNodeCoordinates(
           const autoX = rowStartX + index * (CARD_WIDTH + HORIZONTAL_SPACING);
           const autoY = currentY;
 
-          const x = person.x !== undefined ? person.x : autoX;
-          const y = person.y !== undefined ? person.y : autoY;
+          const override = overrides?.[pId];
+          const x = override?.x !== undefined ? override.x : autoX;
+          const y = override?.y !== undefined ? override.y : autoY;
 
           nodes[pId] = {
             id: pId,
@@ -406,12 +410,13 @@ export function assignVerticalNodeCoordinates(
           if (!person) return;
           const autoX = idx * (CARD_WIDTH + HORIZONTAL_SPACING);
           const autoY = currentY;
+          const override = overrides?.[pId];
           nodes[pId] = {
             id: pId,
             type: 'person',
             data: person,
-            x: person.x !== undefined ? person.x : autoX,
-            y: person.y !== undefined ? person.y : autoY,
+            x: override?.x !== undefined ? override.x : autoX,
+            y: override?.y !== undefined ? override.y : autoY,
             width: CARD_WIDTH,
             height: CARD_HEIGHT,
             generation: level,

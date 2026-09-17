@@ -1,4 +1,4 @@
-import type { TreeData, LayoutNode, LayoutUnion, LayoutEdge, TreeLayout } from '../../types/tree';
+import type { TreeData, LayoutNode, LayoutUnion, LayoutEdge, TreeLayout, LayoutOverrides } from '../../types/tree';
 import { getPersonDisplayInfo } from '../displayUtils';
 import {
   CARD_WIDTH,
@@ -143,7 +143,12 @@ export function computeMultiLaneBusX(
  * Generations advance as columns from left to right, with clean vertical buses
  * and rightward branch lines into children.
  */
-export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean = false): TreeLayout {
+export function computeHorizontalLayout(
+  tree: TreeData,
+  groupByFamily: boolean = false,
+  layoutOverrides?: LayoutOverrides
+): TreeLayout {
+  const overrides = layoutOverrides || tree.horizontalOverrides || tree.layoutOverrides;
   const generations = calculateGenerations(tree);
   const { familyGroups, personFamilyMap } = detectFamilyGroups(tree);
   const canonicalFamilyOrder = familyGroups.map((g) => g.id);
@@ -187,8 +192,9 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
         const autoY = startY + yOffsets[index];
 
         // Use manually dragged position if exists for horizontal layout, otherwise auto
-        const x = person.horizontalX !== undefined ? person.horizontalX : autoX;
-        const y = person.horizontalY !== undefined ? person.horizontalY : autoY;
+        const override = overrides?.[pId];
+        const x = override?.x !== undefined ? override.x : autoX;
+        const y = override?.y !== undefined ? override.y : autoY;
 
         nodes[pId] = {
           id: pId,
@@ -281,8 +287,9 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
           const autoX = currentX;
           const autoY = colStartY + index * (CARD_HEIGHT + VERTICAL_ROW_SPACING);
 
-          const x = person.horizontalX !== undefined ? person.horizontalX : autoX;
-          const y = person.horizontalY !== undefined ? person.horizontalY : autoY;
+          const override = overrides?.[pId];
+          const x = override?.x !== undefined ? override.x : autoX;
+          const y = override?.y !== undefined ? override.y : autoY;
 
           nodes[pId] = {
             id: pId,
@@ -309,12 +316,13 @@ export function computeHorizontalLayout(tree: TreeData, groupByFamily: boolean =
           if (!person) return;
           const autoX = currentX;
           const autoY = idx * (CARD_HEIGHT + VERTICAL_ROW_SPACING);
+          const override = overrides?.[pId];
           nodes[pId] = {
             id: pId,
             type: 'person',
             data: person,
-            x: person.horizontalX !== undefined ? person.horizontalX : autoX,
-            y: person.horizontalY !== undefined ? person.horizontalY : autoY,
+            x: override?.x !== undefined ? override.x : autoX,
+            y: override?.y !== undefined ? override.y : autoY,
             width: CARD_WIDTH,
             height: CARD_HEIGHT,
             generation: level,

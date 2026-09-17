@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LayoutStyle } from '../types/tree';
+import type { LayoutStyle, LayoutOverrides } from '../types/tree';
 
 export interface CanvasStoreState {
   // Viewport
@@ -48,6 +48,14 @@ export interface CanvasStoreState {
   draggingPersonId: string | null;
   dragOffset: { x: number; y: number } | null;
   setTransientDrag: (personId: string | null, offset: { x: number; y: number } | null) => void;
+
+  // Presentation layout overrides
+  layoutOverrides: LayoutOverrides;
+  updatePersonPosition: (personId: string, x: number, y: number) => void;
+  setLayoutOverrides: (
+    overrides: LayoutOverrides | ((prev: LayoutOverrides) => LayoutOverrides)
+  ) => void;
+  clearLayoutOverrides: () => void;
 }
 
 export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
@@ -218,5 +226,27 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   dragOffset: null,
   setTransientDrag: (draggingPersonId, dragOffset) => {
     set({ draggingPersonId, dragOffset });
+  },
+
+  // Presentation layout overrides
+  layoutOverrides: {},
+  updatePersonPosition: (personId, x, y) => {
+    set((state) => ({
+      layoutOverrides: {
+        ...state.layoutOverrides,
+        [personId]: { x, y },
+      },
+    }));
+  },
+  setLayoutOverrides: (overridesOrUpdater) => {
+    set((state) => ({
+      layoutOverrides:
+        typeof overridesOrUpdater === 'function'
+          ? overridesOrUpdater(state.layoutOverrides)
+          : overridesOrUpdater,
+    }));
+  },
+  clearLayoutOverrides: () => {
+    set({ layoutOverrides: {} });
   },
 }));

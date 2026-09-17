@@ -82,17 +82,21 @@ describe('Create Tree from Selection', () => {
 
   it('resets manual position coordinates in the newly created tree', () => {
     const originalTree = createThreeGenSampleTree();
-    // Add manual drag coordinates to Charles
-    originalTree.people['p3'].x = 850;
-    originalTree.people['p3'].y = 320;
-    originalTree.people['p3'].horizontalX = 400;
-    originalTree.people['p3'].horizontalY = 200;
+    // Add layout overrides to original tree
+    originalTree.layoutOverrides = {
+      p3: { x: 850, y: 320 },
+    };
+    originalTree.horizontalOverrides = {
+      p3: { x: 400, y: 200 },
+    };
 
     const newTree = createTreeFromPeople(originalTree, ['p3', 'p7']);
-    assert.strictEqual(newTree.people['p3'].x, undefined);
-    assert.strictEqual(newTree.people['p3'].y, undefined);
-    assert.strictEqual(newTree.people['p3'].horizontalX, undefined);
-    assert.strictEqual(newTree.people['p3'].horizontalY, undefined);
+    assert.strictEqual(newTree.layoutOverrides, undefined);
+    assert.strictEqual(newTree.horizontalOverrides, undefined);
+    assert.strictEqual((newTree.people['p3'] as any).x, undefined);
+    assert.strictEqual((newTree.people['p3'] as any).y, undefined);
+    assert.strictEqual((newTree.people['p3'] as any).horizontalX, undefined);
+    assert.strictEqual((newTree.people['p3'] as any).horizontalY, undefined);
   });
 
   it('automatically derives family tree name from common surname', () => {

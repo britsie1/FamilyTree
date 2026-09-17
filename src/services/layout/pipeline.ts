@@ -1,4 +1,4 @@
-import type { TreeData, LayoutStyle, TreeLayout } from '../../types/tree';
+import type { TreeData, LayoutStyle, TreeLayout, LayoutOverrides } from '../../types/tree';
 import { calculateGenerations, filterCollapsedTree } from './generationalRanking';
 import { detectFamilyGroups, orderGenerations } from './barycentricOrdering';
 import {
@@ -18,7 +18,8 @@ import { computeHorizontalLayout } from './layoutTransforms';
 export function computeVerticalLayout(
   tree: TreeData,
   groupByFamily: boolean = false,
-  adjustSpacing: boolean = true
+  adjustSpacing: boolean = true,
+  layoutOverrides?: LayoutOverrides
 ): TreeLayout {
   const generations = calculateGenerations(tree);
   const { familyGroups, personFamilyMap } = detectFamilyGroups(tree);
@@ -37,7 +38,8 @@ export function computeVerticalLayout(
     personFamilyMap,
     familyGroups,
     groupByFamily,
-    adjustSpacing
+    adjustSpacing,
+    layoutOverrides
   );
 
   // 2. Assign Union node positions and avoid collinear stems
@@ -77,7 +79,8 @@ export function computeLayout(
   layoutStyle: LayoutStyle = 'vertical',
   groupByFamily: boolean = false,
   collapsedPersonIds?: Set<string> | string[],
-  adjustSpacing: boolean = true
+  adjustSpacing: boolean = true,
+  layoutOverrides?: LayoutOverrides
 ): TreeLayout {
   const collapsedSet = new Set<string>(
     collapsedPersonIds
@@ -88,8 +91,8 @@ export function computeLayout(
   const { visibleTree, hiddenCounts } = filterCollapsedTree(tree, collapsedSet);
 
   const layout = layoutStyle === 'horizontal'
-    ? computeHorizontalLayout(visibleTree, groupByFamily)
-    : computeVerticalLayout(visibleTree, groupByFamily, adjustSpacing);
+    ? computeHorizontalLayout(visibleTree, groupByFamily, layoutOverrides)
+    : computeVerticalLayout(visibleTree, groupByFamily, adjustSpacing, layoutOverrides);
 
   for (const pId of collapsedSet) {
     if (layout.nodes[pId]) {

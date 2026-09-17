@@ -708,19 +708,25 @@ describe('computeLayout with LayoutStyles', () => {
 
   it('respects horizontal manual position overrides without affecting vertical positions', () => {
     const tree = createDoubleInLawPreset();
-    tree.people.me.horizontalX = 1234;
-    tree.people.me.horizontalY = 5678;
+    tree.horizontalOverrides = {
+      me: { x: 1234, y: 5678 },
+    };
 
     const vLayout = computeLayout(tree, 'vertical');
     const hLayout = computeLayout(tree, 'horizontal');
 
-    // Vertical layout should NOT use horizontalX/horizontalY
+    // Vertical layout should NOT use horizontalOverrides
     assert.notStrictEqual(vLayout.nodes.me.x, 1234);
     assert.notStrictEqual(vLayout.nodes.me.y, 5678);
 
-    // Horizontal layout SHOULD use horizontalX/horizontalY
+    // Horizontal layout SHOULD use horizontalOverrides
     assert.strictEqual(hLayout.nodes.me.x, 1234);
     assert.strictEqual(hLayout.nodes.me.y, 5678);
+
+    // Explicit layoutOverrides parameter is respected
+    const overrideLayout = computeLayout(tree, 'vertical', false, undefined, true, { me: { x: 999, y: 888 } });
+    assert.strictEqual(overrideLayout.nodes.me.x, 999);
+    assert.strictEqual(overrideLayout.nodes.me.y, 888);
   });
 
   it('correctly layouts Divorce & Remarriage preset in horizontal mode', () => {

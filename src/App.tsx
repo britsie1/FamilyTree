@@ -55,6 +55,7 @@ function FamilyTreeMain() {
   const groupByFamily = useCanvasStore((s) => s.groupByFamily);
   const adjustSpacing = useCanvasStore((s) => s.adjustSpacing);
   const selectPerson = useCanvasStore((s) => s.selectPerson);
+  const canvasOverrides = useCanvasStore((s) => s.layoutOverrides);
 
   const isCloudTree = useCollabStore((s) => s.isCloudTree);
   const userPermission = useCollabStore((s) => s.userPermission);
@@ -78,7 +79,12 @@ function FamilyTreeMain() {
     return { ...tree, people, unions };
   }, [tree, focusPersonId]);
 
-  const { layout } = useAsyncLayout(activeTree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing);
+  const effectiveOverrides = useMemo(() => ({
+    ...(layoutStyle === 'horizontal' ? activeTree.horizontalOverrides : activeTree.layoutOverrides),
+    ...canvasOverrides,
+  }), [layoutStyle, activeTree.horizontalOverrides, activeTree.layoutOverrides, canvasOverrides]);
+
+  const { layout } = useAsyncLayout(activeTree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, effectiveOverrides);
 
   const fitToScreen = useCallback(() => {
     const container = canvasContainerRef.current;

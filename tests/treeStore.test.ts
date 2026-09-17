@@ -199,10 +199,9 @@ describe('Centralized Zustand Stores', () => {
       assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, 'John');
     });
 
-    it('groups rapid position dragging updates on the same person into a single undo step', () => {
+    it('groups rapid position dragging updates on the same person into a single undo step without mutating person domain entity', () => {
       const personId = Object.keys(useTreeStore.getState().tree.people)[0];
-      const initialX = useTreeStore.getState().tree.people[personId].x;
-      const initialY = useTreeStore.getState().tree.people[personId].y;
+      const initialOverride = useTreeStore.getState().tree.layoutOverrides?.[personId];
 
       // Drag sequence
       useTreeStore.getState().updatePersonPosition(personId, 100, 150, 'vertical');
@@ -210,16 +209,19 @@ describe('Centralized Zustand Stores', () => {
       useTreeStore.getState().updatePersonPosition(personId, 150, 200, 'vertical');
 
       assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, 150);
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, 200);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.x, 150);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.y, 200);
+      // Domain entity must NOT be mutated
+      assert.strictEqual((useTreeStore.getState().tree.people[personId] as any).x, undefined);
+      assert.strictEqual((useTreeStore.getState().tree.people[personId] as any).y, undefined);
 
       useTreeStore.getState().undo();
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, initialX);
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, initialY);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.x, initialOverride?.x);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.y, initialOverride?.y);
 
       useTreeStore.getState().redo();
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, 150);
-      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, 200);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.x, 150);
+      assert.strictEqual(useTreeStore.getState().tree.layoutOverrides?.[personId]?.y, 200);
     });
 
     it('supports transaction batching via beginTransaction and commitTransaction', () => {
@@ -316,6 +318,15 @@ describe('Centralized Zustand Stores', () => {
       canvasStore.setTransientDrag(null, null);
       assert.strictEqual(useCanvasStore.getState().draggingPersonId, null);
       assert.strictEqual(useCanvasStore.getState().dragOffset, null);
+    });
+
+    it('supports presentation layout overrides in useCanvasStore', () => {
+      const canvasStore = useCanvasStore.getState();
+      canvasStore.updatePersonPosition('p1', 300, 400);
+      assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides['p1'], { x: 300, y: 400 });
+
+      canvasStore.clearLayoutOverrides();
+      assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides, {});
     });
   });
 

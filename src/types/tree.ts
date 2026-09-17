@@ -2,6 +2,13 @@ export type Gender = 'male' | 'female' | 'other' | 'unspecified';
 
 export type LayoutStyle = 'vertical' | 'horizontal';
 
+export interface NodePositionOverride {
+  x: number;
+  y: number;
+}
+
+export type LayoutOverrides = Record<string, NodePositionOverride>;
+
 export interface TreeLink {
   treeId: string;
   treeName: string;
@@ -27,12 +34,6 @@ export interface Person {
   isDeceased?: boolean;
   avatarUrl?: string;
   notes?: string;
-  // Position override if manually dragged (vertical layout)
-  x?: number;
-  y?: number;
-  // Position override if manually dragged (horizontal layout)
-  horizontalX?: number;
-  horizontalY?: number;
   // Relationship references
   parentUnionId?: string; // Union of this person's biological/adoptive parents
   unionIds: string[];     // IDs of unions where this person is a partner/parent
@@ -96,6 +97,8 @@ export interface TreeData {
   rootPersonId?: string;
   collapsedPersonIds?: string[];
   googleDriveConfig?: GoogleDriveConfig;
+  layoutOverrides?: LayoutOverrides;
+  horizontalOverrides?: LayoutOverrides;
 }
 
 export interface PersonDisplayInfo {

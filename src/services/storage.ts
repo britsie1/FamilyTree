@@ -1,5 +1,7 @@
-import type { TreeData, Person, Union } from '../types/tree';
+import type { TreeData, Person, Union, NodePositionOverride, LayoutOverrides } from '../types/tree';
 import { sanitizeTree, linkPeopleAcrossTrees } from './treeOperations';
+
+export type { NodePositionOverride, LayoutOverrides };
 
 export const STORAGE_KEY = 'family_tree_current_v1';
 

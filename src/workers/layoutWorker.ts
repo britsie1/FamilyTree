@@ -1,5 +1,5 @@
 import { computeLayout } from '../services/layoutEngine';
-import type { TreeData, LayoutStyle } from '../types/tree';
+import type { TreeData, LayoutStyle, LayoutOverrides } from '../types/tree';
 
 export interface LayoutWorkerRequest {
   id: number;
@@ -8,6 +8,7 @@ export interface LayoutWorkerRequest {
   groupByFamily: boolean;
   collapsedPersonIds: string[];
   adjustSpacing: boolean;
+  layoutOverrides?: LayoutOverrides;
 }
 
 export interface LayoutWorkerResponse {
@@ -17,14 +18,15 @@ export interface LayoutWorkerResponse {
 }
 
 self.onmessage = (e: MessageEvent<LayoutWorkerRequest>) => {
-  const { id, tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing } = e.data;
+  const { id, tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, layoutOverrides } = e.data;
   try {
     const layout = computeLayout(
       tree,
       layoutStyle,
       groupByFamily,
       collapsedPersonIds,
-      adjustSpacing
+      adjustSpacing,
+      layoutOverrides
     );
     self.postMessage({ id, layout });
   } catch (err: any) {
