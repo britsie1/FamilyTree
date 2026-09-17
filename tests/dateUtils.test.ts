@@ -5,6 +5,7 @@ import {
   buildDateString,
   formatDisplayDate,
   getDaysInMonth,
+  calculateAge,
 } from '../src/services/dateUtils';
 
 describe('Date Utilities', () => {
@@ -39,6 +40,11 @@ describe('Date Utilities', () => {
       assert.deepEqual(parseDateParts(null), { year: '', month: '', day: '' });
       assert.deepEqual(parseDateParts(''), { year: '', month: '', day: '' });
       assert.deepEqual(parseDateParts('   '), { year: '', month: '', day: '' });
+    });
+
+    test('treats "0000" and "0" as empty parts', () => {
+      assert.deepEqual(parseDateParts('0000'), { year: '', month: '', day: '' });
+      assert.deepEqual(parseDateParts('0'), { year: '', month: '', day: '' });
     });
 
     test('falls back to 4-digit year if embedded in text', () => {
@@ -88,6 +94,12 @@ describe('Date Utilities', () => {
       assert.equal(buildDateString({ year: null }), undefined);
       assert.equal(buildDateString({ year: undefined }), undefined);
     });
+
+    test('returns undefined when year is 0 or "0000"', () => {
+      assert.equal(buildDateString({ year: '0' }), undefined);
+      assert.equal(buildDateString({ year: '0000' }), undefined);
+      assert.equal(buildDateString({ year: 0 }), undefined);
+    });
   });
 
   describe('formatDisplayDate', () => {
@@ -108,6 +120,43 @@ describe('Date Utilities', () => {
       assert.equal(formatDisplayDate(''), '');
       assert.equal(formatDisplayDate(null), '');
       assert.equal(formatDisplayDate(undefined), '');
+    });
+  });
+
+  describe('calculateAge', () => {
+    test('calculates age at death for full dates', () => {
+      // Died day before 30th birthday -> 29
+      assert.equal(calculateAge('1990-05-15', '2020-05-14'), 29);
+      // Died on 30th birthday -> 30
+      assert.equal(calculateAge('1990-05-15', '2020-05-15'), 30);
+      // Died day after 30th birthday -> 30
+      assert.equal(calculateAge('1990-05-15', '2020-05-16'), 30);
+    });
+
+    test('calculates age at death for year-only dates', () => {
+      assert.equal(calculateAge('1920', '1995'), 75);
+    });
+
+    test('calculates age at death for year-month dates', () => {
+      assert.equal(calculateAge('1960-03', '2020-02'), 59);
+      assert.equal(calculateAge('1960-03', '2020-04'), 60);
+    });
+
+    test('calculates current age relative to a Date object', () => {
+      const refDate = new Date(2026, 8, 17); // 17 Sept 2026 (month is 0-indexed: 8 = Sep)
+      assert.equal(calculateAge('1990-09-16', refDate), 36);
+      assert.equal(calculateAge('1990-09-17', refDate), 36);
+      assert.equal(calculateAge('1990-09-18', refDate), 35);
+      assert.equal(calculateAge('1990', refDate), 36);
+    });
+
+    test('returns null for missing, invalid, or future birth dates', () => {
+      assert.equal(calculateAge(undefined), null);
+      assert.equal(calculateAge(null), null);
+      assert.equal(calculateAge(''), null);
+      assert.equal(calculateAge('invalid-date'), null);
+      // Future birth date
+      assert.equal(calculateAge('2050', '2026'), null);
     });
   });
 

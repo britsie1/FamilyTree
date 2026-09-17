@@ -29,38 +29,77 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
   const [year, setYear] = useState(() => parseDateParts(value).year);
   const [month, setMonth] = useState(() => parseDateParts(value).month);
   const [day, setDay] = useState(() => parseDateParts(value).day);
+  const lastCommittedRef = React.useRef<string | undefined>(value ?? undefined);
 
   if (value !== prevValue) {
     setPrevValue(value);
-    const parsed = parseDateParts(value);
-    setYear(parsed.year);
-    setMonth(parsed.month);
-    setDay(parsed.day);
+    if (value !== lastCommittedRef.current) {
+      lastCommittedRef.current = value ?? undefined;
+      const parsed = parseDateParts(value);
+      setYear(parsed.year);
+      setMonth(parsed.month);
+      setDay(parsed.day);
+    }
   }
+
+  const commitDate = (newYear: string, newMonth: string, newDay: string) => {
+    if (!newYear) {
+      lastCommittedRef.current = undefined;
+      onChange(undefined);
+      return;
+    }
+    const num = parseInt(newYear, 10);
+    if (Number.isNaN(num) || num === 0) {
+      lastCommittedRef.current = undefined;
+      onChange(undefined);
+      return;
+    }
+    const built = buildDateString({ year: newYear, month: newMonth, day: newDay });
+    lastCommittedRef.current = built;
+    onChange(built);
+  };
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 4);
     setYear(raw);
     if (!raw) {
-      onChange(undefined);
-    } else {
-      onChange(buildDateString({ year: raw, month, day }));
+      commitDate('', month, day);
+    } else if (raw.length === 4) {
+      commitDate(raw, month, day);
+    }
+  };
+
+  const handleYearBlur = () => {
+    if (!year) {
+      commitDate('', month, day);
+      return;
+    }
+    const num = parseInt(year, 10);
+    if (Number.isNaN(num) || num === 0) {
+      setYear('');
+      commitDate('', month, day);
+      return;
+    }
+    if (year.length < 4) {
+      const padded = year.padStart(4, '0');
+      setYear(padded);
+      commitDate(padded, month, day);
     }
   };
 
   const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newMonth = e.target.value;
     setMonth(newMonth);
-    if (year) {
-      onChange(buildDateString({ year, month: newMonth, day }));
+    if (year && year.length === 4) {
+      commitDate(year, newMonth, day);
     }
   };
 
   const handleDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2);
     setDay(raw);
-    if (year) {
-      onChange(buildDateString({ year, month, day: raw }));
+    if (year && year.length === 4) {
+      commitDate(year, month, raw);
     }
   };
 
@@ -85,6 +124,7 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
             placeholder={yearPlaceholder}
             value={year}
             onChange={handleYearChange}
+            onBlur={handleYearBlur}
             disabled={disabled}
             maxLength={4}
             className="w-full px-2 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:bg-slate-50 font-mono"

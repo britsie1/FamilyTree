@@ -65,8 +65,8 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
       aria-label="Canvas and View Controls"
       className={`fixed z-30 transition-all duration-200 select-none ${
         isTimelineActive
-          ? 'bottom-28 sm:bottom-32 left-1/2 -translate-x-1/2 max-w-[96vw]'
-          : 'bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 max-w-[96vw]'
+          ? 'bottom-28 sm:bottom-32 left-4 sm:left-6 max-w-[calc(100vw-2rem)]'
+          : 'bottom-4 sm:bottom-6 left-4 sm:left-6 max-w-[calc(100vw-2rem)]'
       }`}
     >
       <div className="flex items-center gap-1 sm:gap-1.5 bg-white/95 backdrop-blur-md px-2 sm:px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/90 overflow-x-auto max-w-full">

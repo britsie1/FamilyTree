@@ -76,6 +76,9 @@ export function parseDateParts(dateStr?: string | null): DateParts {
   }
 
   const trimmed = dateStr.trim();
+  if (trimmed === '0000' || trimmed === '0') {
+    return { year: '', month: '', day: '' };
+  }
 
   // Full date: YYYY-MM-DD
   const ymdMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -122,7 +125,7 @@ export function parseDateParts(dateStr?: string | null): DateParts {
 
 /**
  * Builds an ISO partial or full date string from Year, Month, and Day components.
- * Returns undefined if no year is provided.
+ * Returns undefined if no year is provided or if year is invalid/zero.
  */
 export function buildDateString(parts: {
   year?: string | number | null;
@@ -135,7 +138,11 @@ export function buildDateString(parts: {
   // Clean year digits
   const yearDigits = rawY.replace(/\D/g, '').slice(0, 4);
   if (!yearDigits) return undefined;
-  const year = yearDigits.padStart(4, '0');
+
+  const yearNum = parseInt(yearDigits, 10);
+  if (Number.isNaN(yearNum) || yearNum === 0) return undefined;
+
+  const year = yearDigits.length === 4 ? yearDigits : yearDigits.padStart(4, '0');
 
   const rawM = parts.month !== undefined && parts.month !== null ? String(parts.month).trim() : '';
   const monthNum = parseInt(rawM, 10);
@@ -183,4 +190,65 @@ export function formatDisplayDate(dateStr?: string | null): string {
   }
 
   return year;
+}
+
+/**
+ * Calculates a person's age.
+ * - If referenceDateOrDeathDate is provided (as a string or Date), calculates age at that date.
+ * - If omitted or null, calculates current age relative to today.
+ * Returns null if birthDate is invalid or year is missing, or if birth is after reference date.
+ */
+export function calculateAge(
+  birthDate?: string | null,
+  referenceDateOrDeathDate?: string | null | Date
+): number | null {
+  if (!birthDate || typeof birthDate !== 'string') return null;
+
+  const bParts = parseDateParts(birthDate);
+  if (!bParts.year) return null;
+
+  const bYear = parseInt(bParts.year, 10);
+  if (Number.isNaN(bYear) || bYear <= 0) return null;
+
+  const bMonth = bParts.month ? parseInt(bParts.month, 10) : null;
+  const bDay = bParts.day ? parseInt(bParts.day, 10) : null;
+
+  let refYear: number;
+  let refMonth: number | null = null;
+  let refDay: number | null = null;
+
+  if (referenceDateOrDeathDate instanceof Date) {
+    refYear = referenceDateOrDeathDate.getFullYear();
+    refMonth = referenceDateOrDeathDate.getMonth() + 1;
+    refDay = referenceDateOrDeathDate.getDate();
+  } else if (typeof referenceDateOrDeathDate === 'string' && referenceDateOrDeathDate.trim()) {
+    const dParts = parseDateParts(referenceDateOrDeathDate);
+    if (!dParts.year) return null;
+    refYear = parseInt(dParts.year, 10);
+    if (Number.isNaN(refYear) || refYear <= 0) return null;
+    refMonth = dParts.month ? parseInt(dParts.month, 10) : null;
+    refDay = dParts.day ? parseInt(dParts.day, 10) : null;
+  } else {
+    const now = new Date();
+    refYear = now.getFullYear();
+    refMonth = now.getMonth() + 1;
+    refDay = now.getDate();
+  }
+
+  let age = refYear - bYear;
+
+  // If both have month information, adjust for birthday not yet reached
+  if (refMonth !== null && bMonth !== null) {
+    if (refMonth < bMonth) {
+      age--;
+    } else if (refMonth === bMonth && refDay !== null && bDay !== null) {
+      if (refDay < bDay) {
+        age--;
+      }
+    }
+  }
+
+  if (age < 0) return null;
+
+  return age;
 }

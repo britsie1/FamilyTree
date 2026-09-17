@@ -1,6 +1,7 @@
 import type { LayoutNode, Gender, LayoutStyle, Person, TreeLink } from '../../types/tree';
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
+import { calculateAge, parseDateParts } from '../../services/dateUtils';
 import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink } from 'lucide-react';
 
 interface PersonCardProps {
@@ -79,9 +80,9 @@ export const PersonCard: React.FC<PersonCardProps> = ({
   const isDeceasedAtYear = temporalInfo?.status === 'deceased';
   const isLivingAtYear = temporalInfo?.status === 'living';
 
-  // Format birth - death years
-  const birthYear = person.birthDate ? person.birthDate.split('-')[0] : '';
-  const deathYear = person.deathDate ? person.deathDate.split('-')[0] : '';
+  // Format birth - death years and age
+  const birthYear = person.birthDate ? parseDateParts(person.birthDate).year : '';
+  const deathYear = person.deathDate ? parseDateParts(person.deathDate).year : '';
   let dateText = '';
 
   if (isTemporalActive && temporalInfo) {
@@ -93,9 +94,19 @@ export const PersonCard: React.FC<PersonCardProps> = ({
       dateText = `Age ${temporalInfo.age ?? '?'} (b. ${birthYear || '?'})`;
     }
   } else if (birthYear && deathYear) {
-    dateText = `${birthYear} – ${deathYear}`;
+    const ageAtDeath = calculateAge(person.birthDate, person.deathDate);
+    dateText = ageAtDeath !== null
+      ? `${birthYear} – ${deathYear} (age ${ageAtDeath})`
+      : `${birthYear} – ${deathYear}`;
   } else if (birthYear) {
-    dateText = person.isDeceased ? `b. ${birthYear} (deceased)` : `b. ${birthYear}`;
+    if (person.isDeceased) {
+      dateText = `b. ${birthYear} (deceased)`;
+    } else {
+      const currentAge = calculateAge(person.birthDate);
+      dateText = currentAge !== null
+        ? `b. ${birthYear} (age ${currentAge})`
+        : `b. ${birthYear}`;
+    }
   } else if (deathYear) {
     dateText = `d. ${deathYear}`;
   }

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { RelationshipResult } from '../../services/relationshipFinder';
 import { extractYear } from '../../services/temporalEngine';
+import { calculateAge } from '../../services/dateUtils';
 import { DatePartsInput } from '../Common/DatePartsInput';
 
 interface PersonInspectorProps {
@@ -381,7 +382,28 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
         {/* Life & Dates */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Life & Dates</h4>
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Life & Dates</h4>
+              {(() => {
+                if (person.birthDate && person.deathDate) {
+                  const ageAtDeath = calculateAge(person.birthDate, person.deathDate);
+                  return ageAtDeath !== null ? (
+                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full border border-slate-200">
+                      Age {ageAtDeath} at death
+                    </span>
+                  ) : null;
+                }
+                if (person.birthDate && !person.isDeceased) {
+                  const currentAge = calculateAge(person.birthDate);
+                  return currentAge !== null ? (
+                    <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                      Age {currentAge}
+                    </span>
+                  ) : null;
+                }
+                return null;
+              })()}
+            </div>
             <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
               <input
                 type="checkbox"
