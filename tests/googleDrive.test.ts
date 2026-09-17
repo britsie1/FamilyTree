@@ -6,6 +6,7 @@ import {
   getDriveEmbedUrl,
   formatFileSize,
   getFileCategory,
+  getDirectImageUrl,
 } from '../src/services/googleDriveService';
 import type { PersonDocument } from '../src/types/tree';
 
@@ -99,6 +100,52 @@ describe('Google Drive Service Helpers', () => {
       assert.equal(getFileCategory('video/mp4', 'reunion.mp4'), 'video');
       assert.equal(getFileCategory('application/zip', 'archive.zip'), 'archive');
       assert.equal(getFileCategory('unknown/binary', 'file.bin'), 'other');
+    });
+  });
+
+  describe('getDirectImageUrl', () => {
+    it('converts standard Google Drive share URLs to direct thumbnail URLs', () => {
+      const shareUrl = 'https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view?usp=sharing';
+      assert.equal(
+        getDirectImageUrl(shareUrl),
+        'https://drive.google.com/thumbnail?id=1A2B3C4D5E6F7G8H9I0J&sz=w1000'
+      );
+    });
+
+    it('converts drive.google.com open id URLs to thumbnail URLs', () => {
+      const idUrl = 'https://drive.google.com/open?id=1A2B3C4D5E6F7G8H9I0J';
+      assert.equal(
+        getDirectImageUrl(idUrl),
+        'https://drive.google.com/thumbnail?id=1A2B3C4D5E6F7G8H9I0J&sz=w1000'
+      );
+    });
+
+    it('converts raw Google Drive file IDs to thumbnail URLs', () => {
+      const rawId = '1A2B3C4D5E6F7G8H9I0J12345';
+      assert.equal(
+        getDirectImageUrl(rawId),
+        'https://drive.google.com/thumbnail?id=1A2B3C4D5E6F7G8H9I0J12345&sz=w1000'
+      );
+    });
+
+    it('preserves standard web image URLs unchanged', () => {
+      const regularUrl = 'https://example.com/images/family_portrait.jpg';
+      assert.equal(getDirectImageUrl(regularUrl), regularUrl);
+    });
+
+    it('preserves data: URLs and blob: URLs unchanged', () => {
+      const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      assert.equal(getDirectImageUrl(dataUrl), dataUrl);
+
+      const blobUrl = 'blob:http://localhost:5173/01234567-89ab-cdef';
+      assert.equal(getDirectImageUrl(blobUrl), blobUrl);
+    });
+
+    it('returns empty string for empty, undefined, or null input', () => {
+      assert.equal(getDirectImageUrl(''), '');
+      assert.equal(getDirectImageUrl(undefined), '');
+      assert.equal(getDirectImageUrl(null), '');
+      assert.equal(getDirectImageUrl('   '), '');
     });
   });
 });

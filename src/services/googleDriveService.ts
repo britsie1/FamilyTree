@@ -465,3 +465,44 @@ export function getFileCategory(
   }
   return 'other';
 }
+
+/**
+ * Normalizes an image URL or Google Drive file URL/ID to a direct browser-renderable image URL.
+ * If given a Google Drive link (e.g. drive.google.com/file/d/XYZ/view or ?id=XYZ),
+ * converts it to https://drive.google.com/thumbnail?id=XYZ&sz=w1000 so it renders directly in <img> tags.
+ * If given a regular URL, blob:, or data: URL, returns it as-is.
+ */
+export function getDirectImageUrl(urlOrDriveId?: string | null): string {
+  if (!urlOrDriveId) return '';
+  const trimmed = urlOrDriveId.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+
+  const driveId = parseGoogleDriveFileId(trimmed);
+  if (
+    driveId &&
+    (trimmed.includes('drive.google.com') ||
+      trimmed.includes('docs.google.com') ||
+      !trimmed.startsWith('http'))
+  ) {
+    return `https://drive.google.com/thumbnail?id=${driveId}&sz=w1000`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Reads a local image file as a base64 Data URL (useful for local trees or offline fallback).
+ */
+export function readImageFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+

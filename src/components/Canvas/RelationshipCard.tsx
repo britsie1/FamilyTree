@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { TreeData, Person } from '../../types/tree';
 import type { RelationshipResult } from '../../services/relationshipFinder';
 import { getPersonDisplayName } from '../../services/treeOperations';
+import { getDirectImageUrl } from '../../services/googleDriveService';
 import {
   Sparkles,
   ArrowLeftRight,
@@ -132,7 +133,7 @@ export const RelationshipCard: React.FC<RelationshipCardProps> = ({
           <div className="relative">
             <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-indigo-100 dark:bg-indigo-950/80 border-2 border-indigo-500 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-sm sm:text-base shadow-sm group-hover:scale-105 transition-transform overflow-hidden">
               {personA.avatarUrl ? (
-                <img src={personA.avatarUrl} alt={nameA} className="w-full h-full object-cover" />
+                <img src={getDirectImageUrl(personA.avatarUrl)} alt={nameA} className="w-full h-full object-cover" />
               ) : (
                 getInitials(personA)
               )}
@@ -174,7 +175,7 @@ export const RelationshipCard: React.FC<RelationshipCardProps> = ({
           <div className="relative">
             <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-purple-100 dark:bg-purple-950/80 border-2 border-purple-500 text-purple-700 dark:text-purple-300 font-bold flex items-center justify-center text-sm sm:text-base shadow-sm group-hover:scale-105 transition-transform overflow-hidden">
               {personB.avatarUrl ? (
-                <img src={personB.avatarUrl} alt={nameB} className="w-full h-full object-cover" />
+                <img src={getDirectImageUrl(personB.avatarUrl)} alt={nameB} className="w-full h-full object-cover" />
               ) : (
                 getInitials(personB)
               )}

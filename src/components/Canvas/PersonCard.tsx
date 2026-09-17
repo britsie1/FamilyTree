@@ -2,6 +2,7 @@ import type { LayoutNode, Gender, LayoutStyle, Person, TreeLink } from '../../ty
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
 import { calculateAge, parseDateParts } from '../../services/dateUtils';
+import { getDirectImageUrl } from '../../services/googleDriveService';
 import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink } from 'lucide-react';
 
 interface PersonCardProps {
@@ -266,7 +267,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         >
           {person.avatarUrl ? (
             <img
-              src={person.avatarUrl}
+              src={getDirectImageUrl(person.avatarUrl)}
               alt={displayName}
               className="w-full h-full object-cover"
               onError={(e) => {
