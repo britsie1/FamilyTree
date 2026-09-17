@@ -22,6 +22,7 @@ import type {
   SharingSettings,
   UserPermission,
   ShareRole,
+  GoogleDriveConfig,
 } from '../types/tree';
 import { sanitizeTree } from './treeOperations';
 import { generateId, isPresetTreeId } from './storage';
@@ -238,6 +239,7 @@ export async function updateCloudTreeData(tree: TreeData): Promise<void> {
     collapsedPersonIds: sanitized.collapsedPersonIds || [],
     people: sanitized.people,
     unions: sanitized.unions,
+    googleDriveConfig: sanitized.googleDriveConfig || null,
     updatedAt: now,
   });
 
@@ -366,6 +368,7 @@ export async function saveTreeToCloud(
     publicRole: existingMetadata?.publicRole || treeAny.publicRole || 'viewer',
     sharedWith: existingMetadata?.sharedWith || treeAny.sharedWith || {},
     sharedEmails: existingMetadata?.sharedEmails || treeAny.sharedEmails || [],
+    googleDriveConfig: existingMetadata?.googleDriveConfig || treeAny.googleDriveConfig || undefined,
   };
 
   const cloudTree: CloudTreeData = {
@@ -438,6 +441,7 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
         publicRole: data.publicRole || 'viewer',
         sharedWith: data.sharedWith || {},
         sharedEmails: data.sharedEmails || [],
+        googleDriveConfig: data.googleDriveConfig,
       };
     }
     return null;
@@ -478,6 +482,7 @@ export function subscribeToCloudTree(
           publicRole: data.publicRole || 'viewer',
           sharedWith: data.sharedWith || {},
           sharedEmails: data.sharedEmails || [],
+          googleDriveConfig: data.googleDriveConfig,
         };
         onUpdate(parsed);
       } else {
@@ -597,6 +602,39 @@ export async function updateTreeSharingSettings(
     );
   } catch (err: any) {
     console.error('Failed to update sharing settings:', err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Updates the Google Drive configuration of a cloud tree in Firestore.
+ */
+export async function updateCloudTreeGoogleDriveConfig(
+  treeId: string,
+  config: GoogleDriveConfig | null
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not available');
+  }
+
+  try {
+    const docRef = doc(db, TREES_COLLECTION, treeId);
+    const now = new Date().toISOString();
+
+    await withTimeout(
+      updateDoc(
+        docRef,
+        cleanForFirestore({
+          googleDriveConfig: config || null,
+          updatedAt: now,
+        })
+      ),
+      7000,
+      'Updating Google Drive settings timed out (7s).'
+    );
+  } catch (err: any) {
+    console.error('Failed to update Google Drive configuration in cloud:', err);
     throw new Error(formatFirestoreError(err));
   }
 }

@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import type { TreeData, CloudTreeData, ShareRole, SharedUser } from '../../types/tree';
+import type { TreeData, CloudTreeData, ShareRole, SharedUser, GoogleDriveConfig } from '../../types/tree';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   saveTreeToCloud,
   getCloudTree,
   updateTreeSharingSettings,
+  updateCloudTreeGoogleDriveConfig,
   encodeEmailKey,
   normalizeEmail,
   RECOMMENDED_FIRESTORE_RULES,
 } from '../../services/firestoreService';
 import { generateId, isPresetTreeId } from '../../services/storage';
 import { getFirebaseDiagnostics } from '../../services/firebase';
+import {
+  createTreeFolder,
+  getDriveFolderMetadata,
+  parseGoogleDriveFolderId,
+  requestDriveAccessToken,
+  syncDrivePermissions,
+} from '../../services/googleDriveService';
+import { useTreeStore } from '../../stores/useTreeStore';
 import {
   X,
   Share2,
@@ -27,6 +36,11 @@ import {
   Copy,
   ExternalLink,
   ShieldAlert,
+  HardDrive,
+  Folder,
+  FolderPlus,
+  RefreshCw,
+  Unlink,
 } from 'lucide-react';
 
 interface ShareTreeModalProps {
@@ -65,6 +79,16 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
   const [publicRole, setPublicRole] = useState<ShareRole>('viewer');
   const [sharedWith, setSharedWith] = useState<Record<string, SharedUser>>({});
 
+  // Google Drive state
+  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig | undefined>(
+    () => tree.googleDriveConfig
+  );
+  const [linkingDrive, setLinkingDrive] = useState(false);
+  const [syncingDrivePerms, setSyncingDrivePerms] = useState(false);
+  const [driveSyncMessage, setDriveSyncMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [customFolderUrl, setCustomFolderUrl] = useState('');
+  const [isLinkingCustom, setIsLinkingCustom] = useState(false);
+
   const isPermissionError = Boolean(
     errorMessage &&
       (errorMessage.toLowerCase().includes('permission') ||
@@ -96,6 +120,9 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         setIsPublic(existing.isPublic ?? false);
         setPublicRole(existing.publicRole || 'viewer');
         setSharedWith(existing.sharedWith || {});
+        if (existing.googleDriveConfig) {
+          setDriveConfig(existing.googleDriveConfig);
+        }
       } else {
         // Immediately sync local tree to cloud so it's persisted and shareable
         const saved = await saveTreeToCloud(targetTree, user, {
@@ -103,6 +130,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
           publicRole: publicRole,
           sharedWith: sharedWith,
           sharedEmails: Object.values(sharedWith).map((u) => normalizeEmail(u.email)),
+          googleDriveConfig: driveConfig || tree.googleDriveConfig,
         });
         setCloudTree(saved);
         if (onTreeUpdated) onTreeUpdated(saved);
@@ -113,6 +141,127 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConnectDriveAndCreateFolder = async () => {
+    if (!user) return;
+    setLinkingDrive(true);
+    setDriveSyncMessage(null);
+    try {
+      const token = await requestDriveAccessToken();
+      const newConfig = await createTreeFolder(tree.name, token, {
+        email: user.email || '',
+        name: user.displayName || '',
+      });
+      setDriveConfig(newConfig);
+      useTreeStore.getState().setGoogleDriveConfig(newConfig);
+
+      const targetId = cloudTree?.id || tree.id;
+      if (isCloudTree || cloudTree?.id) {
+        await updateCloudTreeGoogleDriveConfig(targetId, newConfig);
+      }
+
+      // Sync existing tree permissions to the new Drive folder
+      const emails = Object.values(sharedWith).map((u) => u.email);
+      await syncDrivePermissions(newConfig.folderId, isPublic, publicRole, emails, token);
+
+      setDriveSyncMessage({
+        text: `Created and linked Google Drive folder "${newConfig.folderName}"! Permissions synced.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('Failed to link Google Drive:', err);
+      setDriveSyncMessage({
+        text: err.message || 'Failed to connect Google Drive.',
+        type: 'error',
+      });
+    } finally {
+      setLinkingDrive(false);
+    }
+  };
+
+  const handleLinkCustomFolder = async () => {
+    if (!customFolderUrl.trim() || !user) return;
+    const folderId = parseGoogleDriveFolderId(customFolderUrl);
+    if (!folderId) {
+      setDriveSyncMessage({ text: 'Invalid Google Drive folder link or ID.', type: 'error' });
+      return;
+    }
+
+    setLinkingDrive(true);
+    setDriveSyncMessage(null);
+    try {
+      const token = await requestDriveAccessToken();
+      const meta = await getDriveFolderMetadata(folderId, token);
+      const newConfig: GoogleDriveConfig = {
+        folderId: meta.id,
+        folderName: meta.name,
+        folderWebViewLink: meta.webViewLink,
+        linkedByEmail: user.email || '',
+        linkedByName: user.displayName || '',
+        linkedAt: new Date().toISOString(),
+        autoSyncPermissions: true,
+      };
+      setDriveConfig(newConfig);
+      useTreeStore.getState().setGoogleDriveConfig(newConfig);
+
+      const targetId = cloudTree?.id || tree.id;
+      if (isCloudTree || cloudTree?.id) {
+        await updateCloudTreeGoogleDriveConfig(targetId, newConfig);
+      }
+
+      setIsLinkingCustom(false);
+      setCustomFolderUrl('');
+      setDriveSyncMessage({
+        text: `Linked to existing Google Drive folder "${meta.name}"!`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('Failed to link folder:', err);
+      setDriveSyncMessage({ text: err.message || 'Failed to link Google Drive folder.', type: 'error' });
+    } finally {
+      setLinkingDrive(false);
+    }
+  };
+
+  const handleSyncDrivePermissionsNow = async () => {
+    if (!driveConfig?.folderId) return;
+    setSyncingDrivePerms(true);
+    setDriveSyncMessage(null);
+    try {
+      const token = await requestDriveAccessToken();
+      const emails = Object.values(sharedWith).map((u) => u.email);
+      const res = await syncDrivePermissions(driveConfig.folderId, isPublic, publicRole, emails, token);
+      if (res.errors.length > 0) {
+        setDriveSyncMessage({
+          text: `Synced with warnings: ${res.errors.join(', ')}`,
+          type: 'error',
+        });
+      } else {
+        setDriveSyncMessage({
+          text: `Permissions successfully synchronized with Google Drive! (${res.syncedCount} updated)`,
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      console.error('Drive permission sync error:', err);
+      setDriveSyncMessage({ text: err.message || 'Failed to sync permissions to Drive.', type: 'error' });
+    } finally {
+      setSyncingDrivePerms(false);
+    }
+  };
+
+  const handleUnlinkDrive = async () => {
+    if (!window.confirm('Unlink this Google Drive folder from this family tree? Files in Google Drive will not be deleted.')) {
+      return;
+    }
+    setDriveConfig(undefined);
+    useTreeStore.getState().setGoogleDriveConfig(null);
+    const targetId = cloudTree?.id || tree.id;
+    if (isCloudTree || cloudTree?.id) {
+      await updateCloudTreeGoogleDriveConfig(targetId, null);
+    }
+    setDriveSyncMessage({ text: 'Google Drive unlinked from this tree.', type: 'success' });
   };
 
   useEffect(() => {
@@ -733,6 +882,156 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
                     </select>
                   )}
                 </div>
+              </div>
+
+              {/* Google Drive Document Storage */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    Google Drive Document Storage
+                  </h4>
+                  {driveConfig && (
+                    <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+                      Connected
+                    </span>
+                  )}
+                </div>
+
+                {driveSyncMessage && (
+                  <div
+                    className={`mb-3 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                      driveSyncMessage.type === 'success'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    {driveSyncMessage.type === 'success' ? (
+                      <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                    )}
+                    <span className="flex-1">{driveSyncMessage.text}</span>
+                  </div>
+                )}
+
+                {driveConfig ? (
+                  <div className="border border-indigo-100 dark:border-indigo-900/60 rounded-xl p-3.5 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+                          <Folder className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {driveConfig.folderName}
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            Linked by {driveConfig.linkedByEmail || 'tree manager'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <a
+                        href={driveConfig.folderWebViewLink || `https://drive.google.com/drive/folders/${driveConfig.folderId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 rounded-lg shadow-2xs transition-colors flex-shrink-0"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Open Drive</span>
+                      </a>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-indigo-100/80 dark:border-indigo-900/40">
+                      <button
+                        type="button"
+                        onClick={handleSyncDrivePermissionsNow}
+                        disabled={syncingDrivePerms}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                        title="Ensure all collaborators on this tree have matching view or edit access to the Google Drive folder"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncingDrivePerms ? 'animate-spin text-indigo-600' : ''}`} />
+                        <span>{syncingDrivePerms ? 'Syncing...' : 'Sync Permissions to Drive'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleUnlinkDrive}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Unlink className="w-3 h-3" />
+                        <span>Unlink Drive</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-850/50 space-y-3">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Link a Google Drive folder to attach photos, birth certificates, and historical documents to people in this tree.
+                    </p>
+
+                    {!isLinkingCustom ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleConnectDriveAndCreateFolder}
+                          disabled={linkingDrive}
+                          className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-xs px-3.5 py-2 rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {linkingDrive ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <FolderPlus className="w-3.5 h-3.5" />
+                          )}
+                          <span>{linkingDrive ? 'Connecting...' : 'Connect Drive & Create Folder'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsLinkingCustom(true)}
+                          disabled={linkingDrive}
+                          className="inline-flex items-center gap-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-medium text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer"
+                        >
+                          <span>Link Existing Folder</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Google Drive Folder URL or ID:
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={customFolderUrl}
+                            onChange={(e) => setCustomFolderUrl(e.target.value)}
+                            placeholder="https://drive.google.com/drive/folders/..."
+                            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleLinkCustomFolder}
+                            disabled={linkingDrive || !customFolderUrl.trim()}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {linkingDrive ? 'Linking...' : 'Link'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsLinkingCustom(false);
+                              setCustomFolderUrl('');
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}

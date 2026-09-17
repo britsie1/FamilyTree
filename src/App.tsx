@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { TreeData, Union, Person, TreeLink } from './types/tree';
+import type { TreeData, Union, Person, TreeLink, PersonDocument } from './types/tree';
 import {
   loadCurrentTree,
   loadTreeById,
@@ -34,6 +34,7 @@ import { TreeManagerModal } from './components/Modal/TreeManagerModal';
 import { CreateTreeFromSelectionModal, type CreateTreeOptions } from './components/Modal/CreateTreeFromSelectionModal';
 import { LinkExistingTreeModal } from './components/Modal/LinkExistingTreeModal';
 import { ShareTreeModal } from './components/Modal/ShareTreeModal';
+import { DocumentPreviewModal } from './components/Modal/DocumentPreviewModal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import {
   getCloudTree,
@@ -85,6 +86,7 @@ function getTreeContentFingerprint(tree: TreeData): string {
     description: tree.description,
     rootPersonId: tree.rootPersonId,
     collapsedPersonIds: tree.collapsedPersonIds,
+    googleDriveConfig: tree.googleDriveConfig,
     people: sortedP,
     unions: sortedU,
   });
@@ -204,6 +206,11 @@ function FamilyTreeMain() {
     sourcePersonId: null,
     relationType: 'child',
   });
+
+  const [previewDoc, setPreviewDoc] = useState<{
+    doc: PersonDocument;
+    personName: string;
+  } | null>(null);
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const lastSavedCloudFingerprintRef = useRef<string | null>(null);
@@ -1290,6 +1297,8 @@ function FamilyTreeMain() {
           onOpenTreeLink={handleOpenTreeLink}
           onLinkExistingTree={handleOpenLinkTreeModal}
           onRemoveTreeLink={handleRemoveTreeLink}
+          onOpenShareModal={() => setIsShareModalOpen(true)}
+          onPreviewDocument={(doc, name) => setPreviewDoc({ doc, personName: name })}
         />
       </main>
 
@@ -1411,6 +1420,26 @@ function FamilyTreeMain() {
           currentTree={tree}
           currentPerson={personToLink}
           onLinkTrees={handleLinkTrees}
+        />
+      )}
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={Boolean(previewDoc)}
+          onClose={() => setPreviewDoc(null)}
+          document={previewDoc.doc}
+          personName={previewDoc.personName}
+          isReadOnly={isReadOnly}
+          onDelete={(docId) => {
+            if (selectedPersonId) {
+              const person = tree.people[selectedPersonId];
+              if (person && person.documents) {
+                updatePerson(selectedPersonId, {
+                  documents: person.documents.filter((d) => d.id !== docId),
+                });
+              }
+            }
+          }}
         />
       )}
     </div>

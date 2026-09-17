@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { TreeData, Person, UnionType } from '../types/tree';
+import type { TreeData, Person, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
 import {
   loadCurrentTree,
   saveCurrentTree,
@@ -22,6 +22,9 @@ import {
   updatePersonInTree,
   updateUnionInTree,
   clearManualPositions,
+  attachDocumentToPerson,
+  removeDocumentFromPerson,
+  updateTreeGoogleDriveConfig,
 } from '../services/treeOperations';
 
 const MAX_HISTORY_DEPTH = 50;
@@ -71,6 +74,9 @@ export interface TreeStoreState {
   unlinkParentFromChildAction: (childPersonId: string, parentPersonId: string) => void;
   resetLayout: () => void;
   makeCopy: () => TreeData;
+  attachDocument: (personId: string, doc: PersonDocument) => void;
+  removeDocument: (personId: string, documentId: string) => void;
+  setGoogleDriveConfig: (config: GoogleDriveConfig | null) => void;
 }
 
 const initialTree = loadCurrentTree();
@@ -317,5 +323,17 @@ export const useTreeStore = create<TreeStoreState>((set, get) => ({
     delete (copy as any).sharedEmails;
     get().resetHistory(copy);
     return copy;
+  },
+
+  attachDocument: (personId, doc) => {
+    get().setTree((prev) => attachDocumentToPerson(prev, personId, doc));
+  },
+
+  removeDocument: (personId, documentId) => {
+    get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
+  },
+
+  setGoogleDriveConfig: (config) => {
+    get().setTree((prev) => updateTreeGoogleDriveConfig(prev, config));
   },
 }));

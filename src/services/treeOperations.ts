@@ -1,4 +1,4 @@
-import type { TreeData, Person, Union, TreeLink } from '../types/tree';
+import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConfig } from '../types/tree';
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
@@ -1406,5 +1406,72 @@ export function splitBranchToNewTree(
   return { newTree, updatedSourceTree, bridgePersonId };
 }
 
+/**
+ * Attaches a document to a specific person in the tree.
+ */
+export function attachDocumentToPerson(
+  tree: TreeData,
+  personId: string,
+  doc: PersonDocument
+): TreeData {
+  const person = tree.people[personId];
+  if (!person) return tree;
 
+  const currentDocs = person.documents || [];
+  const updatedPerson: Person = {
+    ...person,
+    documents: [...currentDocs, doc],
+  };
 
+  return {
+    ...tree,
+    people: {
+      ...tree.people,
+      [personId]: updatedPerson,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Removes an attached document from a specific person in the tree.
+ */
+export function removeDocumentFromPerson(
+  tree: TreeData,
+  personId: string,
+  documentId: string
+): TreeData {
+  const person = tree.people[personId];
+  if (!person || !person.documents) return tree;
+
+  const updatedDocs = person.documents.filter((d) => d.id !== documentId);
+  const updatedPerson: Person = {
+    ...person,
+    documents: updatedDocs,
+  };
+
+  return {
+    ...tree,
+    people: {
+      ...tree.people,
+      [personId]: updatedPerson,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Updates the Google Drive configuration on the tree (or removes it if null).
+ */
+export function updateTreeGoogleDriveConfig(
+  tree: TreeData,
+  config: GoogleDriveConfig | null
+): TreeData {
+  const nextTree = { ...tree, updatedAt: new Date().toISOString() };
+  if (config) {
+    nextTree.googleDriveConfig = config;
+  } else {
+    delete nextTree.googleDriveConfig;
+  }
+  return nextTree;
+}

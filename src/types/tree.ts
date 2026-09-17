@@ -39,8 +39,37 @@ export interface Person {
   generation?: number;    // Generational rank level (supports negative for ancestors above root)
   // Cross-tree links
   linkedTrees?: TreeLink[];
+  // Attached Google Drive documents & records
+  documents?: PersonDocument[];
 }
 
+export interface PersonDocument {
+  id: string;
+  name: string;
+  fileType?: string;
+  fileSize?: number;
+  driveFileId: string;
+  webViewLink?: string;
+  webContentLink?: string;
+  thumbnailLink?: string;
+  uploadedAt: string;
+  uploadedBy?: {
+    uid?: string;
+    name?: string;
+    email?: string;
+  };
+  description?: string;
+}
+
+export interface GoogleDriveConfig {
+  folderId: string;
+  folderName: string;
+  folderWebViewLink?: string;
+  linkedByEmail?: string;
+  linkedByName?: string;
+  linkedAt?: string;
+  autoSyncPermissions?: boolean;
+}
 
 export type UnionType = 'married' | 'divorced' | 'separated' | 'partner' | 'other';
 
@@ -66,6 +95,7 @@ export interface TreeData {
   unions: Record<string, Union>;
   rootPersonId?: string;
   collapsedPersonIds?: string[];
+  googleDriveConfig?: GoogleDriveConfig;
 }
 
 export interface LayoutNode {
@@ -175,6 +205,7 @@ export interface CloudTreeMetadata {
   publicRole: ShareRole;
   sharedWith: Record<string, SharedUser>;
   sharedEmails: string[];
+  googleDriveConfig?: GoogleDriveConfig;
 }
 
 export interface CloudTreeData extends TreeData, CloudTreeMetadata {}
