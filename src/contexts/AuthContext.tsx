@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState, type ReactNode } from 'react';
+import React, { useEffect, useState, type ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import { signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import {
@@ -6,17 +6,7 @@ import {
   googleProvider,
   isFirebaseConfigured,
 } from '../services/firebase';
-
-export interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  isConfigured: boolean;
-  signInWithGoogle: () => Promise<User | null>;
-  signInAnonymouslyUser: () => Promise<User | null>;
-  signOutUser: () => Promise<void>;
-}
-
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext } from './authContextValue';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -106,5 +96,3 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     </AuthContext.Provider>
   );
 };
-
-export { useAuth } from '../hooks/useAuth';

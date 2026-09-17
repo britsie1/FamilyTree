@@ -32,8 +32,13 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
   const [switchImmediately, setSwitchImmediately] = useState(true);
   const [branchMode, setBranchMode] = useState<'move' | 'copy'>('move');
   const [linkTrees, setLinkTrees] = useState(true);
-  const [bridgePersonId, setBridgePersonId] = useState<string>(selectedPersonIds[0] || '');
+  const [selectedBridgePersonId, setSelectedBridgePersonId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const bridgePersonId =
+    selectedBridgePersonId && selectedPersonIds.includes(selectedBridgePersonId)
+      ? selectedBridgePersonId
+      : selectedPersonIds[0] ?? '';
 
   // Compute suggested default name derived directly from selected people
   const suggestedName = useMemo(() => {
@@ -63,13 +68,6 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
 
     return () => clearTimeout(timer);
   }, []);
-
-  // Sync bridgePersonId if selection changes
-  useEffect(() => {
-    if (selectedPersonIds.length > 0 && !selectedPersonIds.includes(bridgePersonId)) {
-      setBridgePersonId(selectedPersonIds[0]);
-    }
-  }, [selectedPersonIds, bridgePersonId]);
 
   if (!isOpen) return null;
 
@@ -238,7 +236,7 @@ export const CreateTreeFromSelectionModal: React.FC<CreateTreeFromSelectionModal
               <select
                 id="bridgePersonSelect"
                 value={bridgePersonId}
-                onChange={(e) => setBridgePersonId(e.target.value)}
+                onChange={(e) => setSelectedBridgePersonId(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-750 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all cursor-pointer shadow-inner"
               >
                 {selectedPeople.map((p) => (

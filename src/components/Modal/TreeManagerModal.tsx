@@ -12,7 +12,7 @@ import {
   createThreeGenSampleTree,
   type TreeSummary,
 } from '../../services/storage';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import {
   listUserCloudTrees,
   listSharedWithMeTrees,
@@ -56,6 +56,7 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
   const { user, isConfigured, signInWithGoogle } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'local' | 'cloud' | 'shared'>('local');
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
   const [localTrees, setLocalTrees] = useState<TreeSummary[]>(() => listStoredTrees());
   const [cloudTrees, setCloudTrees] = useState<CloudTreeSummary[]>([]);
   const [sharedTrees, setSharedTrees] = useState<CloudTreeSummary[]>([]);
@@ -65,6 +66,13 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      setLocalTrees(listStoredTrees());
+    }
+  }
 
   const refreshLocalList = useCallback(() => {
     setLocalTrees(listStoredTrees());
@@ -90,12 +98,11 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
   }, [user]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    refreshLocalList();
-    if (user && isConfigured) {
-      loadCloudTrees();
-    }
-  }, [isOpen, user, isConfigured, refreshLocalList, loadCloudTrees]);
+    if (!isOpen || !user || !isConfigured) return;
+    (async () => {
+      await loadCloudTrees();
+    })();
+  }, [isOpen, user, isConfigured, loadCloudTrees]);
 
   if (!isOpen) return null;
 

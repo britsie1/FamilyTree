@@ -174,7 +174,7 @@ export function getFirebaseDiagnostics(): FirebaseDiagnostics {
 
   if (config) {
     const present = Object.entries(config)
-      .filter(([_, v]) => Boolean(v))
+      .filter(([, v]) => Boolean(v))
       .map(([k]) => k);
     return {
       isConfigured: true,

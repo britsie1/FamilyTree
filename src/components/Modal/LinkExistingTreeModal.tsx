@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { TreeData, Person, CloudTreeSummary } from '../../types/tree';
 import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
 import { listStoredTrees, loadTreeById } from '../../services/storage';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { listUserCloudTrees, listSharedWithMeTrees, getCloudTree } from '../../services/firestoreService';
 import {
   X,
@@ -52,32 +52,34 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [selectedTreeIsCloud, setSelectedTreeIsCloud] = useState<boolean>(false);
   const [personSearch, setPersonSearch] = useState('');
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [selectedPersonIdOverride, setSelectedPersonIdOverride] = useState<string | null>(null);
 
   const [cloudTrees, setCloudTrees] = useState<CloudTreeSummary[]>([]);
   const [targetTreeData, setTargetTreeData] = useState<TreeData | null>(null);
   const [loadingTargetTree, setLoadingTargetTree] = useState<boolean>(false);
 
   // Fetch user cloud trees if logged in
-  const loadCloudTrees = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [myTrees, shared] = await Promise.all([
-        listUserCloudTrees(user),
-        listSharedWithMeTrees(user),
-      ]);
-      setCloudTrees([...myTrees, ...shared]);
-    } catch (err) {
-      console.warn('Could not fetch cloud trees for linking modal:', err);
-    }
-  }, [user]);
-
   useEffect(() => {
-    if (!isOpen) return;
-    if (user && isConfigured) {
-      loadCloudTrees();
-    }
-  }, [isOpen, user, isConfigured, loadCloudTrees]);
+    if (!isOpen || !user || !isConfigured) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const [myTrees, shared] = await Promise.all([
+          listUserCloudTrees(user),
+          listSharedWithMeTrees(user),
+        ]);
+        if (isMounted) {
+          setCloudTrees([...myTrees, ...shared]);
+        }
+      } catch (err) {
+        console.warn('Could not fetch cloud trees for linking modal:', err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, user, isConfigured]);
 
   // Combine local and cloud trees
   const availableTrees = useMemo<TreeOption[]>(() => {
@@ -122,14 +124,10 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
 
   // Load target tree data when a tree is selected
   useEffect(() => {
-    if (!selectedTreeId) {
-      setTargetTreeData(null);
-      return;
-    }
+    if (!selectedTreeId) return;
 
     let isMounted = true;
     if (selectedTreeIsCloud) {
-      setLoadingTargetTree(true);
       getCloudTree(selectedTreeId)
         .then((t) => {
           if (!isMounted) return;
@@ -149,9 +147,12 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
           if (isMounted) setLoadingTargetTree(false);
         });
     } else {
-      const local = loadTreeById(selectedTreeId);
-      setTargetTreeData(local);
-      setLoadingTargetTree(false);
+      Promise.resolve().then(() => {
+        if (!isMounted) return;
+        const local = loadTreeById(selectedTreeId);
+        setTargetTreeData(local);
+        setLoadingTargetTree(false);
+      });
     }
 
     return () => {
@@ -166,11 +167,8 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
   }, [targetTreeData]);
 
   // Auto-detect matching person when target tree changes
-  useEffect(() => {
-    if (!targetTreeData || !currentPerson) {
-      setSelectedPersonId(null);
-      return;
-    }
+  const autoSelectedPersonId = useMemo(() => {
+    if (!targetTreeData || !currentPerson) return null;
 
     const currentFirst = (currentPerson.firstName || '').trim().toLowerCase();
     const currentLast = (currentPerson.lastName || '').trim().toLowerCase();
@@ -182,24 +180,27 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
       const pLast = (p.lastName || '').trim().toLowerCase();
       const pKnown = (p.knownAs || '').trim().toLowerCase();
 
-      const nameMatch =
+      return (
         pLast &&
         currentLast &&
         pLast === currentLast &&
         ((pFirst && currentFirst && pFirst === currentFirst) ||
           (pKnown && currentKnown && pKnown === currentKnown) ||
           (pKnown && currentFirst && pKnown === currentFirst) ||
-          (pFirst && currentKnown && pFirst === currentKnown));
-
-      return nameMatch;
+          (pFirst && currentKnown && pFirst === currentKnown))
+      );
     });
 
     if (exactMatch) {
-      setSelectedPersonId(exactMatch.id);
-    } else {
-      setSelectedPersonId(targetTreeData.rootPersonId || Object.keys(targetTreeData.people)[0] || null);
+      return exactMatch.id;
     }
+    return targetTreeData.rootPersonId || Object.keys(targetTreeData.people)[0] || null;
   }, [targetTreeData, currentPerson]);
+
+  const selectedPersonId =
+    selectedPersonIdOverride && targetTreeData?.people[selectedPersonIdOverride]
+      ? selectedPersonIdOverride
+      : autoSelectedPersonId;
 
   const filteredPeople = useMemo(() => {
     if (!candidatePeople.length) return [];
@@ -306,7 +307,8 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
                       onClick={() => {
                         setSelectedTreeId(t.id);
                         setSelectedTreeIsCloud(t.isCloud);
-                        setSelectedPersonId(null);
+                        setSelectedPersonIdOverride(null);
+                        setLoadingTargetTree(true);
                       }}
                       className={`p-3 rounded-2xl border text-left transition-all flex items-start justify-between cursor-pointer ${
                         isSelected
@@ -398,7 +400,7 @@ export const LinkExistingTreeModal: React.FC<LinkExistingTreeModalProps> = ({
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => setSelectedPersonId(p.id)}
+                      onClick={() => setSelectedPersonIdOverride(p.id)}
                       className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
                         isSelected
                           ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20 shadow-xs'

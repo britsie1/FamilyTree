@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { TreeData, CloudTreeData, ShareRole, SharedUser, GoogleDriveConfig } from '../../types/tree';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import {
   saveTreeToCloud,
   getCloudTree,
@@ -96,8 +96,13 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
         errorMessage.toLowerCase().includes('insufficient'))
   );
 
+  const sharingSettingsRef = useRef({ isPublic, publicRole, sharedWith, driveConfig });
+  useEffect(() => {
+    sharingSettingsRef.current = { isPublic, publicRole, sharedWith, driveConfig };
+  }, [isPublic, publicRole, sharedWith, driveConfig]);
+
   // Define syncWithCloud so both useEffect and Retry button can invoke it
-  const syncWithCloud = async () => {
+  const syncWithCloud = useCallback(async () => {
     if (!isConfigured || !user) return;
 
     setLoading(true);
@@ -124,13 +129,20 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
           setDriveConfig(existing.googleDriveConfig);
         }
       } else {
+        const {
+          isPublic: currIsPublic,
+          publicRole: currPublicRole,
+          sharedWith: currSharedWith,
+          driveConfig: currDriveConfig,
+        } = sharingSettingsRef.current;
+
         // Immediately sync local tree to cloud so it's persisted and shareable
         const saved = await saveTreeToCloud(targetTree, user, {
-          isPublic: isPublic,
-          publicRole: publicRole,
-          sharedWith: sharedWith,
-          sharedEmails: Object.values(sharedWith).map((u) => normalizeEmail(u.email)),
-          googleDriveConfig: driveConfig || tree.googleDriveConfig,
+          isPublic: currIsPublic,
+          publicRole: currPublicRole,
+          sharedWith: currSharedWith,
+          sharedEmails: Object.values(currSharedWith).map((u) => normalizeEmail(u.email)),
+          googleDriveConfig: currDriveConfig || tree.googleDriveConfig,
         });
         setCloudTree(saved);
         if (onTreeUpdated) onTreeUpdated(saved);
@@ -141,7 +153,7 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [isConfigured, user, tree, onTreeUpdated]);
 
   const handleConnectDriveAndCreateFolder = async () => {
     if (!user) return;
@@ -266,8 +278,10 @@ export const ShareTreeModal: React.FC<ShareTreeModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || !isConfigured || !user) return;
-    syncWithCloud();
-  }, [isOpen, tree.id, user?.uid, isConfigured, isCloudTree]);
+    (async () => {
+      await syncWithCloud();
+    })();
+  }, [isOpen, isConfigured, user, syncWithCloud]);
 
   if (!isOpen) return null;
 

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { TreeData, UserPermission } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import {
   GitBranch,
   Download,

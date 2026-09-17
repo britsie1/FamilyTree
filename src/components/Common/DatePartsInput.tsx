@@ -29,33 +29,26 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
   const [year, setYear] = useState(() => parseDateParts(value).year);
   const [month, setMonth] = useState(() => parseDateParts(value).month);
   const [day, setDay] = useState(() => parseDateParts(value).day);
-  const lastCommittedRef = React.useRef<string | undefined>(value ?? undefined);
 
   if (value !== prevValue) {
     setPrevValue(value);
-    if (value !== lastCommittedRef.current) {
-      lastCommittedRef.current = value ?? undefined;
-      const parsed = parseDateParts(value);
-      setYear(parsed.year);
-      setMonth(parsed.month);
-      setDay(parsed.day);
-    }
+    const parsed = parseDateParts(value);
+    setYear(parsed.year);
+    setMonth(parsed.month);
+    setDay(parsed.day);
   }
 
   const commitDate = (newYear: string, newMonth: string, newDay: string) => {
     if (!newYear) {
-      lastCommittedRef.current = undefined;
       onChange(undefined);
       return;
     }
     const num = parseInt(newYear, 10);
     if (Number.isNaN(num) || num === 0) {
-      lastCommittedRef.current = undefined;
       onChange(undefined);
       return;
     }
     const built = buildDateString({ year: newYear, month: newMonth, day: newDay });
-    lastCommittedRef.current = built;
     onChange(built);
   };
 

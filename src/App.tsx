@@ -35,7 +35,8 @@ import { CreateTreeFromSelectionModal, type CreateTreeOptions } from './componen
 import { LinkExistingTreeModal } from './components/Modal/LinkExistingTreeModal';
 import { ShareTreeModal } from './components/Modal/ShareTreeModal';
 import { DocumentPreviewModal } from './components/Modal/DocumentPreviewModal';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './hooks/useAuth';
 import {
   getCloudTree,
   saveTreeToCloud,
