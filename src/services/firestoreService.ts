@@ -9,6 +9,8 @@ import {
   where,
   getDocs,
   onSnapshot,
+  writeBatch,
+  runTransaction,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
@@ -26,6 +28,7 @@ import type {
 } from '../types/tree';
 import { sanitizeTree } from './treeOperations';
 import { generateId, isPresetTreeId } from './storage';
+import { threeWayMergeTree } from './treeMerge';
 
 export const RECOMMENDED_FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
@@ -85,6 +88,26 @@ service cloud.firestore {
 
       // Delete allowed only by owner
       allow delete: if isOwner();
+
+      // Subcollection for individual people documents
+      match /people/{personId} {
+        allow read: if resource == null ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+                       (isAuthenticated() && request.auth.token.email != null &&
+                        request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+
+        allow create, update: if isAuthenticated() && (
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+          (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
+           get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
+          (request.auth.token.email != null &&
+           request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+        );
+
+        allow delete: if isAuthenticated() &&
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
+      }
     }
   }
 }`;
@@ -218,11 +241,46 @@ export function withTimeout<T>(
   ]);
 }
 
+export const FIRESTORE_MAX_DOC_BYTES = 1048576; // 1 MB Firestore document limit
+export const FIRESTORE_WARN_DOC_BYTES = 800 * 1024; // 800 KB threshold to recommend subcollection migration
+
+export class ConcurrencyConflictError extends Error {
+  public readonly serverVersion: number;
+  public readonly baseVersion: number;
+  public readonly conflicts: any[];
+
+  constructor(message: string, serverVersion: number, baseVersion: number, conflicts: any[] = []) {
+    super(message);
+    this.name = 'ConcurrencyConflictError';
+    this.serverVersion = serverVersion;
+    this.baseVersion = baseVersion;
+    this.conflicts = conflicts;
+  }
+}
+
+/**
+ * Estimates the document size in bytes as stored in Firestore JSON format.
+ */
+export function estimateTreeDocumentSize(data: any): number {
+  if (!data) return 0;
+  try {
+    const cleaned = cleanForFirestore(data);
+    const json = JSON.stringify(cleaned || {});
+    return new TextEncoder().encode(json).length;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Updates only the tree content (people, unions, name, etc.) in Cloud Firestore.
  * Crucially leaves ownership, owner metadata, and sharing settings untouched.
+ * Supports optimistic concurrency control via baseVersion and subcollections storage.
  */
-export async function updateCloudTreeData(tree: TreeData): Promise<void> {
+export async function updateCloudTreeData(
+  tree: TreeData,
+  options?: { baseVersion?: number }
+): Promise<{ version: number }> {
   const db = getFirebaseDb();
   if (!db || !tree?.id) {
     throw new Error('Firebase is not configured or tree ID is missing.');
@@ -232,24 +290,91 @@ export async function updateCloudTreeData(tree: TreeData): Promise<void> {
   const docRef = doc(db, TREES_COLLECTION, sanitized.id);
   const now = new Date().toISOString();
 
+  // Check document size threshold for monolithic storage
+  if (sanitized.storageMode !== 'subcollections') {
+    const size = estimateTreeDocumentSize(sanitized);
+    if (size > FIRESTORE_WARN_DOC_BYTES) {
+      console.warn(
+        `Tree document size (${Math.round(size / 1024)} KB) is approaching Firestore 1 MB limit (${Math.round(FIRESTORE_MAX_DOC_BYTES / 1024)} KB). Consider migrating to subcollections via migrateTreeToSubcollections().`
+      );
+    }
+  }
+
   const contentUpdate = cleanForFirestore({
     name: sanitized.name,
     description: sanitized.description || '',
     rootPersonId: sanitized.rootPersonId || null,
     collapsedPersonIds: sanitized.collapsedPersonIds || [],
-    people: sanitized.people,
+    people: sanitized.storageMode === 'subcollections' ? {} : sanitized.people,
     unions: sanitized.unions,
     googleDriveConfig: sanitized.googleDriveConfig || null,
+    storageMode: sanitized.storageMode || 'monolithic',
     updatedAt: now,
   });
 
   try {
-    await withTimeout(
-      updateDoc(docRef, contentUpdate),
-      7000,
-      'Connection to Cloud Firestore timed out (7s).'
-    );
+    if (options?.baseVersion !== undefined) {
+      const expectedVersion = options.baseVersion;
+      const newVersion = await withTimeout(
+        runTransaction(db, async (transaction) => {
+          const snap = await transaction.get(docRef);
+          if (!snap.exists()) throw new Error(`Tree ${sanitized.id} not found.`);
+          const serverData = snap.data() as CloudTreeData;
+          const serverVersion = serverData.version || 1;
+
+          if (serverVersion !== expectedVersion) {
+            // Attempt 3-way merge of non-conflicting keys
+            const mergeResult = threeWayMergeTree(
+              { ...sanitized, version: expectedVersion },
+              sanitized,
+              serverData
+            );
+            if (mergeResult.hasConflict) {
+              throw new ConcurrencyConflictError(
+                `Concurrency conflict: tree was modified remotely (v${serverVersion} vs local base v${expectedVersion}).`,
+                serverVersion,
+                expectedVersion,
+                mergeResult.conflicts
+              );
+            }
+            const nextVersion = serverVersion + 1;
+            const mergedPayload = cleanForFirestore({
+              ...contentUpdate,
+              name: mergeResult.merged.name,
+              description: mergeResult.merged.description || '',
+              people: sanitized.storageMode === 'subcollections' ? {} : mergeResult.merged.people,
+              unions: mergeResult.merged.unions,
+              version: nextVersion,
+              updatedAt: now,
+            });
+            transaction.update(docRef, mergedPayload);
+            return nextVersion;
+          }
+
+          const nextVersion = serverVersion + 1;
+          transaction.update(docRef, {
+            ...contentUpdate,
+            version: nextVersion,
+          });
+          return nextVersion;
+        }),
+        7000,
+        'Connection to Cloud Firestore timed out (7s).'
+      );
+      return { version: newVersion };
+    } else {
+      const nextVersion = (sanitized.version || 1) + 1;
+      await withTimeout(
+        updateDoc(docRef, { ...contentUpdate, version: nextVersion }),
+        7000,
+        'Connection to Cloud Firestore timed out (7s).'
+      );
+      return { version: nextVersion };
+    }
   } catch (err: any) {
+    if (err instanceof ConcurrencyConflictError) {
+      throw err;
+    }
     console.error(`Failed to update cloud tree ${sanitized.id}:`, err);
     throw new Error(formatFirestoreError(err));
   }
@@ -257,33 +382,108 @@ export async function updateCloudTreeData(tree: TreeData): Promise<void> {
 
 /**
  * Granularly patches a single person in Firestore without overwriting the entire tree.
+ * Supports targeted field-path updates, subcollection routing, and optimistic concurrency control.
  */
 export async function patchCloudPerson(
   treeId: string,
   personId: string,
-  updates: Partial<Person>
-): Promise<void> {
+  updates: Partial<Person>,
+  options?: { baseVersion?: number; isSubcollection?: boolean }
+): Promise<{ version: number }> {
   const db = getFirebaseDb();
-  if (!db || !treeId) return;
-
-  const docRef = doc(db, TREES_COLLECTION, treeId);
-  const now = new Date().toISOString();
-  const cleaned = cleanForFirestore(updates);
-
-  const payload: Record<string, any> = {
-    updatedAt: now,
-  };
-  for (const [key, val] of Object.entries(cleaned as Record<string, any>)) {
-    payload[`people.${personId}.${key}`] = val;
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
   }
 
+  const cleaned = cleanForFirestore(updates) as Record<string, any>;
+  const now = new Date().toISOString();
+
+  // If subcollection storage is enabled
+  if (options?.isSubcollection) {
+    const personDocRef = doc(db, TREES_COLLECTION, treeId, 'people', personId);
+    try {
+      await withTimeout(
+        setDoc(personDocRef, { ...cleaned, id: personId }, { merge: true }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+      await withTimeout(
+        updateDoc(rootDocRef, { updatedAt: now }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: (options.baseVersion || 1) + 1 };
+    } catch (err: any) {
+      console.error(`Failed to patch subcollection person ${personId}:`, err);
+      throw new Error(formatFirestoreError(err));
+    }
+  }
+
+  // Monolithic storage
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+
   try {
-    await withTimeout(
-      updateDoc(docRef, payload),
-      7000,
-      'Connection to Cloud Firestore timed out.'
-    );
+    if (options?.baseVersion !== undefined) {
+      const expectedVersion = options.baseVersion;
+      const newVersion = await withTimeout(
+        runTransaction(db, async (transaction) => {
+          const snap = await transaction.get(docRef);
+          if (!snap.exists()) throw new Error(`Tree ${treeId} does not exist.`);
+          const serverData = snap.data() as CloudTreeData;
+          const serverVersion = serverData.version || 1;
+
+          if (serverVersion !== expectedVersion) {
+            // Concurrency check: check if the fields we are modifying collided
+            const serverPerson = serverData.people?.[personId];
+            if (serverPerson) {
+              const collidingKeys = Object.keys(cleaned).filter(
+                (k) => (serverPerson as any)[k] !== undefined && (serverPerson as any)[k] !== cleaned[k]
+              );
+              if (collidingKeys.length > 0) {
+                throw new ConcurrencyConflictError(
+                  `Conflict on person ${personId} (fields: ${collidingKeys.join(', ')}). Remote version is ${serverVersion}, base version was ${expectedVersion}.`,
+                  serverVersion,
+                  expectedVersion,
+                  collidingKeys
+                );
+              }
+            }
+          }
+
+          const nextVersion = serverVersion + 1;
+          const payload: Record<string, any> = {
+            updatedAt: now,
+            version: nextVersion,
+          };
+          for (const [key, val] of Object.entries(cleaned)) {
+            payload[`people.${personId}.${key}`] = val;
+          }
+          transaction.update(docRef, payload);
+          return nextVersion;
+        }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: newVersion };
+    } else {
+      const payload: Record<string, any> = {
+        updatedAt: now,
+      };
+      for (const [key, val] of Object.entries(cleaned)) {
+        payload[`people.${personId}.${key}`] = val;
+      }
+      await withTimeout(
+        updateDoc(docRef, payload),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: 1 };
+    }
   } catch (err: any) {
+    if (err instanceof ConcurrencyConflictError) {
+      throw err;
+    }
     console.error(`Failed to patch cloud person ${personId}:`, err);
     throw new Error(formatFirestoreError(err));
   }
@@ -291,36 +491,146 @@ export async function patchCloudPerson(
 
 /**
  * Granularly patches a single union in Firestore without overwriting the entire tree.
+ * Supports targeted field-path updates and optimistic concurrency control.
  */
 export async function patchCloudUnion(
   treeId: string,
   unionId: string,
-  updates: Partial<Union>
-): Promise<void> {
+  updates: Partial<Union>,
+  options?: { baseVersion?: number }
+): Promise<{ version: number }> {
   const db = getFirebaseDb();
-  if (!db || !treeId) return;
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
 
   const docRef = doc(db, TREES_COLLECTION, treeId);
   const now = new Date().toISOString();
-  const cleaned = cleanForFirestore(updates);
-
-  const payload: Record<string, any> = {
-    updatedAt: now,
-  };
-  for (const [key, val] of Object.entries(cleaned as Record<string, any>)) {
-    payload[`unions.${unionId}.${key}`] = val;
-  }
+  const cleaned = cleanForFirestore(updates) as Record<string, any>;
 
   try {
-    await withTimeout(
-      updateDoc(docRef, payload),
-      7000,
-      'Connection to Cloud Firestore timed out.'
-    );
+    if (options?.baseVersion !== undefined) {
+      const expectedVersion = options.baseVersion;
+      const newVersion = await withTimeout(
+        runTransaction(db, async (transaction) => {
+          const snap = await transaction.get(docRef);
+          if (!snap.exists()) throw new Error(`Tree ${treeId} does not exist.`);
+          const serverData = snap.data() as CloudTreeData;
+          const serverVersion = serverData.version || 1;
+
+          if (serverVersion !== expectedVersion) {
+            const serverUnion = serverData.unions?.[unionId];
+            if (serverUnion) {
+              const collidingKeys = Object.keys(cleaned).filter(
+                (k) => (serverUnion as any)[k] !== undefined && (serverUnion as any)[k] !== cleaned[k]
+              );
+              if (collidingKeys.length > 0) {
+                throw new ConcurrencyConflictError(
+                  `Conflict on union ${unionId} (fields: ${collidingKeys.join(', ')}). Remote version is ${serverVersion}, base version was ${expectedVersion}.`,
+                  serverVersion,
+                  expectedVersion,
+                  collidingKeys
+                );
+              }
+            }
+          }
+
+          const nextVersion = serverVersion + 1;
+          const payload: Record<string, any> = {
+            updatedAt: now,
+            version: nextVersion,
+          };
+          for (const [key, val] of Object.entries(cleaned)) {
+            payload[`unions.${unionId}.${key}`] = val;
+          }
+          transaction.update(docRef, payload);
+          return nextVersion;
+        }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: newVersion };
+    } else {
+      const payload: Record<string, any> = {
+        updatedAt: now,
+      };
+      for (const [key, val] of Object.entries(cleaned)) {
+        payload[`unions.${unionId}.${key}`] = val;
+      }
+      await withTimeout(
+        updateDoc(docRef, payload),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: 1 };
+    }
   } catch (err: any) {
+    if (err instanceof ConcurrencyConflictError) {
+      throw err;
+    }
     console.error(`Failed to patch cloud union ${unionId}:`, err);
     throw new Error(formatFirestoreError(err));
   }
+}
+
+/**
+ * Migrates a monolithic family tree to Firestore subcollections (trees/{treeId}/people/{personId}).
+ * Strips the large people map from the root document to guarantee it never breaches the 1 MB limit.
+ */
+export async function migrateTreeToSubcollections(
+  treeId: string
+): Promise<{ migratedPeopleCount: number }> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const snap = await withTimeout(
+    getDoc(docRef),
+    7000,
+    'Connection to Cloud Firestore timed out.'
+  );
+
+  if (!snap.exists()) {
+    throw new Error(`Tree ${treeId} does not exist in Cloud Firestore.`);
+  }
+
+  const data = snap.data() as CloudTreeData;
+  const people = data.people || {};
+  const peopleEntries = Object.entries(people);
+
+  if (peopleEntries.length === 0) {
+    return { migratedPeopleCount: 0 };
+  }
+
+  // Write in chunks of up to 400 (Firestore limit is 500 ops per batch)
+  const batchSize = 400;
+  for (let i = 0; i < peopleEntries.length; i += batchSize) {
+    const chunk = peopleEntries.slice(i, i + batchSize);
+    const batch = writeBatch(db);
+    for (const [pId, person] of chunk) {
+      const pDocRef = doc(db, TREES_COLLECTION, treeId, 'people', pId);
+      batch.set(pDocRef, cleanForFirestore(person));
+    }
+    await withTimeout(batch.commit(), 7000, 'Failed to commit people subcollection batch.');
+  }
+
+  // Update root tree document: clear monolithic people map, set storageMode, and bump version
+  const now = new Date().toISOString();
+  const nextVersion = (data.version || 1) + 1;
+  await withTimeout(
+    updateDoc(docRef, {
+      storageMode: 'subcollections',
+      people: {},
+      version: nextVersion,
+      updatedAt: now,
+    }),
+    7000,
+    'Failed to update root tree storageMode.'
+  );
+
+  return { migratedPeopleCount: peopleEntries.length };
 }
 
 /**
@@ -369,6 +679,8 @@ export async function saveTreeToCloud(
     sharedWith: existingMetadata?.sharedWith || treeAny.sharedWith || {},
     sharedEmails: existingMetadata?.sharedEmails || treeAny.sharedEmails || [],
     googleDriveConfig: existingMetadata?.googleDriveConfig || treeAny.googleDriveConfig || undefined,
+    version: existingMetadata?.version || treeAny.version || 1,
+    storageMode: existingMetadata?.storageMode || treeAny.storageMode || 'monolithic',
   };
 
   const cloudTree: CloudTreeData = {
@@ -431,8 +743,29 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
     );
     if (snap.exists()) {
       const data = snap.data() as CloudTreeData;
+      let people = data.people || {};
+      if (data.storageMode === 'subcollections') {
+        try {
+          const peopleSnap = await withTimeout(
+            getDocs(collection(db, TREES_COLLECTION, treeId, 'people')),
+            7000,
+            'Loading subcollection people timed out.'
+          );
+          if (!peopleSnap.empty) {
+            people = {};
+            peopleSnap.forEach((pDoc) => {
+              const pData = pDoc.data() as Person;
+              people[pDoc.id] = { ...pData, id: pDoc.id };
+            });
+          }
+        } catch (subErr) {
+          console.warn(`Could not load people subcollection for tree ${treeId}:`, subErr);
+        }
+      }
       return {
-        ...sanitizeTree(data),
+        ...sanitizeTree({ ...data, people }),
+        version: data.version || 1,
+        storageMode: data.storageMode || 'monolithic',
         ownerId: data.ownerId,
         ownerEmail: data.ownerEmail,
         ownerDisplayName: data.ownerDisplayName,

@@ -92,6 +92,8 @@ export interface TreeData {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  version?: number;
+  storageMode?: 'monolithic' | 'subcollections';
   people: Record<string, Person>;
   unions: Record<string, Union>;
   rootPersonId?: string;
@@ -221,6 +223,8 @@ export interface CloudTreeMetadata {
   sharedWith: Record<string, SharedUser>;
   sharedEmails: string[];
   googleDriveConfig?: GoogleDriveConfig;
+  version?: number;
+  storageMode?: 'monolithic' | 'subcollections';
 }
 
 export interface CloudTreeData extends TreeData, CloudTreeMetadata {}
@@ -229,6 +233,7 @@ export interface CloudTreeSummary {
   id: string;
   name: string;
   updatedAt: string;
+  version?: number;
   ownerId: string;
   ownerEmail: string;
   ownerDisplayName?: string;

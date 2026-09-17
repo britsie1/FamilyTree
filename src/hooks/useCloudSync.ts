@@ -11,6 +11,8 @@ import { useAuth } from './useAuth';
 import { useTreeStore } from '../stores/useTreeStore';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
+import { cloudSyncBridge } from '../services/cloudSyncBridge';
+import { threeWayMergeTree } from '../services/treeMerge';
 
 /**
  * Produces a stable structural fingerprint of a tree for equality checking,
@@ -56,11 +58,14 @@ export function useCloudSync(treeId: string | null | undefined) {
   const setAccessDeniedMessage = useCollabStore((s) => s.setAccessDeniedMessage);
 
   const lastSavedCloudFingerprintRef = useRef<string | null>(null);
+  const lastBaseTreeRef = useRef<TreeData | null>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const markRemoteSynced = useCallback((treeData: TreeData) => {
     lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(treeData);
+    lastBaseTreeRef.current = treeData;
+    cloudSyncBridge.setBaseVersion(treeData.version);
     isRemoteSyncRef.current = true;
   }, []);
 
@@ -104,6 +109,8 @@ export function useCloudSync(treeId: string | null | undefined) {
           }
         } else {
           lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(cloudTree);
+          lastBaseTreeRef.current = cloudTree;
+          cloudSyncBridge.setBaseVersion(cloudTree.version);
           isRemoteSyncRef.current = true;
           resetHistory(cloudTree);
           setIsCloudTree(true);
@@ -163,8 +170,9 @@ export function useCloudSync(treeId: string | null | undefined) {
       tree.id,
       (remoteTree) => {
         if (!remoteTree) return;
+        const currentLocalTree = useTreeStore.getState().tree;
         const remoteFingerprint = getTreeContentFingerprint(remoteTree);
-        const currentFingerprint = getTreeContentFingerprint(useTreeStore.getState().tree);
+        const currentFingerprint = getTreeContentFingerprint(currentLocalTree);
 
         if (
           remoteFingerprint === currentFingerprint ||
@@ -173,9 +181,33 @@ export function useCloudSync(treeId: string | null | undefined) {
           return;
         }
 
-        isRemoteSyncRef.current = true;
-        lastSavedCloudFingerprintRef.current = remoteFingerprint;
-        setTree(remoteTree, false);
+        const hasPendingLocal = currentFingerprint !== lastSavedCloudFingerprintRef.current;
+        if (hasPendingLocal && lastBaseTreeRef.current) {
+          // Perform 3-way merge to integrate remote changes without clobbering local edits
+          const mergeResult = threeWayMergeTree(
+            lastBaseTreeRef.current,
+            currentLocalTree,
+            remoteTree
+          );
+          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(mergeResult.merged);
+          lastBaseTreeRef.current = remoteTree;
+          cloudSyncBridge.setBaseVersion(remoteTree.version);
+          isRemoteSyncRef.current = true;
+          setTree(mergeResult.merged, false);
+
+          if (mergeResult.hasConflict) {
+            setCloudSyncStatus(
+              'error',
+              `Sync conflict: remote changes collided on ${mergeResult.conflicts.length} fields.`
+            );
+          }
+        } else {
+          isRemoteSyncRef.current = true;
+          lastSavedCloudFingerprintRef.current = remoteFingerprint;
+          lastBaseTreeRef.current = remoteTree;
+          cloudSyncBridge.setBaseVersion(remoteTree.version);
+          setTree(remoteTree, false);
+        }
 
         const newPerm = resolveUserPermission(remoteTree, user);
         if (newPerm !== userPermission) {
@@ -210,6 +242,24 @@ export function useCloudSync(treeId: string | null | undefined) {
         return;
       }
 
+      // Check if there are ONLY granular patches being handled by cloudSyncBridge
+      const base = lastBaseTreeRef.current;
+      const isStructural =
+        !base ||
+        base.name !== tree.name ||
+        (base.description || '') !== (tree.description || '') ||
+        base.rootPersonId !== tree.rootPersonId ||
+        Object.keys(base.people || {}).length !== Object.keys(tree.people || {}).length ||
+        Object.keys(base.unions || {}).length !== Object.keys(tree.unions || {}).length ||
+        JSON.stringify(base.collapsedPersonIds || []) !== JSON.stringify(tree.collapsedPersonIds || []) ||
+        JSON.stringify(base.googleDriveConfig || null) !== JSON.stringify(tree.googleDriveConfig || null);
+
+      if (!isStructural && cloudSyncBridge.hasPendingPatches()) {
+        // Granular updates are active and debouncing targeted field writes.
+        // Do not trigger whole-tree document rewrite!
+        return;
+      }
+
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
@@ -219,7 +269,13 @@ export function useCloudSync(treeId: string | null | undefined) {
       autoSaveTimerRef.current = setTimeout(async () => {
         lastSavedCloudFingerprintRef.current = currentFingerprint;
         try {
-          await updateCloudTreeData(tree);
+          const res = await updateCloudTreeData(tree, {
+            baseVersion: cloudSyncBridge.getBaseVersion(),
+          });
+          if (res?.version) {
+            cloudSyncBridge.setBaseVersion(res.version);
+          }
+          lastBaseTreeRef.current = tree;
           setCloudSyncStatus('synced');
         } catch (err: any) {
           console.error('Failed to auto-save to cloud:', err);

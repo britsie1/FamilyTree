@@ -56,6 +56,26 @@ service cloud.firestore {
 
       // Delete allowed only by owner
       allow delete: if isOwner();
+
+      // Subcollection for individual people documents
+      match /people/{personId} {
+        allow read: if resource == null ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+                       (isAuthenticated() && request.auth.token.email != null &&
+                        request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+
+        allow create, update: if isAuthenticated() && (
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+          (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
+           get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
+          (request.auth.token.email != null &&
+           request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+        );
+
+        allow delete: if isAuthenticated() &&
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
+      }
     }
   }
 }

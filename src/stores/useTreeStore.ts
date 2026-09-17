@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { produceWithPatches, applyPatches, enablePatches, setAutoFreeze, type Patch } from 'immer';
 import type { TreeData, Person, Union, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
 import { useCanvasStore } from './useCanvasStore';
+import { useCollabStore } from './useCollabStore';
+import { cloudSyncBridge } from '../services/cloudSyncBridge';
 import {
   loadCurrentTree,
   saveCurrentTree,
@@ -541,6 +543,13 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     updatePerson: (personId: string, updates: Partial<Person>) => {
       get().setTree((prev) => updatePersonInTree(prev, personId, updates));
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        const currentTree = get().tree;
+        cloudSyncBridge.queuePersonPatch(currentTree.id, personId, updates, {
+          isSubcollection: currentTree.storageMode === 'subcollections',
+        });
+      }
     },
 
     updatePersonPosition: (personId, x, y, layoutStyle) => {
@@ -566,6 +575,10 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     updateUnion: (unionId, updates) => {
       get().setTree((prev) => updateUnionInTree(prev, unionId, updates));
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        cloudSyncBridge.queueUnionPatch(get().tree.id, unionId, updates);
+      }
     },
 
     deleteUnion: (unionId: string) => {
@@ -704,10 +717,32 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     attachDocument: (personId, doc) => {
       get().setTree((prev) => attachDocumentToPerson(prev, personId, doc));
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        const currentTree = get().tree;
+        const updatedDocs = currentTree.people[personId]?.documents;
+        cloudSyncBridge.queuePersonPatch(
+          currentTree.id,
+          personId,
+          { documents: updatedDocs },
+          { isSubcollection: currentTree.storageMode === 'subcollections' }
+        );
+      }
     },
 
     removeDocument: (personId, documentId) => {
       get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        const currentTree = get().tree;
+        const updatedDocs = currentTree.people[personId]?.documents;
+        cloudSyncBridge.queuePersonPatch(
+          currentTree.id,
+          personId,
+          { documents: updatedDocs },
+          { isSubcollection: currentTree.storageMode === 'subcollections' }
+        );
+      }
     },
 
     setGoogleDriveConfig: (config) => {

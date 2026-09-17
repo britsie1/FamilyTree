@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import { useTreeStore } from '../src/stores/useTreeStore.ts';
 import { useCanvasStore } from '../src/stores/useCanvasStore.ts';
 import { useTemporalStore } from '../src/stores/useTemporalStore.ts';
+import { useCollabStore } from '../src/stores/useCollabStore.ts';
+import { cloudSyncBridge } from '../src/services/cloudSyncBridge.ts';
 import { createDoubleInLawPreset } from '../src/services/storage.ts';
 
 // In-memory mock for localStorage in node test environment
@@ -276,6 +278,59 @@ describe('Centralized Zustand Stores', () => {
 
       assert.strictEqual(useTreeStore.getState().tree.name, 'Batch Helper Tree');
       assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+    });
+
+    it('does NOT queue cloud patches when isCloudTree is false (local offline tree)', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(false);
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+
+      useTreeStore.getState().updatePerson(personId, { notes: 'Offline note edit' });
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), false);
+      assert.strictEqual(cloudSyncBridge.getPendingCount(), 0);
+    });
+
+    it('queues targeted granular person patch into cloudSyncBridge when isCloudTree is true', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(true);
+      useCollabStore.getState().setUserPermission('editor');
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+
+      useTreeStore.getState().updatePerson(personId, { notes: 'Granular cloud note' });
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
+      assert.strictEqual(cloudSyncBridge.getPendingCount(), 1);
+      cloudSyncBridge.clear();
+    });
+
+    it('queues targeted granular union patch into cloudSyncBridge when isCloudTree is true', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(true);
+      useCollabStore.getState().setUserPermission('owner');
+      const unionId = Object.keys(useTreeStore.getState().tree.unions)[0];
+
+      useTreeStore.getState().updateUnion(unionId, { type: 'divorced' });
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
+      assert.strictEqual(cloudSyncBridge.getPendingCount(), 1);
+      cloudSyncBridge.clear();
+    });
+
+    it('queues targeted granular person patch upon attachDocument when isCloudTree is true', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(true);
+      useCollabStore.getState().setUserPermission('editor');
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+
+      useTreeStore.getState().attachDocument(personId, {
+        id: 'doc_123',
+        name: 'Birth Certificate.pdf',
+        driveFileId: 'drive_xyz',
+        uploadedAt: '2026-01-01T00:00:00Z',
+      });
+
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
+      assert.strictEqual(cloudSyncBridge.getPendingCount(), 1);
+      cloudSyncBridge.clear();
+      useCollabStore.getState().resetCollab();
     });
   });
 
