@@ -1,5 +1,9 @@
 import React from 'react';
 import type { LayoutStyle } from '../../types/tree';
+import { useCanvasStore } from '../../stores/useCanvasStore';
+import { useTreeStore } from '../../stores/useTreeStore';
+import { useTemporalStore } from '../../stores/useTemporalStore';
+import { getTreeYearBounds } from '../../services/temporalEngine';
 import {
   ZoomIn,
   ZoomOut,
@@ -17,51 +21,81 @@ import {
 } from 'lucide-react';
 
 interface ZoomControlsProps {
-  // Zoom & Pan
-  zoom: number;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetZoom: () => void;
   onFitToScreen: () => void;
-
-  // Layout Controls
-  layoutStyle: LayoutStyle;
-  onToggleLayoutStyle: () => void;
-  onResetLayout: () => void;
+  zoom?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetZoom?: () => void;
+  layoutStyle?: LayoutStyle;
+  onToggleLayoutStyle?: () => void;
+  onResetLayout?: () => void;
   groupByFamily?: boolean;
   onToggleGroupByFamily?: () => void;
   adjustSpacing?: boolean;
   onToggleAdjustSpacing?: () => void;
-
-  // MiniMap Navigator
   isMiniMapOpen?: boolean;
   onToggleMiniMap?: () => void;
-
-  // 4D Timeline
   isTimelineActive?: boolean;
   onToggleTimeline?: () => void;
   temporalYear?: number | null;
 }
 
 export const ZoomControls: React.FC<ZoomControlsProps> = ({
-  zoom,
-  onZoomIn,
-  onZoomOut,
-  onResetZoom,
   onFitToScreen,
-  layoutStyle,
-  onToggleLayoutStyle,
-  onResetLayout,
-  groupByFamily = false,
-  onToggleGroupByFamily,
-  adjustSpacing = true,
-  onToggleAdjustSpacing,
-  isMiniMapOpen = true,
-  onToggleMiniMap,
-  isTimelineActive = false,
-  onToggleTimeline,
-  temporalYear,
+  zoom: propZoom,
+  onZoomIn: propOnZoomIn,
+  onZoomOut: propOnZoomOut,
+  onResetZoom: propOnResetZoom,
+  layoutStyle: propLayoutStyle,
+  onToggleLayoutStyle: propOnToggleLayoutStyle,
+  onResetLayout: propOnResetLayout,
+  groupByFamily: propGroupByFamily,
+  onToggleGroupByFamily: propOnToggleGroupByFamily,
+  adjustSpacing: propAdjustSpacing,
+  onToggleAdjustSpacing: propOnToggleAdjustSpacing,
+  isMiniMapOpen: propIsMiniMapOpen,
+  onToggleMiniMap: propOnToggleMiniMap,
+  isTimelineActive: propIsTimelineActive,
+  onToggleTimeline: propOnToggleTimeline,
+  temporalYear: propTemporalYear,
 }) => {
+  const storeZoom = useCanvasStore((s) => s.zoom);
+  const setZoom = useCanvasStore((s) => s.setZoom);
+  const setPan = useCanvasStore((s) => s.setPan);
+  const storeLayoutStyle = useCanvasStore((s) => s.layoutStyle);
+  const toggleLayoutStyle = useCanvasStore((s) => s.toggleLayoutStyle);
+  const storeGroupByFamily = useCanvasStore((s) => s.groupByFamily);
+  const toggleGroupByFamily = useCanvasStore((s) => s.toggleGroupByFamily);
+  const storeAdjustSpacing = useCanvasStore((s) => s.adjustSpacing);
+  const toggleAdjustSpacing = useCanvasStore((s) => s.toggleAdjustSpacing);
+  const storeIsMiniMapOpen = useCanvasStore((s) => s.isMiniMapOpen);
+  const toggleMiniMap = useCanvasStore((s) => s.toggleMiniMap);
+
+  const resetLayout = useTreeStore((s) => s.resetLayout);
+  const tree = useTreeStore((s) => s.tree);
+
+  const storeIsTimelineActive = useTemporalStore((s) => s.isTimelineActive);
+  const toggleTimeline = useTemporalStore((s) => s.toggleTimeline);
+  const storeTemporalYear = useTemporalStore((s) => s.temporalYear);
+
+  const zoom = propZoom !== undefined ? propZoom : storeZoom;
+  const layoutStyle = propLayoutStyle || storeLayoutStyle;
+  const groupByFamily = propGroupByFamily !== undefined ? propGroupByFamily : storeGroupByFamily;
+  const adjustSpacing = propAdjustSpacing !== undefined ? propAdjustSpacing : storeAdjustSpacing;
+  const isMiniMapOpen = propIsMiniMapOpen !== undefined ? propIsMiniMapOpen : storeIsMiniMapOpen;
+  const isTimelineActive = propIsTimelineActive !== undefined ? propIsTimelineActive : storeIsTimelineActive;
+  const temporalYear = propTemporalYear !== undefined ? propTemporalYear : storeTemporalYear;
+
+  const onZoomIn = propOnZoomIn || (() => setZoom((z) => Math.min(z * 1.15, 2.5)));
+  const onZoomOut = propOnZoomOut || (() => setZoom((z) => Math.max(z * 0.85, 0.2)));
+  const onResetZoom = propOnResetZoom || (() => { setZoom(1); setPan({ x: 200, y: 100 }); });
+  const onToggleLayoutStyle = propOnToggleLayoutStyle || (() => { toggleLayoutStyle(); setTimeout(onFitToScreen, 60); });
+  const onResetLayout = propOnResetLayout || (() => { resetLayout(); setTimeout(onFitToScreen, 50); });
+  const onToggleGroupByFamily = propOnToggleGroupByFamily || (() => { toggleGroupByFamily(); setTimeout(onFitToScreen, 60); });
+  const onToggleAdjustSpacing = propOnToggleAdjustSpacing || (() => { toggleAdjustSpacing(); setTimeout(onFitToScreen, 50); });
+  const onToggleMiniMap = propOnToggleMiniMap || toggleMiniMap;
+  const onToggleTimeline = propOnToggleTimeline || (() => toggleTimeline(getTreeYearBounds(tree).defaultYear));
+
   const [isMobileOptionsOpen, setIsMobileOptionsOpen] = React.useState(false);
 
   return (

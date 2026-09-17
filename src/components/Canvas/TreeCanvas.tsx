@@ -8,6 +8,9 @@ import { QuickLinkMenu, type QuickLinkType } from './QuickLinkMenu';
 import { MiniMap } from './MiniMap';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import { useThemeStore } from '../../stores/useThemeStore';
+import { useCanvasStore } from '../../stores/useCanvasStore';
+import { useTreeStore } from '../../stores/useTreeStore';
+import { useModalStore } from '../../stores/useModalStore';
 import {
   calculatePinchTransform,
   getTouchDistance,
@@ -18,76 +21,143 @@ import {
 interface TreeCanvasProps {
   tree: TreeData;
   layout: TreeLayout;
-  layoutStyle?: LayoutStyle;
-  selectedPersonId: string | null;
-  selectedPersonIds?: Set<string>;
-  comparisonPersonId?: string | null;
-  relationshipPathIds?: string[];
-  onSelectPerson: (personId: string | null, event?: React.MouseEvent) => void;
-  onMultiSelectPeople?: (personIds: string[], append: boolean) => void;
-  onPersonContextMenu?: (e: React.MouseEvent, personId: string) => void;
-  onCanvasContextMenu?: (e: React.MouseEvent) => void;
-  onUpdatePersonPosition: (personId: string, x: number, y: number) => void;
-  onAddChild: (personId: string) => void;
-  onAddPartner: (personId: string) => void;
-  onAddSibling: (personId: string) => void;
-  onAddParent: (personId: string) => void;
-  onAddChildToUnion?: (unionId: string) => void;
-  onSelectUnion?: (unionId: string) => void;
-  onToggleCollapse?: (personId: string) => void;
-  onFinishDragPerson?: (personId: string) => void;
-  zoom: number;
-  setZoom: React.Dispatch<React.SetStateAction<number>>;
-  pan: { x: number; y: number };
-  setPan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
   canvasContainerRef: React.RefObject<HTMLDivElement | null>;
+  relationshipPathIds?: string[];
   temporalYear?: number | null;
   activeMoment?: any | null;
+  onUpdatePersonPosition?: (personId: string, x: number, y: number) => void;
+  onAddChild?: (personId: string) => void;
+  onAddPartner?: (personId: string) => void;
+  onAddSibling?: (personId: string) => void;
+  onAddParent?: (personId: string) => void;
+  onAddChildToUnion?: (unionId: string) => void;
+  onPersonContextMenu?: (e: React.MouseEvent, personId: string) => void;
+  onCanvasContextMenu?: (e: React.MouseEvent) => void;
+  onFinishDragPerson?: (personId: string) => void;
   onQuickLink?: (sourcePersonId: string, targetPersonId: string, type: QuickLinkType) => void;
   onQuickSpawnRelative?: (
     sourcePersonId: string,
     portType: PortType,
     worldPosition: { x: number; y: number }
   ) => void;
+  onOpenTreeLink?: (person: Person, link: TreeLink) => void;
+
+  // Optional overrides
+  layoutStyle?: LayoutStyle;
+  selectedPersonId?: string | null;
+  selectedPersonIds?: Set<string>;
+  comparisonPersonId?: string | null;
+  selectedUnionId?: string | null;
+  onSelectUnion?: (unionId: string) => void;
+  onSelectPerson?: (personId: string | null, event?: React.MouseEvent) => void;
+  onMultiSelectPeople?: (personIds: string[], append: boolean) => void;
+  onToggleCollapse?: (personId: string) => void;
+  zoom?: number;
+  setZoom?: React.Dispatch<React.SetStateAction<number>>;
+  pan?: { x: number; y: number };
+  setPan?: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
   isMiniMapOpen?: boolean;
   onToggleMiniMap?: () => void;
-  onOpenTreeLink?: (person: Person, link: TreeLink) => void;
 }
 
 export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   tree,
   layout,
-  layoutStyle = 'vertical',
-  selectedPersonId,
-  selectedPersonIds,
-  comparisonPersonId,
+  layoutStyle: propLayoutStyle,
+  selectedPersonId: propSelectedPersonId,
+  selectedPersonIds: propSelectedPersonIds,
+  comparisonPersonId: propComparisonPersonId,
   relationshipPathIds = [],
-  onSelectPerson,
-  onMultiSelectPeople,
+  onSelectPerson: propOnSelectPerson,
+  onMultiSelectPeople: propOnMultiSelectPeople,
   onPersonContextMenu,
   onCanvasContextMenu,
-  onUpdatePersonPosition,
-  onAddChild,
-  onAddPartner,
-  onAddSibling,
-  onAddParent,
-  onAddChildToUnion,
-  onSelectUnion,
-  onToggleCollapse,
-  onFinishDragPerson,
-  zoom,
-  setZoom,
-  pan,
-  setPan,
+  onUpdatePersonPosition: propOnUpdatePersonPosition,
+  onAddChild: propOnAddChild,
+  onAddPartner: propOnAddPartner,
+  onAddSibling: propOnAddSibling,
+  onAddParent: propOnAddParent,
+  onAddChildToUnion: propOnAddChildToUnion,
+  selectedUnionId: propSelectedUnionId,
+  onSelectUnion: propOnSelectUnion,
+  onToggleCollapse: propOnToggleCollapse,
+  onFinishDragPerson: propOnFinishDragPerson,
+  zoom: propZoom,
+  setZoom: propSetZoom,
+  pan: propPan,
+  setPan: propSetPan,
   canvasContainerRef,
   temporalYear = null,
   activeMoment = null,
   onQuickLink,
   onQuickSpawnRelative,
-  isMiniMapOpen = true,
-  onToggleMiniMap,
+  isMiniMapOpen: propIsMiniMapOpen,
+  onToggleMiniMap: propOnToggleMiniMap,
   onOpenTreeLink,
 }) => {
+  // Read directly from useCanvasStore
+  const storeZoom = useCanvasStore((s) => s.zoom);
+  const storePan = useCanvasStore((s) => s.pan);
+  const storeSetZoom = useCanvasStore((s) => s.setZoom);
+  const storeSetPan = useCanvasStore((s) => s.setPan);
+  const storeLayoutStyle = useCanvasStore((s) => s.layoutStyle);
+  const storeSelectedPersonId = useCanvasStore((s) => s.selectedPersonId);
+  const storeSelectedPersonIds = useCanvasStore((s) => s.selectedPersonIds);
+  const storeComparisonPersonId = useCanvasStore((s) => s.comparisonPersonId);
+  const storeSelectedUnionId = useCanvasStore((s) => s.selectedUnionId);
+  const storeSetSelectedUnionId = useCanvasStore((s) => s.setSelectedUnionId);
+  const storeSelectPerson = useCanvasStore((s) => s.selectPerson);
+  const storeMultiSelectPeople = useCanvasStore((s) => s.multiSelectPeople);
+  const storeToggleCollapse = useCanvasStore((s) => s.toggleCollapse);
+  const storeIsMiniMapOpen = useCanvasStore((s) => s.isMiniMapOpen);
+  const storeToggleMiniMap = useCanvasStore((s) => s.toggleMiniMap);
+
+  const zoom = propZoom !== undefined ? propZoom : storeZoom;
+  const pan = propPan !== undefined ? propPan : storePan;
+  const setZoom = propSetZoom || storeSetZoom;
+  const setPan = propSetPan || storeSetPan;
+  const layoutStyle = propLayoutStyle || storeLayoutStyle;
+  const selectedPersonId = propSelectedPersonId !== undefined ? propSelectedPersonId : storeSelectedPersonId;
+  const selectedPersonIds = propSelectedPersonIds || storeSelectedPersonIds;
+  const comparisonPersonId = propComparisonPersonId !== undefined ? propComparisonPersonId : storeComparisonPersonId;
+  const selectedUnionId = propSelectedUnionId !== undefined ? propSelectedUnionId : storeSelectedUnionId;
+  const onSelectUnion = propOnSelectUnion || storeSetSelectedUnionId;
+  const onSelectPerson = propOnSelectPerson || storeSelectPerson;
+  const onMultiSelectPeople = propOnMultiSelectPeople || storeMultiSelectPeople;
+  const onToggleCollapse = propOnToggleCollapse || storeToggleCollapse;
+  const isMiniMapOpen = propIsMiniMapOpen !== undefined ? propIsMiniMapOpen : storeIsMiniMapOpen;
+  const onToggleMiniMap = propOnToggleMiniMap || storeToggleMiniMap;
+
+  const onAddChild = propOnAddChild || ((id: string) => useModalStore.getState().openRelationshipModal(id, 'child'));
+  const onAddPartner = propOnAddPartner || ((id: string) => useModalStore.getState().openRelationshipModal(id, 'partner'));
+  const onAddSibling = propOnAddSibling || ((id: string) => useModalStore.getState().openRelationshipModal(id, 'sibling'));
+  const onAddParent = propOnAddParent || ((id: string) => useModalStore.getState().openRelationshipModal(id, 'parent'));
+  const onAddChildToUnion = propOnAddChildToUnion || ((uId: string) => {
+    const u = tree.unions[uId];
+    if (u?.partnerIds[0]) useModalStore.getState().openRelationshipModal(u.partnerIds[0], 'child', uId);
+  });
+  const onUpdatePersonPosition = useCallback(
+    (id: string, x: number, y: number) => {
+      if (propOnUpdatePersonPosition) {
+        propOnUpdatePersonPosition(id, x, y);
+      } else {
+        useTreeStore.getState().updatePersonPosition(id, x, y, layoutStyle);
+      }
+    },
+    [propOnUpdatePersonPosition, layoutStyle]
+  );
+
+  const onFinishDragPerson = useCallback(
+    (id: string) => {
+      if (propOnFinishDragPerson) {
+        propOnFinishDragPerson(id);
+      } else {
+        useTreeStore.getState().setTree((prev) => ({ ...prev }), true);
+      }
+    },
+    [propOnFinishDragPerson]
+  );
+
   const isDark = useThemeStore((s) => s.isDark);
   const [hoveredPersonId, setHoveredPersonId] = useState<string | null>(null);
 
@@ -898,6 +968,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           selectedPersonId={selectedPersonId}
           hoveredPersonId={hoveredPersonId}
           layoutStyle={layoutStyle}
+          hoveredUnionId={selectedUnionId}
           temporalYear={temporalYear}
           onAddChildToUnion={onAddChildToUnion}
           onSelectUnion={onSelectUnion}

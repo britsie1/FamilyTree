@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import type { TreeData, Person, TreeLink, PersonDocument } from '../../types/tree';
-import type { RelationshipResult } from '../../services/relationshipFinder';
+import React, { useState, useMemo } from 'react';
+import type { TreeLink, PersonDocument, Person } from '../../types/tree';
+import { findRelationship, type RelationshipResult } from '../../services/relationshipFinder';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useCollabStore } from '../../stores/useCollabStore';
+import { useTemporalStore } from '../../stores/useTemporalStore';
+import { useModalStore } from '../../stores/useModalStore';
 import { Sparkles, X } from 'lucide-react';
 
 import { PersonHeader } from './PersonHeader';
@@ -15,9 +17,6 @@ import { PersonCrossTreeLinksSection } from './PersonCrossTreeLinksSection';
 import { PersonDocumentsSection } from './PersonDocumentsSection';
 
 export interface PersonInspectorProps {
-  tree?: TreeData;
-  selectedPersonId?: string | null;
-  comparisonPersonId?: string | null;
   relationship?: RelationshipResult | null;
   isFocused?: boolean;
   onToggleFocus?: (personId: string) => void;
@@ -25,17 +24,7 @@ export interface PersonInspectorProps {
   onToggleCollapse?: (personId: string) => void;
   onClearComparison?: () => void;
   onClose?: () => void;
-  onUpdatePerson?: (personId: string, updates: Partial<Person>) => void;
-  onDeletePerson?: (personId: string) => void;
   onSelectPerson?: (personId: string) => void;
-  onAddChild?: (personId: string) => void;
-  onAddPartner?: (personId: string) => void;
-  onAddSibling?: (personId: string) => void;
-  onAddParent?: (personId: string) => void;
-  onUnlinkPartner?: (personId: string, unionId: string) => void;
-  onUnlinkChild?: (childPersonId: string) => void;
-  onUnlinkParentFromChild?: (childPersonId: string, parentPersonId: string) => void;
-  onEditUnion?: (unionId: string) => void;
   onJumpToYear?: (year: number, moment?: any) => void;
   isReadOnly?: boolean;
   onOpenTreeLink?: (person: Person, link: TreeLink) => void;
@@ -46,50 +35,84 @@ export interface PersonInspectorProps {
 }
 
 export const PersonInspector: React.FC<PersonInspectorProps> = ({
-  tree: propTree,
-  selectedPersonId: propSelectedPersonId,
-  comparisonPersonId: propComparisonPersonId,
-  relationship,
-  isFocused,
-  onToggleFocus,
-  isCollapsed,
-  onToggleCollapse,
-  onClearComparison,
-  onClose,
-  onUpdatePerson,
-  onDeletePerson,
-  onSelectPerson,
-  onAddChild,
-  onAddPartner,
-  onAddSibling,
-  onAddParent,
-  onUnlinkPartner,
-  onUnlinkChild,
-  onUnlinkParentFromChild,
-  onEditUnion,
-  onJumpToYear,
-  isReadOnly,
+  relationship: propRelationship,
+  isFocused: propIsFocused,
+  onToggleFocus: propOnToggleFocus,
+  isCollapsed: propIsCollapsed,
+  onToggleCollapse: propOnToggleCollapse,
+  onClearComparison: propOnClearComparison,
+  onClose: propOnClose,
+  onSelectPerson: propOnSelectPerson,
+  onJumpToYear: propOnJumpToYear,
+  isReadOnly: propIsReadOnly,
   onOpenTreeLink,
-  onLinkExistingTree,
+  onLinkExistingTree: propOnLinkExistingTree,
   onRemoveTreeLink,
-  onOpenShareModal,
-  onPreviewDocument,
+  onOpenShareModal: propOnOpenShareModal,
+  onPreviewDocument: propOnPreviewDocument,
 }) => {
   const [isMobileMinimized, setIsMobileMinimized] = useState(false);
 
-  // Store access
-  const storeTree = useTreeStore((s) => s.tree);
-  const storeSelectedPersonId = useCanvasStore((s) => s.selectedPersonId);
-  const storeComparisonPersonId = useCanvasStore((s) => s.comparisonPersonId);
-  const storeSetComparisonPersonId = useCanvasStore((s) => s.setComparisonPersonId);
-  const storeUserPermission = useCollabStore((s) => s.userPermission);
+  // Tree store access
+  const tree = useTreeStore((s) => s.tree);
+  const updatePerson = useTreeStore((s) => s.updatePerson);
+  const deletePerson = useTreeStore((s) => s.deletePerson);
+  const unlinkPartnerAction = useTreeStore((s) => s.unlinkPartnerAction);
+  const unlinkChildAction = useTreeStore((s) => s.unlinkChildAction);
+  const unlinkParentFromChildAction = useTreeStore((s) => s.unlinkParentFromChildAction);
 
-  const tree = propTree || storeTree;
-  const selectedPersonId = propSelectedPersonId !== undefined ? propSelectedPersonId : storeSelectedPersonId;
-  const comparisonPersonId = propComparisonPersonId !== undefined ? propComparisonPersonId : storeComparisonPersonId;
-  const effectiveReadOnly = isReadOnly !== undefined ? isReadOnly : storeUserPermission === 'viewer';
+  // Canvas store access
+  const selectedPersonId = useCanvasStore((s) => s.selectedPersonId);
+  const comparisonPersonId = useCanvasStore((s) => s.comparisonPersonId);
+  const focusPersonId = useCanvasStore((s) => s.focusPersonId);
+  const collapsedPersonIds = useCanvasStore((s) => s.collapsedPersonIds);
+  const selectPerson = useCanvasStore((s) => s.selectPerson);
+  const clearSelection = useCanvasStore((s) => s.clearSelection);
+  const setComparisonPersonId = useCanvasStore((s) => s.setComparisonPersonId);
+  const setSelectedUnionId = useCanvasStore((s) => s.setSelectedUnionId);
+  const toggleFocus = useCanvasStore((s) => s.toggleFocus);
+  const toggleCollapse = useCanvasStore((s) => s.toggleCollapse);
 
-  const handleClearComparison = onClearComparison || (() => storeSetComparisonPersonId(null));
+  // Collab & Temporal store access
+  const userPermission = useCollabStore((s) => s.userPermission);
+  const jumpToYear = useTemporalStore((s) => s.jumpToYear);
+
+  // Modal store access
+  const openShareModal = useModalStore((s) => s.openShareModal);
+  const openPreviewDoc = useModalStore((s) => s.openPreviewDoc);
+  const openLinkTreeModal = useModalStore((s) => s.openLinkTreeModal);
+  const openRelationshipModal = useModalStore((s) => s.openRelationshipModal);
+
+  // Effective state resolution
+  const effectiveReadOnly = propIsReadOnly !== undefined ? propIsReadOnly : userPermission === 'viewer';
+  const effectiveIsFocused = propIsFocused !== undefined ? propIsFocused : (focusPersonId === selectedPersonId);
+  const effectiveIsCollapsed = propIsCollapsed !== undefined ? propIsCollapsed : Boolean(selectedPersonId && collapsedPersonIds.has(selectedPersonId));
+
+  // Resolved handlers
+  const handleToggleFocus = propOnToggleFocus || ((id: string) => toggleFocus(id));
+  const handleToggleCollapse = propOnToggleCollapse || ((id: string) => toggleCollapse(id));
+  const handleClearComparison = propOnClearComparison || (() => setComparisonPersonId(null));
+  const handleClose = propOnClose || (() => clearSelection());
+  const handleSelectPerson = propOnSelectPerson || ((id: string) => selectPerson(id));
+  const handleJumpToYear = propOnJumpToYear || ((y: number, m?: any) => jumpToYear(y, m));
+  const handleOpenShareModal = propOnOpenShareModal || (() => openShareModal());
+  const handlePreviewDocument = propOnPreviewDocument || ((doc: PersonDocument, name: string) => openPreviewDoc(doc, name));
+  const handleLinkExistingTree = propOnLinkExistingTree || ((person: Person) => openLinkTreeModal(person));
+
+  const handleDeletePerson = (id: string) => {
+    deletePerson(id);
+    if (selectedPersonId === id) {
+      clearSelection();
+    }
+  };
+
+  // Relationship between selected (A) and comparison (B)
+  const calculatedRelationship = useMemo<RelationshipResult | null>(() => {
+    if (!selectedPersonId || !comparisonPersonId) return null;
+    return findRelationship(tree, selectedPersonId, comparisonPersonId);
+  }, [tree, selectedPersonId, comparisonPersonId]);
+
+  const relationship = propRelationship !== undefined ? propRelationship : calculatedRelationship;
 
   if (!selectedPersonId) return null;
 
@@ -114,14 +137,14 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
         isMobileMinimized={isMobileMinimized}
         onToggleMobileMinimized={() => setIsMobileMinimized((prev) => !prev)}
         isReadOnly={effectiveReadOnly}
-        isFocused={isFocused}
-        onToggleFocus={onToggleFocus}
-        isCollapsed={isCollapsed}
-        onToggleCollapse={onToggleCollapse}
-        onClose={onClose}
-        onDeletePerson={onDeletePerson}
-        onAddChild={onAddChild}
-        onUpdatePerson={onUpdatePerson}
+        isFocused={effectiveIsFocused}
+        onToggleFocus={handleToggleFocus}
+        isCollapsed={effectiveIsCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+        onClose={handleClose}
+        onDeletePerson={handleDeletePerson}
+        onAddChild={(id) => openRelationshipModal(id, 'child')}
+        onUpdatePerson={updatePerson}
       />
 
       {!isMobileMinimized && (
@@ -174,7 +197,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
             person={person}
             tree={tree}
             isReadOnly={effectiveReadOnly}
-            onUpdatePerson={onUpdatePerson}
+            onUpdatePerson={updatePerson}
           />
 
           <hr className="border-slate-100 dark:border-slate-800" />
@@ -184,8 +207,8 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
             person={person}
             tree={tree}
             isReadOnly={effectiveReadOnly}
-            onUpdatePerson={onUpdatePerson}
-            onJumpToYear={onJumpToYear}
+            onUpdatePerson={updatePerson}
+            onJumpToYear={handleJumpToYear}
           />
 
           <hr className="border-slate-100 dark:border-slate-800" />
@@ -195,15 +218,15 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
             person={person}
             tree={tree}
             isReadOnly={effectiveReadOnly}
-            onSelectPerson={onSelectPerson}
-            onAddChild={onAddChild}
-            onAddPartner={onAddPartner}
-            onAddSibling={onAddSibling}
-            onAddParent={onAddParent}
-            onUnlinkPartner={onUnlinkPartner}
-            onUnlinkChild={onUnlinkChild}
-            onUnlinkParentFromChild={onUnlinkParentFromChild}
-            onEditUnion={onEditUnion}
+            onSelectPerson={handleSelectPerson}
+            onAddChild={(id) => openRelationshipModal(id, 'child')}
+            onAddPartner={(id) => openRelationshipModal(id, 'partner')}
+            onAddSibling={(id) => openRelationshipModal(id, 'sibling')}
+            onAddParent={(id) => openRelationshipModal(id, 'parent')}
+            onUnlinkPartner={unlinkPartnerAction}
+            onUnlinkChild={unlinkChildAction}
+            onUnlinkParentFromChild={unlinkParentFromChildAction}
+            onEditUnion={setSelectedUnionId}
           />
 
           <hr className="border-slate-100 dark:border-slate-800" />
@@ -213,7 +236,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
             person={person}
             isReadOnly={effectiveReadOnly}
             onOpenTreeLink={onOpenTreeLink}
-            onLinkExistingTree={onLinkExistingTree}
+            onLinkExistingTree={handleLinkExistingTree}
             onRemoveTreeLink={onRemoveTreeLink}
           />
 
@@ -224,9 +247,9 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
             person={person}
             tree={tree}
             isReadOnly={effectiveReadOnly}
-            onUpdatePerson={onUpdatePerson}
-            onOpenShareModal={onOpenShareModal}
-            onPreviewDocument={onPreviewDocument}
+            onUpdatePerson={updatePerson}
+            onOpenShareModal={handleOpenShareModal}
+            onPreviewDocument={handlePreviewDocument}
           />
         </div>
       )}
