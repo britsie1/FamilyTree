@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { TreeData, Person, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
+import { produceWithPatches, applyPatches, enablePatches, setAutoFreeze, type Patch } from 'immer';
+import type { TreeData, Person, Union, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
 import {
   loadCurrentTree,
   saveCurrentTree,
@@ -27,12 +28,170 @@ import {
   updateTreeGoogleDriveConfig,
 } from '../services/treeOperations';
 
+enablePatches();
+setAutoFreeze(false);
+
+export type { Patch };
+
+export interface HistoryStep {
+  patches: Patch[];
+  inversePatches: Patch[];
+  targetKey?: string;
+  timestamp: number;
+}
+
 const MAX_HISTORY_DEPTH = 50;
+const DEBOUNCE_WINDOW_MS = 500;
+
+function arraysEqual(a: any[] | undefined, b: any[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (typeof a[i] === 'object' && a[i] !== null && typeof b[i] === 'object' && b[i] !== null) {
+      if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) return false;
+    } else if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function reconcilePerson(draftPerson: any, nextPerson: Person) {
+  for (const key of Object.keys(draftPerson)) {
+    if (!(key in nextPerson) || (nextPerson as any)[key] === undefined) {
+      if (draftPerson[key] !== undefined) {
+        delete draftPerson[key];
+      }
+    }
+  }
+  for (const [key, nextVal] of Object.entries(nextPerson)) {
+    if (nextVal === undefined) {
+      if (draftPerson[key] !== undefined) {
+        delete draftPerson[key];
+      }
+    } else if (Array.isArray(nextVal)) {
+      if (!arraysEqual(draftPerson[key], nextVal)) {
+        draftPerson[key] = [...nextVal];
+      }
+    } else if (draftPerson[key] !== nextVal) {
+      draftPerson[key] = nextVal;
+    }
+  }
+}
+
+function reconcileUnion(draftUnion: any, nextUnion: Union) {
+  for (const key of Object.keys(draftUnion)) {
+    if (!(key in nextUnion) || (nextUnion as any)[key] === undefined) {
+      if (draftUnion[key] !== undefined) {
+        delete draftUnion[key];
+      }
+    }
+  }
+  for (const [key, nextVal] of Object.entries(nextUnion)) {
+    if (nextVal === undefined) {
+      if (draftUnion[key] !== undefined) {
+        delete draftUnion[key];
+      }
+    } else if (Array.isArray(nextVal)) {
+      if (!arraysEqual(draftUnion[key], nextVal)) {
+        draftUnion[key] = [...nextVal];
+      }
+    } else if (draftUnion[key] !== nextVal) {
+      draftUnion[key] = nextVal;
+    }
+  }
+}
+
+function reconcileTree(draft: any, next: TreeData) {
+  for (const key of Object.keys(draft)) {
+    if (key === 'people' || key === 'unions') continue;
+    if (!(key in next) || (next as any)[key] === undefined) {
+      if (draft[key] !== undefined) {
+        delete draft[key];
+      }
+    }
+  }
+
+  for (const [key, nextVal] of Object.entries(next)) {
+    if (key === 'people' || key === 'unions') continue;
+    if (nextVal === undefined) {
+      if (draft[key] !== undefined) {
+        delete draft[key];
+      }
+    } else if (Array.isArray(nextVal)) {
+      if (!arraysEqual(draft[key], nextVal)) {
+        draft[key] = [...nextVal];
+      }
+    } else if (typeof nextVal === 'object' && nextVal !== null) {
+      if (JSON.stringify(draft[key]) !== JSON.stringify(nextVal)) {
+        draft[key] = { ...nextVal };
+      }
+    } else if (draft[key] !== nextVal) {
+      draft[key] = nextVal;
+    }
+  }
+
+  if (draft.people !== next.people) {
+    if (!draft.people) draft.people = {};
+    const draftPeople = draft.people;
+    const nextPeople = next.people || {};
+    for (const pId of Object.keys(draftPeople)) {
+      if (!(pId in nextPeople)) {
+        delete draftPeople[pId];
+      }
+    }
+    for (const [pId, nextPerson] of Object.entries(nextPeople)) {
+      const draftPerson = draftPeople[pId];
+      if (!draftPerson) {
+        draftPeople[pId] = nextPerson;
+      } else if (draftPerson !== nextPerson) {
+        reconcilePerson(draftPerson, nextPerson);
+      }
+    }
+  }
+
+  if (draft.unions !== next.unions) {
+    if (!draft.unions) draft.unions = {};
+    const draftUnions = draft.unions;
+    const nextUnions = next.unions || {};
+    for (const uId of Object.keys(draftUnions)) {
+      if (!(uId in nextUnions)) {
+        delete draftUnions[uId];
+      }
+    }
+    for (const [uId, nextUnion] of Object.entries(nextUnions)) {
+      const draftUnion = draftUnions[uId];
+      if (!draftUnion) {
+        draftUnions[uId] = nextUnion;
+      } else if (draftUnion !== nextUnion) {
+        reconcileUnion(draftUnion, nextUnion);
+      }
+    }
+  }
+}
+
+function getTargetKey(patches: Patch[]): string {
+  const significant = patches.filter((p) => p.path[0] !== 'updatedAt');
+  if (significant.length === 0) return '';
+
+  const isPos = significant.every(
+    (p) =>
+      p.path.length >= 3 &&
+      p.path[0] === 'people' &&
+      (p.path[2] === 'x' || p.path[2] === 'y' || p.path[2] === 'horizontalX' || p.path[2] === 'horizontalY')
+  );
+  if (isPos && significant.length > 0) {
+    return `people/${significant[0].path[1]}:pos`;
+  }
+
+  return significant.map((p) => p.path.join('/')).sort().join(';');
+}
 
 export interface TreeStoreState {
   tree: TreeData;
-  past: TreeData[];
-  future: TreeData[];
+  pastPatches: Patch[][];
+  futurePatches: Patch[][];
   canUndo: boolean;
   canRedo: boolean;
 
@@ -44,6 +203,12 @@ export interface TreeStoreState {
   undo: () => void;
   redo: () => void;
   resetHistory: (newTree: TreeData) => void;
+
+  // Transaction batching & grouping
+  beginTransaction: () => void;
+  commitTransaction: () => void;
+  abortTransaction: () => void;
+  batch: <T>(fn: () => T) => T;
 
   // High-level mutations
   updateTreeName: (name: string) => void;
@@ -81,259 +246,451 @@ export interface TreeStoreState {
 
 const initialTree = loadCurrentTree();
 
-export const useTreeStore = create<TreeStoreState>((set, get) => ({
-  tree: initialTree,
-  past: [],
-  future: [],
-  canUndo: false,
-  canRedo: false,
+export const useTreeStore = create<TreeStoreState>((set, get) => {
+  const historyPast: HistoryStep[] = [];
+  const historyFuture: HistoryStep[] = [];
+  let isTransactionActive = false;
+  let activeTransactionBaseTree: TreeData | null = null;
+  let debounceBaseTree: TreeData | null = null;
 
-  setTree: (nextTreeOrUpdater, recordHistory = true) => {
-    set((state) => {
-      const nextTree =
-        typeof nextTreeOrUpdater === 'function'
-          ? nextTreeOrUpdater(state.tree)
-          : nextTreeOrUpdater;
+  const flushDebounce = () => {
+    debounceBaseTree = null;
+  };
 
-      if (nextTree === state.tree) {
-        return state;
+  return {
+    tree: initialTree,
+    pastPatches: [],
+    futurePatches: [],
+    canUndo: false,
+    canRedo: false,
+
+    setTree: (nextTreeOrUpdater, recordHistory = true) => {
+      const currentTree = get().tree;
+
+      // 1. Non-history update
+      if (!recordHistory) {
+        const nextTree =
+          typeof nextTreeOrUpdater === 'function'
+            ? (nextTreeOrUpdater as (prev: TreeData) => TreeData)(currentTree)
+            : nextTreeOrUpdater;
+
+        if (nextTree === currentTree) {
+          return;
+        }
+
+        saveCurrentTree(nextTree);
+        set({ tree: nextTree });
+        return;
+      }
+
+      // 2. Transaction update
+      if (isTransactionActive) {
+        const nextTree =
+          typeof nextTreeOrUpdater === 'function'
+            ? (nextTreeOrUpdater as (prev: TreeData) => TreeData)(currentTree)
+            : nextTreeOrUpdater;
+
+        if (nextTree === currentTree) {
+          return;
+        }
+
+        saveCurrentTree(nextTree);
+        set({ tree: nextTree });
+        return;
+      }
+
+      // 3. Normal history-recorded mutation
+      const [nextTree, patches, inversePatches] = produceWithPatches(
+        currentTree,
+        (draft) => {
+          if (typeof nextTreeOrUpdater === 'function') {
+            const res = (nextTreeOrUpdater as any)(draft as TreeData);
+            if (res !== undefined && res !== draft) {
+              reconcileTree(draft as TreeData, res);
+            }
+          } else {
+            reconcileTree(draft as TreeData, nextTreeOrUpdater);
+          }
+        }
+      );
+
+      if (patches.length === 0) {
+        return;
       }
 
       saveCurrentTree(nextTree);
 
-      if (!recordHistory) {
-        return { tree: nextTree };
+      const now = Date.now();
+      const targetKey = getTargetKey(patches);
+
+      const canDebounce =
+        historyPast.length > 0 &&
+        targetKey !== '' &&
+        debounceBaseTree !== null &&
+        historyPast[historyPast.length - 1].targetKey === targetKey &&
+        now - historyPast[historyPast.length - 1].timestamp < DEBOUNCE_WINDOW_MS;
+
+      if (canDebounce) {
+        const [_, cumulativePatches, cumulativeInversePatches] = produceWithPatches(
+          debounceBaseTree,
+          (draft) => {
+            reconcileTree(draft as TreeData, nextTree);
+          }
+        );
+
+        if (cumulativePatches.length === 0) {
+          historyPast.pop();
+          set({
+            tree: nextTree,
+            pastPatches: historyPast.map((s) => s.patches),
+            futurePatches: [],
+            canUndo: historyPast.length > 0,
+            canRedo: false,
+          });
+        } else {
+          const lastStep = historyPast[historyPast.length - 1];
+          lastStep.patches = cumulativePatches;
+          lastStep.inversePatches = cumulativeInversePatches;
+          lastStep.timestamp = now;
+
+          set({
+            tree: nextTree,
+            pastPatches: historyPast.map((s) => s.patches),
+            futurePatches: [],
+            canUndo: true,
+            canRedo: false,
+          });
+        }
+      } else {
+        debounceBaseTree = currentTree;
+
+        const newStep: HistoryStep = {
+          patches,
+          inversePatches,
+          targetKey,
+          timestamp: now,
+        };
+
+        historyPast.push(newStep);
+        if (historyPast.length > MAX_HISTORY_DEPTH) {
+          historyPast.shift();
+        }
+        historyFuture.length = 0;
+
+        set({
+          tree: nextTree,
+          pastPatches: historyPast.map((s) => s.patches),
+          futurePatches: [],
+          canUndo: true,
+          canRedo: false,
+        });
+      }
+    },
+
+    undo: () => {
+      flushDebounce();
+
+      if (isTransactionActive) {
+        get().abortTransaction();
+        return;
       }
 
-      const nextPast = [...state.past, state.tree];
-      if (nextPast.length > MAX_HISTORY_DEPTH) {
-        nextPast.shift();
-      }
+      if (historyPast.length === 0) return;
 
-      return {
-        tree: nextTree,
-        past: nextPast,
-        future: [],
-        canUndo: nextPast.length > 0,
-        canRedo: false,
-      };
-    });
-  },
+      const currentTree = get().tree;
+      const step = historyPast.pop()!;
+      historyFuture.unshift(step);
 
-  undo: () => {
-    set((state) => {
-      if (state.past.length === 0) return state;
+      const previousTree = applyPatches(currentTree, step.inversePatches);
+      saveCurrentTree(previousTree);
 
-      const previous = state.past[state.past.length - 1];
-      const nextPast = state.past.slice(0, state.past.length - 1);
-      const nextFuture = [state.tree, ...state.future];
-
-      saveCurrentTree(previous);
-
-      return {
-        tree: previous,
-        past: nextPast,
-        future: nextFuture,
-        canUndo: nextPast.length > 0,
+      set({
+        tree: previousTree,
+        pastPatches: historyPast.map((s) => s.patches),
+        futurePatches: historyFuture.map((s) => s.patches),
+        canUndo: historyPast.length > 0,
         canRedo: true,
-      };
-    });
-  },
-
-  redo: () => {
-    set((state) => {
-      if (state.future.length === 0) return state;
-
-      const next = state.future[0];
-      const nextFuture = state.future.slice(1);
-      const nextPast = [...state.past, state.tree];
-
-      saveCurrentTree(next);
-
-      return {
-        tree: next,
-        past: nextPast,
-        future: nextFuture,
-        canUndo: true,
-        canRedo: nextFuture.length > 0,
-      };
-    });
-  },
-
-  resetHistory: (newTree: TreeData) => {
-    saveCurrentTree(newTree);
-    set({
-      tree: newTree,
-      past: [],
-      future: [],
-      canUndo: false,
-      canRedo: false,
-    });
-  },
-
-  updateTreeName: (name: string) => {
-    get().setTree((prev) => ({ ...prev, name }));
-  },
-
-  updatePerson: (personId: string, updates: Partial<Person>) => {
-    get().setTree((prev) => updatePersonInTree(prev, personId, updates));
-  },
-
-  updatePersonPosition: (personId, x, y, layoutStyle) => {
-    get().setTree((prev) => {
-      if (layoutStyle === 'horizontal') {
-        return updatePersonInTree(prev, personId, { horizontalX: x, horizontalY: y });
-      }
-      return updatePersonInTree(prev, personId, { x, y });
-    });
-  },
-
-  updateUnion: (unionId, updates) => {
-    get().setTree((prev) => updateUnionInTree(prev, unionId, updates));
-  },
-
-  deleteUnion: (unionId: string) => {
-    get().setTree((prev) => {
-      const nextTree = { ...prev, unions: { ...prev.unions }, people: { ...prev.people } };
-      delete nextTree.unions[unionId];
-      // Clean up references in people
-      Object.keys(nextTree.people).forEach((pId) => {
-        const p = nextTree.people[pId];
-        if (p.unionIds.includes(unionId)) {
-          nextTree.people[pId] = {
-            ...p,
-            unionIds: p.unionIds.filter((id) => id !== unionId),
-          };
-        }
-        if (p.parentUnionId === unionId) {
-          nextTree.people[pId] = {
-            ...p,
-            parentUnionId: undefined,
-          };
-        }
       });
-      return nextTree;
-    });
-  },
+    },
 
-  deletePerson: (personId: string) => {
-    get().setTree((prev) => deletePersonFromTree(prev, personId));
-  },
+    redo: () => {
+      flushDebounce();
 
-  addPerson: (overrides = {}) => {
-    const newPerson = createEmptyPerson(overrides);
-    get().setTree((prev) => ({
-      ...prev,
-      people: {
-        ...prev.people,
-        [newPerson.id]: newPerson,
-      },
-    }));
-    return newPerson;
-  },
+      if (historyFuture.length === 0) return;
 
-  addChild: (personId, preferredUnionId) => {
-    let newId = '';
-    get().setTree((prev) => {
-      const res = addChildToPerson(prev, personId, preferredUnionId);
-      newId = res.newChildId;
-      return res.tree;
-    });
-    return newId;
-  },
+      const currentTree = get().tree;
+      const step = historyFuture.shift()!;
+      historyPast.push(step);
 
-  addSibling: (personId) => {
-    let newId = '';
-    get().setTree((prev) => {
-      const res = addSiblingToPerson(prev, personId);
-      newId = res.newSiblingId;
-      return res.tree;
-    });
-    return newId;
-  },
+      const nextTree = applyPatches(currentTree, step.patches);
+      saveCurrentTree(nextTree);
 
-  addPartner: (personId) => {
-    let newId = '';
-    get().setTree((prev) => {
-      const res = addPartnerToPerson(prev, personId);
-      newId = res.newPartnerId;
-      return res.tree;
-    });
-    return newId;
-  },
+      set({
+        tree: nextTree,
+        pastPatches: historyPast.map((s) => s.patches),
+        futurePatches: historyFuture.map((s) => s.patches),
+        canUndo: true,
+        canRedo: historyFuture.length > 0,
+      });
+    },
 
-  addParent: (personId) => {
-    let newId = '';
-    get().setTree((prev) => {
-      const res = addParentToPerson(prev, personId);
-      newId = res.newParentId;
-      return res.tree;
-    });
-    return newId;
-  },
+    resetHistory: (newTree: TreeData) => {
+      flushDebounce();
+      historyPast.length = 0;
+      historyFuture.length = 0;
+      isTransactionActive = false;
+      activeTransactionBaseTree = null;
 
-  linkChild: (sourcePersonId, targetPersonId, preferredUnionId) => {
-    get().setTree((prev) => linkExistingChild(prev, sourcePersonId, targetPersonId, preferredUnionId));
-  },
+      saveCurrentTree(newTree);
+      set({
+        tree: newTree,
+        pastPatches: [],
+        futurePatches: [],
+        canUndo: false,
+        canRedo: false,
+      });
+    },
 
-  linkSibling: (sourcePersonId, targetPersonId) => {
-    get().setTree((prev) => linkExistingSibling(prev, sourcePersonId, targetPersonId));
-  },
+    beginTransaction: () => {
+      flushDebounce();
+      if (!isTransactionActive) {
+        isTransactionActive = true;
+        activeTransactionBaseTree = get().tree;
+      }
+    },
 
-  linkPartner: (sourcePersonId, targetPersonId) => {
-    get().setTree((prev) => linkExistingPartner(prev, sourcePersonId, targetPersonId));
-  },
+    commitTransaction: () => {
+      if (!isTransactionActive || !activeTransactionBaseTree) {
+        isTransactionActive = false;
+        activeTransactionBaseTree = null;
+        return;
+      }
 
-  linkParent: (sourcePersonId, targetPersonId) => {
-    get().setTree((prev) => linkExistingParent(prev, sourcePersonId, targetPersonId));
-  },
+      const baseTree = activeTransactionBaseTree;
+      const currentTree = get().tree;
+      isTransactionActive = false;
+      activeTransactionBaseTree = null;
 
-  unlinkPartnerAction: (personId, unionId) => {
-    get().setTree((prev) => unlinkPartner(prev, personId, unionId));
-  },
+      const [_, patches, inversePatches] = produceWithPatches(baseTree, (draft) => {
+        reconcileTree(draft as TreeData, currentTree);
+      });
 
-  unlinkChildAction: (childPersonId) => {
-    get().setTree((prev) => unlinkChild(prev, childPersonId));
-  },
+      if (patches.length === 0) {
+        return;
+      }
 
-  unlinkParentFromChildAction: (childPersonId, parentPersonId) => {
-    get().setTree((prev) => unlinkParentFromChild(prev, childPersonId, parentPersonId));
-  },
+      const newStep: HistoryStep = {
+        patches,
+        inversePatches,
+        targetKey: getTargetKey(patches),
+        timestamp: Date.now(),
+      };
 
-  resetLayout: () => {
-    get().setTree((prev) => clearManualPositions(prev));
-  },
+      historyPast.push(newStep);
+      if (historyPast.length > MAX_HISTORY_DEPTH) {
+        historyPast.shift();
+      }
+      historyFuture.length = 0;
 
-  makeCopy: () => {
-    const current = get().tree;
-    const newId = generateId('tree');
-    const now = new Date().toISOString();
-    const copy: TreeData = {
-      ...current,
-      id: newId,
-      name: `${current.name || 'Family Tree'} (Copy)`,
-      createdAt: now,
-      updatedAt: now,
-    };
-    delete (copy as any).ownerId;
-    delete (copy as any).ownerEmail;
-    delete (copy as any).ownerDisplayName;
-    delete (copy as any).ownerPhotoURL;
-    delete (copy as any).sharedWith;
-    delete (copy as any).sharedEmails;
-    get().resetHistory(copy);
-    return copy;
-  },
+      set({
+        pastPatches: historyPast.map((s) => s.patches),
+        futurePatches: [],
+        canUndo: true,
+        canRedo: false,
+      });
+    },
 
-  attachDocument: (personId, doc) => {
-    get().setTree((prev) => attachDocumentToPerson(prev, personId, doc));
-  },
+    abortTransaction: () => {
+      if (!isTransactionActive || !activeTransactionBaseTree) {
+        isTransactionActive = false;
+        activeTransactionBaseTree = null;
+        return;
+      }
 
-  removeDocument: (personId, documentId) => {
-    get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
-  },
+      const baseTree = activeTransactionBaseTree;
+      isTransactionActive = false;
+      activeTransactionBaseTree = null;
 
-  setGoogleDriveConfig: (config) => {
-    get().setTree((prev) => updateTreeGoogleDriveConfig(prev, config));
-  },
-}));
+      saveCurrentTree(baseTree);
+      set({ tree: baseTree });
+    },
+
+    batch: <T>(fn: () => T): T => {
+      get().beginTransaction();
+      try {
+        const result = fn();
+        get().commitTransaction();
+        return result;
+      } catch (err) {
+        get().abortTransaction();
+        throw err;
+      }
+    },
+
+    updateTreeName: (name: string) => {
+      get().setTree((prev) => ({ ...prev, name }));
+    },
+
+    updatePerson: (personId: string, updates: Partial<Person>) => {
+      get().setTree((prev) => updatePersonInTree(prev, personId, updates));
+    },
+
+    updatePersonPosition: (personId, x, y, layoutStyle) => {
+      get().setTree((prev) => {
+        if (layoutStyle === 'horizontal') {
+          return updatePersonInTree(prev, personId, { horizontalX: x, horizontalY: y });
+        }
+        return updatePersonInTree(prev, personId, { x, y });
+      });
+    },
+
+    updateUnion: (unionId, updates) => {
+      get().setTree((prev) => updateUnionInTree(prev, unionId, updates));
+    },
+
+    deleteUnion: (unionId: string) => {
+      get().setTree((prev) => {
+        const nextTree = { ...prev, unions: { ...prev.unions }, people: { ...prev.people } };
+        delete nextTree.unions[unionId];
+        // Clean up references in people
+        Object.keys(nextTree.people).forEach((pId) => {
+          const p = nextTree.people[pId];
+          if (p.unionIds.includes(unionId)) {
+            nextTree.people[pId] = {
+              ...p,
+              unionIds: p.unionIds.filter((id) => id !== unionId),
+            };
+          }
+          if (p.parentUnionId === unionId) {
+            nextTree.people[pId] = {
+              ...p,
+              parentUnionId: undefined,
+            };
+          }
+        });
+        return nextTree;
+      });
+    },
+
+    deletePerson: (personId: string) => {
+      get().setTree((prev) => deletePersonFromTree(prev, personId));
+    },
+
+    addPerson: (overrides = {}) => {
+      const newPerson = createEmptyPerson(overrides);
+      get().setTree((prev) => ({
+        ...prev,
+        people: {
+          ...prev.people,
+          [newPerson.id]: newPerson,
+        },
+      }));
+      return newPerson;
+    },
+
+    addChild: (personId, preferredUnionId) => {
+      let newId = '';
+      get().setTree((prev) => {
+        const res = addChildToPerson(prev, personId, preferredUnionId);
+        newId = res.newChildId;
+        return res.tree;
+      });
+      return newId;
+    },
+
+    addSibling: (personId) => {
+      let newId = '';
+      get().setTree((prev) => {
+        const res = addSiblingToPerson(prev, personId);
+        newId = res.newSiblingId;
+        return res.tree;
+      });
+      return newId;
+    },
+
+    addPartner: (personId) => {
+      let newId = '';
+      get().setTree((prev) => {
+        const res = addPartnerToPerson(prev, personId);
+        newId = res.newPartnerId;
+        return res.tree;
+      });
+      return newId;
+    },
+
+    addParent: (personId) => {
+      let newId = '';
+      get().setTree((prev) => {
+        const res = addParentToPerson(prev, personId);
+        newId = res.newParentId;
+        return res.tree;
+      });
+      return newId;
+    },
+
+    linkChild: (sourcePersonId, targetPersonId, preferredUnionId) => {
+      get().setTree((prev) => linkExistingChild(prev, sourcePersonId, targetPersonId, preferredUnionId));
+    },
+
+    linkSibling: (sourcePersonId, targetPersonId) => {
+      get().setTree((prev) => linkExistingSibling(prev, sourcePersonId, targetPersonId));
+    },
+
+    linkPartner: (sourcePersonId, targetPersonId) => {
+      get().setTree((prev) => linkExistingPartner(prev, sourcePersonId, targetPersonId));
+    },
+
+    linkParent: (sourcePersonId, targetPersonId) => {
+      get().setTree((prev) => linkExistingParent(prev, sourcePersonId, targetPersonId));
+    },
+
+    unlinkPartnerAction: (personId, unionId) => {
+      get().setTree((prev) => unlinkPartner(prev, personId, unionId));
+    },
+
+    unlinkChildAction: (childPersonId) => {
+      get().setTree((prev) => unlinkChild(prev, childPersonId));
+    },
+
+    unlinkParentFromChildAction: (childPersonId, parentPersonId) => {
+      get().setTree((prev) => unlinkParentFromChild(prev, childPersonId, parentPersonId));
+    },
+
+    resetLayout: () => {
+      get().setTree((prev) => clearManualPositions(prev));
+    },
+
+    makeCopy: () => {
+      const current = get().tree;
+      const newId = generateId('tree');
+      const now = new Date().toISOString();
+      const copy: TreeData = {
+        ...current,
+        id: newId,
+        name: `${current.name || 'Family Tree'} (Copy)`,
+        createdAt: now,
+        updatedAt: now,
+      };
+      delete (copy as any).ownerId;
+      delete (copy as any).ownerEmail;
+      delete (copy as any).ownerDisplayName;
+      delete (copy as any).ownerPhotoURL;
+      delete (copy as any).sharedWith;
+      delete (copy as any).sharedEmails;
+      get().resetHistory(copy);
+      return copy;
+    },
+
+    attachDocument: (personId, doc) => {
+      get().setTree((prev) => attachDocumentToPerson(prev, personId, doc));
+    },
+
+    removeDocument: (personId, documentId) => {
+      get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
+    },
+
+    setGoogleDriveConfig: (config) => {
+      get().setTree((prev) => updateTreeGoogleDriveConfig(prev, config));
+    },
+  };
+});

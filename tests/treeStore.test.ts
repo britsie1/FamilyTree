@@ -85,6 +85,196 @@ describe('Centralized Zustand Stores', () => {
       assert.strictEqual(copy.name, `${original.name} (Copy)`);
       assert.strictEqual(useTreeStore.getState().tree.id, copy.id);
     });
+
+    it('captures delta patches in pastPatches and futurePatches rather than full tree clones', () => {
+      const initialName = useTreeStore.getState().tree.name;
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 0);
+      assert.strictEqual(useTreeStore.getState().futurePatches.length, 0);
+
+      useTreeStore.getState().updateTreeName('Patched Name');
+
+      const pastPatches = useTreeStore.getState().pastPatches;
+      assert.strictEqual(pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().futurePatches.length, 0);
+
+      // Verify the patch contains only the delta, not the full tree
+      const firstStepPatches = pastPatches[0];
+      assert.ok(Array.isArray(firstStepPatches));
+      assert.ok(firstStepPatches.length > 0);
+      assert.strictEqual(firstStepPatches[0].op, 'replace');
+      assert.deepStrictEqual(firstStepPatches[0].path, ['name']);
+      assert.strictEqual(firstStepPatches[0].value, 'Patched Name');
+
+      // Undo
+      useTreeStore.getState().undo();
+      assert.strictEqual(useTreeStore.getState().tree.name, initialName);
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 0);
+      assert.strictEqual(useTreeStore.getState().futurePatches.length, 1);
+
+      // Redo
+      useTreeStore.getState().redo();
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Patched Name');
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().futurePatches.length, 0);
+    });
+
+    it('scales memory with delta O(depth * delta) instead of tree size O(depth * |Tree|)', () => {
+      const largeTree = createDoubleInLawPreset();
+      for (let i = 0; i < 100; i++) {
+        const id = `extra_person_${i}`;
+        largeTree.people[id] = {
+          id,
+          firstName: `Person_${i}`,
+          lastName: 'ScaleTest',
+          unionIds: [],
+          notes: 'Detailed notes creating memory footprint in the tree snapshot',
+        };
+      }
+      useTreeStore.getState().resetHistory(largeTree);
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 0);
+
+      const totalTreeJsonLength = JSON.stringify(useTreeStore.getState().tree).length;
+
+      // Perform 50 small mutations on distinct entities
+      for (let i = 0; i < 50; i++) {
+        useTreeStore.getState().updatePerson(`extra_person_${i}`, {
+          firstName: `Updated_${i}`,
+        });
+      }
+
+      const pastPatches = useTreeStore.getState().pastPatches;
+      assert.strictEqual(pastPatches.length, 50);
+
+      const totalPatchHistoryJsonLength = JSON.stringify(pastPatches).length;
+      const fullSnapshotHistorySize = 50 * totalTreeJsonLength;
+
+      // Patch history size should be a tiny fraction (< 5%) of full snapshot history
+      const ratio = totalPatchHistoryJsonLength / fullSnapshotHistorySize;
+      assert.ok(
+        ratio < 0.05,
+        `Patch history (${totalPatchHistoryJsonLength}b) should be < 5% of full clones (${fullSnapshotHistorySize}b), got ${(ratio * 100).toFixed(2)}%`
+      );
+
+      // Undo all 50 steps
+      for (let i = 0; i < 50; i++) {
+        useTreeStore.getState().undo();
+      }
+      assert.strictEqual(useTreeStore.getState().canUndo, false);
+      assert.strictEqual(useTreeStore.getState().canRedo, true);
+      assert.strictEqual(useTreeStore.getState().tree.people['extra_person_0']?.firstName, 'Person_0');
+      assert.strictEqual(useTreeStore.getState().tree.people['extra_person_49']?.firstName, 'Person_49');
+
+      // Redo all 50 steps
+      for (let i = 0; i < 50; i++) {
+        useTreeStore.getState().redo();
+      }
+      assert.strictEqual(useTreeStore.getState().canUndo, true);
+      assert.strictEqual(useTreeStore.getState().canRedo, false);
+      assert.strictEqual(useTreeStore.getState().tree.people['extra_person_0']?.firstName, 'Updated_0');
+      assert.strictEqual(useTreeStore.getState().tree.people['extra_person_49']?.firstName, 'Updated_49');
+    });
+
+    it('groups rapid consecutive keystrokes into a single undo step', () => {
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      const initialFirstName = useTreeStore.getState().tree.people[personId].firstName;
+
+      // Simulate typing keystrokes in an input field
+      useTreeStore.getState().updatePerson(personId, { firstName: 'J' });
+      useTreeStore.getState().updatePerson(personId, { firstName: 'Jo' });
+      useTreeStore.getState().updatePerson(personId, { firstName: 'Joh' });
+      useTreeStore.getState().updatePerson(personId, { firstName: 'John' });
+
+      // Should be debounced/squashed into 1 single history entry
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, 'John');
+
+      // Undo once should restore all the way back to initialFirstName
+      useTreeStore.getState().undo();
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, initialFirstName);
+      assert.strictEqual(useTreeStore.getState().canUndo, false);
+      assert.strictEqual(useTreeStore.getState().canRedo, true);
+
+      // Redo should restore to the final typed state
+      useTreeStore.getState().redo();
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, 'John');
+    });
+
+    it('groups rapid position dragging updates on the same person into a single undo step', () => {
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      const initialX = useTreeStore.getState().tree.people[personId].x;
+      const initialY = useTreeStore.getState().tree.people[personId].y;
+
+      // Drag sequence
+      useTreeStore.getState().updatePersonPosition(personId, 100, 150, 'vertical');
+      useTreeStore.getState().updatePersonPosition(personId, 120, 160, 'vertical');
+      useTreeStore.getState().updatePersonPosition(personId, 150, 200, 'vertical');
+
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, 150);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, 200);
+
+      useTreeStore.getState().undo();
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, initialX);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, initialY);
+
+      useTreeStore.getState().redo();
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].x, 150);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].y, 200);
+    });
+
+    it('supports transaction batching via beginTransaction and commitTransaction', () => {
+      const initialName = useTreeStore.getState().tree.name;
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      const initialFirstName = useTreeStore.getState().tree.people[personId].firstName;
+
+      useTreeStore.getState().beginTransaction();
+
+      useTreeStore.getState().updateTreeName('Transaction Tree');
+      useTreeStore.getState().updatePerson(personId, { firstName: 'BatchedAlice' });
+      const newPerson = useTreeStore.getState().addPerson({ firstName: 'BatchedBob' });
+
+      // During active transaction, pastPatches are not committed yet
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 0);
+
+      useTreeStore.getState().commitTransaction();
+
+      // Exactly 1 consolidated history step
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Transaction Tree');
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, 'BatchedAlice');
+      assert.ok(useTreeStore.getState().tree.people[newPerson.id]);
+
+      // Undo reverts all 3 operations at once
+      useTreeStore.getState().undo();
+      assert.strictEqual(useTreeStore.getState().tree.name, initialName);
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, initialFirstName);
+      assert.strictEqual(useTreeStore.getState().tree.people[newPerson.id], undefined);
+
+      // Redo restores all 3 operations at once
+      useTreeStore.getState().redo();
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Transaction Tree');
+      assert.strictEqual(useTreeStore.getState().tree.people[personId].firstName, 'BatchedAlice');
+      assert.ok(useTreeStore.getState().tree.people[newPerson.id]);
+    });
+
+    it('supports transaction batching via batch() helper and abortTransaction()', () => {
+      // Successful batch
+      useTreeStore.getState().batch(() => {
+        useTreeStore.getState().updateTreeName('Batch Helper Tree');
+      });
+
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Batch Helper Tree');
+
+      // Abort transaction
+      useTreeStore.getState().beginTransaction();
+      useTreeStore.getState().updateTreeName('Aborted Tree');
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Aborted Tree');
+      useTreeStore.getState().abortTransaction();
+
+      assert.strictEqual(useTreeStore.getState().tree.name, 'Batch Helper Tree');
+      assert.strictEqual(useTreeStore.getState().pastPatches.length, 1);
+    });
   });
 
   describe('useCanvasStore', () => {
