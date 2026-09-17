@@ -71,7 +71,7 @@ export const RelationshipCard: React.FC<RelationshipCardProps> = ({
     <div
       role="region"
       aria-label="Relationship Details"
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-2xl w-[94vw] sm:w-[580px] md:w-[640px] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-indigo-100 p-4 sm:p-5 text-slate-800 animate-in fade-in slide-in-from-bottom-5 duration-200"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-2xl w-[94vw] sm:w-[580px] md:w-[640px] max-h-[85dvh] overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-indigo-100 p-4 sm:p-5 text-slate-800 animate-in fade-in slide-in-from-bottom-5 duration-200"
     >
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
@@ -94,29 +94,29 @@ export const RelationshipCard: React.FC<RelationshipCardProps> = ({
             type="button"
             onClick={onSwap}
             title="Swap perspective (Reverse relationship)"
-            className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1 text-xs font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 p-2 sm:px-2 sm:py-1 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
           >
-            <ArrowLeftRight size={13} />
+            <ArrowLeftRight size={14} />
             <span className="hidden sm:inline">Swap</span>
           </button>
           <button
             type="button"
             onClick={() => setShowDetails((prev) => !prev)}
             title="Toggle details & connection path"
-            className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+            className={`flex items-center justify-center gap-1 text-xs font-medium p-2 sm:px-2 sm:py-1 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] ${
               showDetails ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <Info size={13} />
+            <Info size={14} />
             <span className="hidden sm:inline">Path</span>
           </button>
           <button
             type="button"
             onClick={onClose}
             title="Close relationship view (Esc)"
-            className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded-lg transition-colors cursor-pointer ml-1"
+            className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 sm:p-1 rounded-lg transition-colors cursor-pointer ml-1 min-h-[36px] min-w-[36px] flex items-center justify-center"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
       </div>

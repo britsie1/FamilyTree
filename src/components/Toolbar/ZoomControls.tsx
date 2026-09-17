@@ -12,6 +12,8 @@ import {
   Users,
   Clock,
   Map,
+  Layers,
+  X,
 } from 'lucide-react';
 
 interface ZoomControlsProps {
@@ -60,16 +62,183 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
   onToggleTimeline,
   temporalYear,
 }) => {
+  const [isMobileOptionsOpen, setIsMobileOptionsOpen] = React.useState(false);
+
   return (
     <aside
       aria-label="Canvas and View Controls"
       className={`fixed z-30 transition-all duration-200 select-none ${
         isTimelineActive
-          ? 'bottom-28 sm:bottom-32 left-4 sm:left-6 max-w-[calc(100vw-2rem)]'
-          : 'bottom-4 sm:bottom-6 left-4 sm:left-6 max-w-[calc(100vw-2rem)]'
+          ? 'bottom-28 sm:bottom-32 left-3 sm:left-6 max-w-[calc(100vw-1.5rem)]'
+          : 'bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 left-3 sm:left-6 max-w-[calc(100vw-1.5rem)]'
       }`}
     >
-      <div className="flex items-center gap-1 sm:gap-1.5 bg-white/95 backdrop-blur-md px-2 sm:px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/90 overflow-x-auto max-w-full">
+      {/* Mobile Compact Controls (< sm) */}
+      <div className="flex sm:hidden flex-col gap-2">
+        {/* Mobile View Options Popover */}
+        {isMobileOptionsOpen && (
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-3 flex flex-col gap-2 w-56 animate-in slide-in-from-bottom-2 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                View & Layout
+              </span>
+              <button
+                onClick={() => setIsMobileOptionsOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <button
+                onClick={() => {
+                  onToggleLayoutStyle();
+                  setIsMobileOptionsOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-700 font-medium cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  {layoutStyle === 'horizontal' ? (
+                    <ArrowRight className="w-3.5 h-3.5 text-indigo-600" />
+                  ) : (
+                    <ArrowDown className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                  <span>Layout</span>
+                </span>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+                  {layoutStyle === 'horizontal' ? 'Left-to-Right' : 'Top-Down'}
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onResetLayout();
+                  setIsMobileOptionsOpen(false);
+                }}
+                className="w-full flex items-center gap-2 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Auto-Tidy Tree</span>
+              </button>
+
+              {onToggleAdjustSpacing && (
+                <button
+                  onClick={onToggleAdjustSpacing}
+                  className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Adjust Spacing</span>
+                  </span>
+                  <span className={`w-2 h-2 rounded-full ${adjustSpacing ? 'bg-indigo-600' : 'bg-slate-300'}`} />
+                </button>
+              )}
+
+              {onToggleGroupByFamily && (
+                <button
+                  onClick={onToggleGroupByFamily}
+                  className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Users className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Group Families</span>
+                  </span>
+                  <span className={`w-2 h-2 rounded-full ${groupByFamily ? 'bg-emerald-600' : 'bg-slate-300'}`} />
+                </button>
+              )}
+
+              {onToggleTimeline && (
+                <button
+                  onClick={() => {
+                    onToggleTimeline();
+                    setIsMobileOptionsOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-2 rounded-xl font-semibold cursor-pointer ${
+                    isTimelineActive ? 'bg-amber-500 text-slate-950' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>4D Timeline</span>
+                  </span>
+                  {isTimelineActive && temporalYear && (
+                    <span className="text-[10px] bg-slate-950/20 px-1.5 py-0.5 rounded font-mono">
+                      {temporalYear}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {onToggleMiniMap && (
+                <button
+                  onClick={onToggleMiniMap}
+                  className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Map className="w-3.5 h-3.5 text-slate-500" />
+                    <span>MiniMap Radar</span>
+                  </span>
+                  <span className={`w-2 h-2 rounded-full ${isMiniMapOpen ? 'bg-indigo-600' : 'bg-slate-300'}`} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Mobile Pill Bar */}
+        <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-xl border border-slate-200/90">
+          <button
+            onClick={onZoomOut}
+            className="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 active:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+            title="Zoom Out"
+            aria-label="Zoom Out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onResetZoom}
+            className="px-2 py-1 text-xs font-mono font-bold text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
+            title="Reset Zoom"
+            aria-label="Reset Zoom"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            onClick={onZoomIn}
+            className="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 active:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+            title="Zoom In"
+            aria-label="Zoom In"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <div className="w-px h-5 bg-slate-200 mx-0.5" />
+          <button
+            onClick={onFitToScreen}
+            className="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 active:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+            title="Fit to Screen"
+            aria-label="Fit to Screen"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setIsMobileOptionsOpen((prev) => !prev)}
+            className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors cursor-pointer ${
+              isMobileOptionsOpen || isTimelineActive
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
+            }`}
+            title="View & Layout Options"
+            aria-label="View & Layout Options"
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop Toolbar (>= sm) */}
+      <div className="hidden sm:flex items-center gap-1 sm:gap-1.5 bg-white/95 backdrop-blur-md px-2 sm:px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/90 overflow-x-auto max-w-full">
         {/* Toggle Layout: Top-Down vs Left-to-Right */}
         <button
           onClick={onToggleLayoutStyle}

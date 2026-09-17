@@ -148,15 +148,16 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
   };
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-35 max-w-[96vw] w-[920px] select-none">
-      <div className="bg-slate-900/92 backdrop-blur-xl border border-slate-700/70 shadow-2xl rounded-2xl p-3.5 text-white flex flex-col gap-2.5 transition-all">
+    <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-35 max-w-[96vw] w-[920px] select-none">
+      <div className="bg-slate-900/92 backdrop-blur-xl border border-slate-700/70 shadow-2xl rounded-2xl p-3 sm:p-3.5 text-white flex flex-col gap-2.5 transition-all">
         {/* Top Header Row */}
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-2.5">
+        <div className="flex items-center justify-between gap-2 sm:gap-3 border-b border-slate-800/80 pb-2.5">
           {/* Left: Mode Title & Quick Counts */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold text-xs tracking-wide shadow-xs">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold text-xs tracking-wide shadow-xs flex-shrink-0">
               <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span>4D Temporal Scrub</span>
+              <span className="hidden xs:inline">4D Temporal Scrub</span>
+              <span className="xs:hidden">4D Scrub</span>
             </div>
 
             <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300 font-medium">
@@ -171,7 +172,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           </div>
 
           {/* Center: Year Display & World Event Badge */}
-          <div className="flex items-center gap-2.5 flex-1 justify-center max-w-[420px]">
+          <div className="flex items-center gap-2 flex-1 justify-center max-w-[420px]">
             <div className="flex items-baseline gap-1">
               <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-400 drop-shadow-sm">
                 {currentYear}
@@ -201,12 +202,12 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           </div>
 
           {/* Right: Moments Popover & Close Button */}
-          <div className="flex items-center gap-2" ref={momentsContainerRef}>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0" ref={momentsContainerRef}>
             {/* Historical Moments Dropdown Button */}
             <div className="relative">
               <button
                 onClick={() => setIsMomentsOpen((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                   isMomentsOpen || activeMoment
                     ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
                     : 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border-slate-700 hover:border-slate-600'
@@ -220,7 +221,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
 
               {/* Historical Moments Popover Menu */}
               {isMomentsOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-80 sm:w-96 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 animate-in slide-in-from-bottom-2 duration-150">
+                <div className="absolute bottom-full right-0 mb-2 w-[calc(100vw-2rem)] max-w-sm sm:w-96 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 animate-in slide-in-from-bottom-2 duration-150">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
                       <Sparkles className="w-3.5 h-3.5" />
@@ -374,7 +375,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: -10 Years */}
           <button
             onClick={() => handleStepYear(-10)}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="hidden sm:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors items-center justify-center"
             title="Step back 10 years"
           >
             <ChevronsLeft className="w-4 h-4" />
@@ -383,7 +384,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: -1 Year */}
           <button
             onClick={() => handleStepYear(-1)}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center"
             title="Step back 1 year (Left Arrow)"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -460,7 +461,7 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: +1 Year */}
           <button
             onClick={() => handleStepYear(1)}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center"
             title="Step forward 1 year (Right Arrow)"
           >
             <ChevronRight className="w-4 h-4" />
@@ -469,14 +470,14 @@ export const TemporalScrubBar: React.FC<TemporalScrubBarProps> = ({
           {/* Stepper: +10 Years */}
           <button
             onClick={() => handleStepYear(10)}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="hidden sm:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors items-center justify-center"
             title="Step forward 10 years"
           >
             <ChevronsRight className="w-4 h-4" />
           </button>
 
           {/* Direct Year Input */}
-          <div className="flex items-center gap-1 bg-slate-800/90 px-2 py-1 rounded-xl border border-slate-700">
+          <div className="hidden sm:flex items-center gap-1 bg-slate-800/90 px-2 py-1 rounded-xl border border-slate-700">
             <input
               type="number"
               min={minYear}

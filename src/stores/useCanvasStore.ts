@@ -54,7 +54,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   // Viewport
   zoom: 0.9,
   pan: { x: 400, y: 150 },
-  isMiniMapOpen: true,
+  isMiniMapOpen: typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
   toggleMiniMap: () => {
     set((state) => ({ isMiniMapOpen: !state.isMiniMapOpen }));
   },
@@ -90,8 +90,8 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   },
 
   // Selection
-  selectedPersonId: 'me',
-  selectedPersonIds: new Set(['me']),
+  selectedPersonId: null,
+  selectedPersonIds: new Set<string>(),
   comparisonPersonId: null,
   selectedUnionId: null,
   focusPersonId: null,

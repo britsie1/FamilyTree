@@ -477,10 +477,16 @@ function FamilyTreeMain() {
         window.history.pushState({}, '', window.location.pathname);
       }
 
-      const initialPersonId = focusPersonId && newTree.people[focusPersonId]
-        ? focusPersonId
-        : (newTree.rootPersonId || Object.keys(newTree.people)[0] || null);
-      selectPerson(initialPersonId);
+      // On mobile viewports, keep canvas unoccluded on initial load so user sees their tree
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      if (!isMobile) {
+        const initialPersonId = focusPersonId && newTree.people[focusPersonId]
+          ? focusPersonId
+          : (newTree.rootPersonId || Object.keys(newTree.people)[0] || null);
+        selectPerson(initialPersonId);
+      } else {
+        selectPerson(null);
+      }
       setSelectedUnionId(null);
       clearFocus();
       setContextMenu(null);
@@ -1006,7 +1012,7 @@ function FamilyTreeMain() {
   }, [isReadOnly, addChild, addParent, addPartner, addSibling, updatePersonPosition, layoutStyle, selectPerson]);
 
   return (
-    <div className="w-screen h-screen flex flex-col overflow-hidden bg-slate-50 relative">
+    <div className="w-full h-full max-h-[100dvh] flex flex-col overflow-hidden bg-slate-50 relative">
       {/* Top Navbar */}
       <TopNavbar
         tree={tree}
@@ -1051,29 +1057,28 @@ function FamilyTreeMain() {
 
         {/* View-Only Mode Banner */}
         {isReadOnly && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3.5 z-40 text-xs animate-in slide-in-from-top duration-200 border border-amber-400 font-medium">
-            <div className="flex items-center gap-1.5 font-bold">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 backdrop-blur-md px-3 sm:px-4 py-2 rounded-2xl shadow-xl flex items-center gap-2 sm:gap-3.5 z-40 text-xs animate-in slide-in-from-top duration-200 border border-amber-400 font-medium max-w-[calc(100vw-2rem)]">
+            <div className="flex items-center gap-1.5 font-bold truncate">
               <Eye className="w-4 h-4 text-slate-950 flex-shrink-0" />
-              <span>You have View-Only access to this family tree.</span>
+              <span className="truncate">View-Only access.</span>
             </div>
             <button
               onClick={handleMakeCopy}
-              className="bg-slate-950 hover:bg-slate-900 text-white px-3 py-1 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer hover:scale-105"
+              className="bg-slate-950 hover:bg-slate-900 text-white px-2.5 sm:px-3 py-1 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer hover:scale-105 flex-shrink-0"
             >
               <Copy className="w-3.5 h-3.5 text-amber-400" />
-              <span>Make a Copy to Edit</span>
+              <span>Make Copy</span>
             </button>
           </div>
         )}
 
         {/* Floating Focus Mode Banner */}
         {focusPersonId && tree.people[focusPersonId] && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-indigo-900/90 text-white backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3 z-40 text-xs animate-in slide-in-from-top duration-200 border border-indigo-700/50">
-            <div className="flex items-center gap-1.5">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-indigo-900/90 text-white backdrop-blur-md px-3 sm:px-4 py-2 rounded-2xl shadow-xl flex items-center gap-2 sm:gap-3 z-40 text-xs animate-in slide-in-from-top duration-200 border border-indigo-700/50 max-w-[calc(100vw-2rem)]">
+            <div className="flex items-center gap-1.5 truncate">
               <Target className="w-4 h-4 text-indigo-300 flex-shrink-0" />
-              <span>
-                Viewing focused branch for{' '}
-                <strong>{getPersonDisplayName(tree.people[focusPersonId])}</strong>
+              <span className="truncate">
+                Focus: <strong>{getPersonDisplayName(tree.people[focusPersonId])}</strong>
               </span>
             </div>
             <button
@@ -1081,10 +1086,10 @@ function FamilyTreeMain() {
                 clearFocus();
                 setTimeout(fitToScreen, 60);
               }}
-              className="bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors flex items-center gap-1 text-white shadow-xs"
+              className="bg-indigo-700 hover:bg-indigo-600 active:bg-indigo-800 px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-colors flex items-center gap-1 text-white shadow-xs flex-shrink-0"
             >
               <X className="w-3.5 h-3.5" />
-              <span>Show Full Tree</span>
+              <span>Full Tree</span>
             </button>
           </div>
         )}
@@ -1126,20 +1131,20 @@ function FamilyTreeMain() {
 
         {/* Multi-Selection HUD */}
         {selectedPersonIds.size > 1 && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3.5 z-40 text-xs border border-slate-700/60 animate-in slide-in-from-bottom-3 duration-200">
+          <div className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 sm:gap-3.5 z-40 text-xs border border-slate-700/60 animate-in slide-in-from-bottom-3 duration-200 max-w-[calc(100vw-2rem)]">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-              <span className="font-semibold text-slate-100">
-                {selectedPersonIds.size} people selected
+              <span className="font-semibold text-slate-100 whitespace-nowrap">
+                {selectedPersonIds.size} selected
               </span>
             </div>
             <div className="h-4 w-px bg-slate-700" />
             <button
               onClick={() => setIsCreateTreeModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer hover:scale-105"
+              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer hover:scale-105 whitespace-nowrap"
             >
               <GitFork className="w-3.5 h-3.5" />
-              <span>Create new tree</span>
+              <span>Create tree</span>
             </button>
             <button
               onClick={clearSelection}

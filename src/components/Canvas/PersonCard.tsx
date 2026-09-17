@@ -155,6 +155,8 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
   return (
     <div
+      data-testid="person-card"
+      data-person-id={person.id}
       style={{
         position: 'absolute',
         transform: `translate(${currentX}px, ${currentY}px)`,
@@ -371,7 +373,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           <>
             {/* Left: + Parent */}
             <button
-              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add parent or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -387,7 +389,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Right: + Child */}
             <button
-              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-95"
+              className="pointer-events-auto absolute -right-4 sm:-right-3.5 top-1/2 -translate-y-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-3 sm:px-2.5 h-8 sm:h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-90"
               title="Click to add child or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -404,7 +406,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Top: + Partner */}
             <button
-              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add spouse or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -420,7 +422,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Bottom: + Sibling */}
             <button
-              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add sibling or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -438,7 +440,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
           <>
             {/* Top: + Parent */}
             <button
-              className="pointer-events-auto absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -top-4 sm:-top-3.5 left-1/2 -translate-x-1/2 bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add parent or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -454,7 +456,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Bottom: + Child */}
             <button
-              className="pointer-events-auto absolute -bottom-3.5 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-2.5 h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-95"
+              className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-3 sm:px-2.5 h-8 sm:h-7 flex items-center justify-center gap-1 shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair text-xs font-medium active:scale-90"
               title="Click to add child or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -471,7 +473,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Right: + Partner */}
             <button
-              className="pointer-events-auto absolute -right-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -right-4 sm:-right-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-rose-500 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add spouse or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -487,7 +489,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
             {/* Left: + Sibling */}
             <button
-              className="pointer-events-auto absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-7 h-7 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-110 cursor-crosshair active:scale-95"
+              className="pointer-events-auto absolute -left-4 sm:-left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 hover:text-amber-600 rounded-full w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-110 cursor-crosshair active:scale-90"
               title="Click to add sibling or drag cable to connect"
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -504,14 +506,14 @@ export const PersonCard: React.FC<PersonCardProps> = ({
             {/* Collapse toggle button when branch is expanded */}
             {hasDescendants && !node.isCollapsed && onToggleCollapse && (
               <button
-                className="pointer-events-auto absolute -bottom-3.5 right-2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-500 hover:text-amber-600 rounded-full w-6 h-6 flex items-center justify-center shadow-md transition-all scale-90 hover:scale-105 z-30"
+                className="pointer-events-auto absolute -bottom-4 sm:-bottom-3.5 right-2 bg-white border border-slate-300 hover:border-amber-500 hover:bg-amber-50 text-slate-500 hover:text-amber-600 rounded-full w-7 h-7 sm:w-6 sm:h-6 flex items-center justify-center shadow-md transition-all scale-95 hover:scale-105 z-30"
                 title="Collapse descendants branch"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleCollapse(person.id);
                 }}
               >
-                <ChevronUp className="w-3 h-3" />
+                <ChevronUp className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
               </button>
             )}
           </>

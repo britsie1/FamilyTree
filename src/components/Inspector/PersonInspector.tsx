@@ -83,6 +83,8 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
   onLinkExistingTree,
   onRemoveTreeLink,
 }) => {
+  const [isMobileMinimized, setIsMobileMinimized] = React.useState(false);
+
   if (!selectedPersonId) return null;
 
   const person = tree.people[selectedPersonId];
@@ -134,52 +136,123 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
   });
 
   return (
-    <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-in slide-in-from-right duration-200">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
-            {((person.knownAs?.trim() || person.firstName)?.[0] || '') + (person.lastName?.[0] || '') || '?'}
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900 text-base leading-tight truncate max-w-[180px]" title={fullName}>
-              {displayName}
-            </h3>
-            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-              <span className="font-mono">ID: {person.id}</span>
-              {person.knownAs?.trim() && (person.firstName || person.middleNames) && (
-                <span className="truncate max-w-[110px]" title={`Full legal name: ${fullName}`}>
-                  • {person.firstName}
-                </span>
-              )}
+    <div
+      role="region"
+      aria-label="Person Inspector"
+      data-testid="person-inspector"
+      className={`fixed inset-x-0 bottom-0 ${
+        isMobileMinimized ? 'max-h-24' : 'max-h-[85dvh]'
+      } w-full bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 z-50 flex flex-col transition-all duration-300 sm:top-0 sm:right-0 sm:bottom-auto sm:left-auto sm:w-96 sm:h-full sm:max-h-full sm:rounded-none sm:border-t-0 sm:border-l pb-[env(safe-area-inset-bottom,0px)]`}
+    >
+      {/* Mobile drag handle */}
+      <div
+        className="sm:hidden flex flex-col items-center pt-2.5 pb-1 cursor-pointer select-none"
+        onClick={() => setIsMobileMinimized((prev) => !prev)}
+        title={isMobileMinimized ? 'Expand full inspector' : 'Minimize inspector'}
+      >
+        <div className="w-12 h-1.5 bg-slate-300 rounded-full hover:bg-slate-400 transition-colors" />
+      </div>
+
+      {/* Mobile Minimized Peek Bar (< sm) */}
+      {isMobileMinimized ? (
+        <div className="sm:hidden flex items-center justify-between px-4 py-2 bg-slate-50/80">
+          <div
+            className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+            onClick={() => setIsMobileMinimized(false)}
+          >
+            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+              {((person.knownAs?.trim() || person.firstName)?.[0] || '') + (person.lastName?.[0] || '') || '?'}
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-slate-900 text-xs truncate">{displayName}</h3>
+              <p className="text-[10px] text-indigo-600 font-medium flex items-center gap-0.5">
+                <span>Tap to view / edit details</span>
+                <ChevronUp className="w-3 h-3" />
+              </p>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {!isReadOnly && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {!isReadOnly && (
+              <button
+                onClick={() => onAddChild(person.id)}
+                className="p-2 bg-indigo-600 active:bg-indigo-700 text-white rounded-xl text-xs font-semibold"
+                title="Add Child"
+              >
+                <Baby className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
-              onClick={() => {
-                if (window.confirm(`Are you sure you want to remove ${displayName} from the tree?`)) {
-                  onDeletePerson(person.id);
-                  onClose();
-                }
-              }}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-              title="Delete person"
+              onClick={() => setIsMobileMinimized(false)}
+              className="p-2 bg-slate-100 text-slate-700 rounded-xl"
+              title="Expand inspector"
             >
-              <Trash2 className="w-4 h-4" />
+              <ChevronUp className="w-4 h-4" />
             </button>
-          )}
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-            title="Close inspector"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-700 rounded-xl"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 sm:py-4 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                {((person.knownAs?.trim() || person.firstName)?.[0] || '') + (person.lastName?.[0] || '') || '?'}
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-slate-900 text-sm sm:text-base leading-tight truncate max-w-[170px] sm:max-w-[180px]" title={fullName}>
+                  {displayName}
+                </h3>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="font-mono">ID: {person.id}</span>
+                  {person.knownAs?.trim() && (person.firstName || person.middleNames) && (
+                    <span className="truncate max-w-[100px]" title={`Full legal name: ${fullName}`}>
+                      • {person.firstName}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Mobile minimize button */}
+              <button
+                onClick={() => setIsMobileMinimized(true)}
+                className="sm:hidden p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title="Minimize inspector"
+              >
+                <ChevronDown className="w-5 h-5" />
+              </button>
+
+              {!isReadOnly && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to remove ${displayName} from the tree?`)) {
+                      onDeletePerson(person.id);
+                      onClose();
+                    }
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  title="Delete person"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title="Close inspector"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
 
       {/* Read-Only Notice */}
       {isReadOnly && (
@@ -589,7 +662,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                             }
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
                         title="Unlink from this parent"
                       >
                         <Unlink className="w-3 h-3" />
@@ -703,7 +776,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                                 onUnlinkPartner(person.id, unionId);
                               }
                             }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
+                            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
                             title="Unlink this spouse/partner"
                           >
                             <Unlink className="w-3 h-3" />
@@ -757,7 +830,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                             onUnlinkChild(ch.id);
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
                         title="Unlink this child"
                       >
                         <Unlink className="w-3 h-3" />
@@ -830,7 +903,7 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                               onRemoveTreeLink(person.id, link.treeId);
                             }
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
                           title="Unlink this tree"
                         >
                           <Unlink className="w-3 h-3" />
@@ -858,6 +931,8 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
           />
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
