@@ -15,6 +15,7 @@ import { CreateTreeFromSelectionModal, type CreateTreeOptions } from './CreateTr
 import { LinkExistingTreeModal } from './LinkExistingTreeModal';
 import { ShareTreeModal } from './ShareTreeModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { SunburstModal } from './SunburstModal';
 
 export interface TreeModalsProps {
   onSwitchTree: (
@@ -86,6 +87,10 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
 
   const previewDoc = useModalStore((s) => s.previewDoc);
   const closePreviewDoc = useModalStore((s) => s.closePreviewDoc);
+
+  const isSunburstModalOpen = useModalStore((s) => s.isSunburstModalOpen);
+  const closeSunburstModal = useModalStore((s) => s.closeSunburstModal);
+  const sunburstPersonId = useModalStore((s) => s.sunburstPersonId);
 
   const relModal = useModalStore((s) => s.relModal);
   const closeRelationshipModal = useModalStore((s) => s.closeRelationshipModal);
@@ -251,6 +256,17 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
               }
             }
           }}
+        />
+      )}
+
+      {/* Ancestor Sunburst Chart Modal */}
+      {isSunburstModalOpen && (
+        <SunburstModal
+          isOpen={isSunburstModalOpen}
+          onClose={closeSunburstModal}
+          tree={tree}
+          initialPersonId={sunburstPersonId || selectedPersonId}
+          onSelectPersonInTree={selectPerson}
         />
       )}
     </>

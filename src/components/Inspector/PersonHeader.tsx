@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useCollabStore } from '../../stores/useCollabStore';
+import { useModalStore } from '../../stores/useModalStore';
 import {
   X,
   Trash2,
@@ -21,6 +22,7 @@ import {
   Eye,
   Camera,
   Loader2,
+  Compass,
 } from 'lucide-react';
 
 export interface PersonHeaderProps {
@@ -70,6 +72,7 @@ export const PersonHeader: React.FC<PersonHeaderProps> = ({
   const storeClearSelection = useCanvasStore((s) => s.clearSelection);
 
   const storeUserPermission = useCollabStore((s) => s.userPermission);
+  const openSunburstModal = useModalStore((s) => s.openSunburstModal);
 
   const tree = propTree || storeTree;
   const isReadOnly = propIsReadOnly !== undefined ? propIsReadOnly : storeUserPermission === 'viewer';
@@ -307,7 +310,7 @@ export const PersonHeader: React.FC<PersonHeaderProps> = ({
           <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-850 border-b border-slate-100 dark:border-slate-800 text-xs">
             <button
               onClick={() => handleToggleFocus(person.id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg font-medium transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg font-medium transition-all cursor-pointer ${
                 isFocused
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400'
@@ -316,6 +319,15 @@ export const PersonHeader: React.FC<PersonHeaderProps> = ({
             >
               <Target className="w-3.5 h-3.5" />
               <span>{isFocused ? 'Focused Branch' : 'Focus Branch'}</span>
+            </button>
+
+            <button
+              onClick={() => openSunburstModal(person.id)}
+              className="flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg font-medium border bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer shadow-2xs"
+              title="Generate Ancestor Sunburst / Fan chart"
+            >
+              <Compass className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Sunburst</span>
             </button>
 
             {hasChildren && (

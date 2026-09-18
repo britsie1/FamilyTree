@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { GitFork, XCircle, Users, Link2 } from 'lucide-react';
+import { GitFork, XCircle, Users, Link2, Compass } from 'lucide-react';
 
 interface ContextMenuProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface ContextMenuProps {
   selectedCount: number;
   onCreateNewTree: () => void;
   onLinkExistingTree?: () => void;
+  onOpenSunburst?: () => void;
   onDeselectAll: () => void;
   onClose: () => void;
 }
@@ -19,6 +20,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   selectedCount,
   onCreateNewTree,
   onLinkExistingTree,
+  onOpenSunburst,
   onDeselectAll,
   onClose,
 }) => {
@@ -119,6 +121,28 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               </div>
               <div className="text-[10px] text-slate-400 dark:text-slate-500 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 leading-snug">
                 Connect to person on another tree
+              </div>
+            </div>
+          </button>
+        )}
+
+        {onOpenSunburst && selectedCount === 1 && (
+          <button
+            onClick={() => {
+              onClose();
+              onOpenSunburst();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-indigo-50/80 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors group text-left cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors flex-shrink-0">
+              <Compass className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold leading-snug text-slate-900 dark:text-white group-hover:text-amber-700 dark:group-hover:text-amber-400">
+                Ancestor Sunburst
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 group-hover:text-amber-600 dark:group-hover:text-amber-400 leading-snug">
+                Radial multi-generation ancestor chart
               </div>
             </div>
           </button>

@@ -98,4 +98,16 @@ describe('useModalStore', () => {
     assert.strictEqual(useModalStore.getState().isShareModalOpen, false);
     assert.strictEqual(useModalStore.getState().activeModal, null);
   });
+
+  it('opens and closes sunburst modal with personId', () => {
+    useModalStore.getState().openSunburstModal('person-42');
+    assert.strictEqual(useModalStore.getState().isSunburstModalOpen, true);
+    assert.strictEqual(useModalStore.getState().sunburstPersonId, 'person-42');
+    assert.deepStrictEqual(useModalStore.getState().activeModal, { type: 'sunburst', personId: 'person-42' });
+
+    useModalStore.getState().closeSunburstModal();
+    assert.strictEqual(useModalStore.getState().isSunburstModalOpen, false);
+    assert.strictEqual(useModalStore.getState().sunburstPersonId, null);
+    assert.strictEqual(useModalStore.getState().activeModal, null);
+  });
 });

@@ -15,6 +15,7 @@ export type ActiveModal =
       relationType: RelationType;
       preferredUnionId?: string;
     }
+  | { type: 'sunburst'; personId: string }
   | null;
 
 export interface ModalStoreState {
@@ -28,6 +29,8 @@ export interface ModalStoreState {
   personToLink: Person | null;
   isShareModalOpen: boolean;
   previewDoc: { doc: PersonDocument; personName: string } | null;
+  isSunburstModalOpen: boolean;
+  sunburstPersonId: string | null;
   relModal: {
     isOpen: boolean;
     sourcePersonId: string | null;
@@ -39,6 +42,10 @@ export interface ModalStoreState {
   openModal: (modal: Exclude<ActiveModal, null>) => void;
   closeModal: () => void;
   closeAllModals: () => void;
+
+  // Ergonomic helper actions
+  openSunburstModal: (personId: string) => void;
+  closeSunburstModal: () => void;
 
   // Ergonomic helper actions
   openEdgeCaseModal: () => void;
@@ -75,6 +82,8 @@ const initialModalFlags = {
   personToLink: null,
   isShareModalOpen: false,
   previewDoc: null,
+  isSunburstModalOpen: false,
+  sunburstPersonId: null,
   relModal: {
     isOpen: false,
     sourcePersonId: null,
@@ -89,6 +98,14 @@ export const useModalStore = create<ModalStoreState>((set) => ({
 
   openModal: (modal) => {
     switch (modal.type) {
+      case 'sunburst':
+        set({
+          activeModal: modal,
+          ...initialModalFlags,
+          isSunburstModalOpen: true,
+          sunburstPersonId: modal.personId,
+        });
+        break;
       case 'edge_case':
         set({
           activeModal: modal,
@@ -159,6 +176,21 @@ export const useModalStore = create<ModalStoreState>((set) => ({
       activeModal: null,
       ...initialModalFlags,
     });
+  },
+
+  openSunburstModal: (personId: string) => {
+    set({
+      activeModal: { type: 'sunburst', personId },
+      isSunburstModalOpen: true,
+      sunburstPersonId: personId,
+    });
+  },
+  closeSunburstModal: () => {
+    set((state) => ({
+      activeModal: state.activeModal?.type === 'sunburst' ? null : state.activeModal,
+      isSunburstModalOpen: false,
+      sunburstPersonId: null,
+    }));
   },
 
   openEdgeCaseModal: () => {

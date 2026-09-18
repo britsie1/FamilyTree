@@ -205,6 +205,13 @@ function FamilyTreeMain() {
               setContextMenu(null);
               handleOpenLinkModal(target);
             }}
+            onOpenSunburst={() => {
+              const targetId = contextMenu.targetPersonId || selectedPersonId;
+              setContextMenu(null);
+              if (targetId) {
+                useModalStore.getState().openSunburstModal(targetId);
+              }
+            }}
             onDeselectAll={() => { setContextMenu(null); useCanvasStore.getState().clearSelection(); }}
             onClose={() => setContextMenu(null)}
           />
