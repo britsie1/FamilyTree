@@ -10,6 +10,10 @@ import {
   buildSunburstLayout,
   getSlotColors,
 } from '../src/services/sunburstService.ts';
+import {
+  formatLifespanWithAge,
+  getPersonMaidenNameLabel,
+} from '../src/services/displayUtils.ts';
 import { createThreeGenSampleTree } from '../src/services/storage.ts';
 
 describe('sunburstService', () => {
@@ -378,6 +382,164 @@ describe('sunburstService', () => {
       const emptySlot = { ...slot, person: null };
       const emptyParchment = getSlotColors(emptySlot, 'parchment', false);
       assert.ok(emptyParchment.fill.includes('rgba'));
+    });
+  });
+
+  describe('formatLifespanWithAge', () => {
+    it('formats both birth and death year with age in brackets', () => {
+      const person = {
+        id: 'p1',
+        firstName: 'George',
+        lastName: 'Windsor',
+        gender: 'male' as const,
+        birthDate: '1895-12-14',
+        deathDate: '1952-02-06',
+        unionIds: [],
+      };
+      assert.strictEqual(formatLifespanWithAge(person), '1895 – 1952 (56)');
+    });
+
+    it('formats living person with b. and omits age', () => {
+      const currentYear = new Date().getFullYear();
+      const birthYear = currentYear - 30;
+      const person = {
+        id: 'p2',
+        firstName: 'Alice',
+        gender: 'female' as const,
+        birthDate: `${birthYear}-01-01`,
+        unionIds: [],
+      };
+      const result = formatLifespanWithAge(person);
+      assert.strictEqual(result, `b. ${birthYear}`);
+    });
+
+    it('formats deceased person with only birth date with dagger symbol', () => {
+      const person = {
+        id: 'p3',
+        firstName: 'Arthur',
+        birthDate: '1850',
+        isDeceased: true,
+        unionIds: [],
+      };
+      assert.strictEqual(formatLifespanWithAge(person), 'b. 1850 (†)');
+    });
+
+    it('formats person with only death date with d.', () => {
+      const person = {
+        id: 'p4',
+        firstName: 'Mary',
+        deathDate: '1945',
+        unionIds: [],
+      };
+      assert.strictEqual(formatLifespanWithAge(person), 'd. 1945');
+    });
+
+    it('returns empty string for null or empty person', () => {
+      assert.strictEqual(formatLifespanWithAge(null), '');
+      assert.strictEqual(formatLifespanWithAge(undefined), '');
+    });
+  });
+
+  describe('getPersonMaidenNameLabel', () => {
+    it('returns née {maidenName} when maidenName is present', () => {
+      const person = {
+        id: 'p1',
+        firstName: 'Elizabeth',
+        lastName: 'Windsor',
+        maidenName: 'Bowes-Lyon',
+        gender: 'female' as const,
+        unionIds: [],
+      };
+      assert.strictEqual(getPersonMaidenNameLabel(person), 'née Bowes-Lyon');
+    });
+
+    it('trims whitespace from maidenName', () => {
+      const person = {
+        id: 'p2',
+        firstName: 'Mary',
+        maidenName: '  Spencer  ',
+        gender: 'female' as const,
+        unionIds: [],
+      };
+      assert.strictEqual(getPersonMaidenNameLabel(person), 'née Spencer');
+    });
+
+    it('returns empty string when maidenName is missing or empty', () => {
+      const person = {
+        id: 'p3',
+        firstName: 'Anne',
+        maidenName: '',
+        gender: 'female' as const,
+        unionIds: [],
+      };
+      assert.strictEqual(getPersonMaidenNameLabel(person), '');
+      assert.strictEqual(getPersonMaidenNameLabel(null), '');
+    });
+  });
+
+  describe('maiden name dynamic ring sizing', () => {
+    it('sizes rings to accommodate maiden names if longer than first/last name', () => {
+      const tree: TreeData = {
+        id: 'test_tree',
+        name: 'Test Tree',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        people: {
+          child: { id: 'child', firstName: 'Child', gender: 'male', unionIds: [], parentUnionId: 'u1' },
+          dad: { id: 'dad', firstName: 'Dad', lastName: 'Short', gender: 'male', unionIds: ['u1'] },
+          mom: {
+            id: 'mom',
+            firstName: 'Ana',
+            lastName: 'Short',
+            maidenName: 'VeryLongAncestralMaidenFamilyName',
+            gender: 'female',
+            unionIds: ['u1'],
+          },
+        },
+        unions: {
+          u1: { id: 'u1', partnerIds: ['dad', 'mom'], childrenIds: ['child'] },
+        },
+      };
+
+      const layout = buildSunburstLayout(tree, 'child', {
+        maxLevel: 1,
+        dynamicRingSizes: true,
+      });
+
+      assert.ok(layout);
+      const gen1Ring = layout.ringRadii[0];
+      // The longest string in Gen 1 should be the maiden name 'née VeryLongAncestralMaidenFamilyName'
+      assert.strictEqual(gen1Ring.longestName, 'née VeryLongAncestralMaidenFamilyName');
+      assert.strictEqual(gen1Ring.longestNameLength, 'née VeryLongAncestralMaidenFamilyName'.length);
+    });
+
+    it('adjusts root radius dynamically if root person has long maiden name', () => {
+      const tree: TreeData = {
+        id: 'test_tree',
+        name: 'Test Tree',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        people: {
+          root: {
+            id: 'root',
+            firstName: 'Ana',
+            lastName: 'Li',
+            maidenName: 'VeryLongAncestralMaidenFamilyName',
+            gender: 'female',
+            unionIds: [],
+          },
+        },
+        unions: {},
+      };
+
+      const layout = buildSunburstLayout(tree, 'root', {
+        maxLevel: 1,
+        dynamicRingSizes: true,
+      });
+
+      assert.ok(layout);
+      // Root radius should be comfortably sized for the maiden name
+      assert.ok(layout.rootNode.radius > 74);
     });
   });
 });

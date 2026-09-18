@@ -2,8 +2,8 @@ import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConf
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
-import { getPersonDisplayName, getPersonFullName } from './displayUtils';
-export { getPersonDisplayName, getPersonFullName };
+import { getPersonDisplayName, getPersonFullName, formatLifespanWithAge, getPersonMaidenNameLabel } from './displayUtils';
+export { getPersonDisplayName, getPersonFullName, formatLifespanWithAge, getPersonMaidenNameLabel };
 
 /**
  * Creates a blank person with zero required fields.

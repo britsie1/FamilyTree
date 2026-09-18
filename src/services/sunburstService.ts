@@ -526,9 +526,11 @@ export function buildSunburstLayout(
   const rawSlots = extractPedigreeSlots(tree, rootPersonId, maxLevel);
 
   const rootDisplayName = getPersonDisplayName(rootPerson);
+  const rootMaidenStr = rootPerson.maidenName?.trim() ? `née ${rootPerson.maidenName.trim()}` : '';
+  const longestRootStrLength = Math.max(rootDisplayName.length, rootMaidenStr.length);
   const dynamicRootRadius = Math.max(
     options.rootRadius ?? 74,
-    Math.round((rootDisplayName.length * 7.5) / 2 + 28)
+    Math.round((longestRootStrLength * 7.5) / 2 + 28)
   );
   const rootRadius = dynamicRingSizes ? dynamicRootRadius : (options.rootRadius || 74);
 
@@ -548,6 +550,13 @@ export function buildSunburstLayout(
           if (name.length > longestNameLength) {
             longestNameLength = name.length;
             longestName = name;
+          }
+          if (slot.person.maidenName?.trim()) {
+            const maidenStr = `née ${slot.person.maidenName.trim()}`;
+            if (maidenStr.length > longestNameLength) {
+              longestNameLength = maidenStr.length;
+              longestName = maidenStr;
+            }
           }
         }
       }

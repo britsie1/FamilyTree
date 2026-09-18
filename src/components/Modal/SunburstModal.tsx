@@ -7,7 +7,13 @@ import {
   type ColorThemeMode,
   type SunburstArcNode,
 } from '../../services/sunburstService';
-import { getPersonDisplayName, getPersonFullName } from '../../services/treeOperations';
+import {
+  getPersonDisplayName,
+  getPersonFullName,
+  formatLifespanWithAge,
+  getPersonMaidenNameLabel,
+} from '../../services/treeOperations';
+import { calculateAge } from '../../services/dateUtils';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { toPng } from 'html-to-image';
@@ -520,14 +526,36 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                   // Label display rules
                   // In outer rings (level >= 6), arc angle is small, only display name if space permits or hovered
                   const arcAngleDegrees = ((node.endAngle - node.startAngle) * 180) / Math.PI;
-                  const canFitText = arcAngleDegrees > 7 || isHovered || isSelected;
+                  const canFitText = arcAngleDegrees > 6 || isHovered || isSelected;
 
                   const displayName = node.person ? getPersonDisplayName(node.person) : 'Unknown';
-                  const lifeYears = node.person
-                    ? `${node.person.birthDate ? node.person.birthDate.substring(0, 4) : ''}${
-                        node.person.deathDate ? ` - ${node.person.deathDate.substring(0, 4)}` : node.person.isDeceased ? ' - †' : ''
-                      }`
-                    : '';
+                  const maidenName = node.person ? getPersonMaidenNameLabel(node.person) : '';
+                  const lifeYearsWithAge = node.person ? formatLifespanWithAge(node.person) : '';
+
+                  // Show maiden name & dates when arc has sufficient angular span or node is active
+                  const showDetails = arcAngleDegrees >= 14 || isHovered || isSelected;
+                  const hasMaiden = Boolean(showDetails && maidenName);
+                  const hasDates = Boolean(showDetails && lifeYearsWithAge);
+
+                  // Vertical layout along spoke
+                  let nameY = 0;
+                  let maidenY = 0;
+                  let datesY = 0;
+
+                  if (hasMaiden && hasDates) {
+                    nameY = -10;
+                    maidenY = 0;
+                    datesY = 10;
+                  } else if (hasMaiden) {
+                    nameY = -5;
+                    maidenY = 6;
+                  } else if (hasDates) {
+                    nameY = -5;
+                    datesY = 7;
+                  }
+
+                  const nameFontSize = Math.max(7.5, Math.min(12, 16 - level * 1.1));
+                  const detailFontSize = Math.max(7, Math.min(8.5, 11 - level * 0.9));
 
                   return (
                     <g
@@ -568,8 +596,9 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                           <text
                             textAnchor="middle"
                             dominantBaseline="central"
+                            y={nameY}
                             fill={node.textColor}
-                            fontSize={Math.max(8, Math.min(12, 16 - level * 1.1))}
+                            fontSize={nameFontSize}
                             fontWeight={node.generation <= 2 ? '700' : '600'}
                             className="select-none font-sans"
                           >
@@ -578,18 +607,34 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                               : displayName}
                           </text>
 
-                          {/* Lifespan years for inner generations */}
-                          {node.generation <= 3 && lifeYears.trim() && (
+                          {/* Maiden Name (for women) */}
+                          {hasMaiden && (
                             <text
                               textAnchor="middle"
                               dominantBaseline="central"
-                              y={10}
+                              y={maidenY}
                               fill={node.textColor}
-                              fontSize={8}
-                              opacity={0.8}
+                              fontSize={detailFontSize}
+                              fontStyle="italic"
+                              opacity={0.88}
+                              className="select-none font-sans"
+                            >
+                              {maidenName}
+                            </text>
+                          )}
+
+                          {/* Lifespan years with age in brackets */}
+                          {hasDates && (
+                            <text
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              y={datesY}
+                              fill={node.textColor}
+                              fontSize={detailFontSize}
+                              opacity={0.82}
                               className="select-none font-sans font-normal"
                             >
-                              {lifeYears}
+                              {lifeYearsWithAge}
                             </text>
                           )}
                         </g>
@@ -599,70 +644,133 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                 })}
 
                 {/* Central Circle: Root Person */}
-                {layout.rootNode.person && (
-                  <g
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (drillStack.length > 0) {
-                        handleDrillUp();
-                      } else {
-                        setSelectedNode(null);
-                        setHoveredNode(null);
-                      }
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <title>
-                      {drillStack.length > 0 ? 'Click to navigate back up' : getPersonFullName(layout.rootNode.person)}
-                    </title>
-                    <circle
-                      r={layout.rootNode.radius}
-                      cx="0"
-                      cy="0"
-                      fill={layout.rootNode.fillColor}
-                      stroke={drillStack.length > 0 ? '#6366f1' : layout.rootNode.strokeColor}
-                      strokeWidth={drillStack.length > 0 ? 3 : 2}
-                      className="transition-all hover:stroke-indigo-500"
-                    />
+                {layout.rootNode.person && (() => {
+                  const rootP = layout.rootNode.person;
+                  const rootName = getPersonDisplayName(rootP);
+                  const rootMaiden = getPersonMaidenNameLabel(rootP);
+                  const rootLifespan = formatLifespanWithAge(rootP);
+                  const isDrilled = drillStack.length > 0;
 
-                    {/* Central Person Information */}
-                    <text
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      y={-12}
-                      fill={layout.rootNode.textColor}
-                      fontSize={13}
-                      fontWeight="700"
-                      className="font-sans select-none pointer-events-none"
-                    >
-                      {getPersonDisplayName(layout.rootNode.person)}
-                    </text>
+                  // Compute vertical alignment without "Root Person"
+                  let nameY = 0;
+                  let maidenY = 0;
+                  let datesY = 0;
 
-                    <text
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      y={6}
-                      fill={isDark ? '#94a3b8' : '#64748b'}
-                      fontSize={10}
-                      fontWeight="500"
-                      className="font-sans select-none pointer-events-none"
-                    >
-                      {drillStack.length > 0 ? '↶ Drill Up' : 'Root Person'}
-                    </text>
+                  if (isDrilled) {
+                    if (rootMaiden && rootLifespan) {
+                      nameY = -6;
+                      maidenY = 7;
+                      datesY = 20;
+                    } else if (rootMaiden) {
+                      nameY = -3;
+                      maidenY = 11;
+                    } else if (rootLifespan) {
+                      nameY = -3;
+                      datesY = 11;
+                    } else {
+                      nameY = 4;
+                    }
+                  } else {
+                    if (rootMaiden && rootLifespan) {
+                      nameY = -13;
+                      maidenY = 1;
+                      datesY = 15;
+                    } else if (rootMaiden) {
+                      nameY = -7;
+                      maidenY = 8;
+                    } else if (rootLifespan) {
+                      nameY = -7;
+                      datesY = 8;
+                    } else {
+                      nameY = 0;
+                    }
+                  }
 
-                    <text
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      y={20}
-                      fill={isDark ? '#64748b' : '#94a3b8'}
-                      fontSize={9}
-                      className="font-sans select-none pointer-events-none"
+                  return (
+                    <g
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isDrilled) {
+                          handleDrillUp();
+                        } else {
+                          setSelectedNode(null);
+                          setHoveredNode(null);
+                        }
+                      }}
+                      className="cursor-pointer"
                     >
-                      {layout.rootNode.person.birthDate ? layout.rootNode.person.birthDate.substring(0, 4) : ''}
-                      {layout.rootNode.person.deathDate ? ` - ${layout.rootNode.person.deathDate.substring(0, 4)}` : ''}
-                    </text>
-                  </g>
-                )}
+                      <title>
+                        {isDrilled ? 'Click to navigate back up' : getPersonFullName(rootP)}
+                      </title>
+                      <circle
+                        r={layout.rootNode.radius}
+                        cx="0"
+                        cy="0"
+                        fill={layout.rootNode.fillColor}
+                        stroke={isDrilled ? '#6366f1' : layout.rootNode.strokeColor}
+                        strokeWidth={isDrilled ? 3 : 2}
+                        className="transition-all hover:stroke-indigo-500"
+                      />
+
+                      {/* Drill Up Indicator (only shown when drilled down) */}
+                      {isDrilled && (
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          y={-22}
+                          fill="#6366f1"
+                          fontSize={10}
+                          fontWeight="600"
+                          className="font-sans select-none pointer-events-none"
+                        >
+                          ↶ Drill Up
+                        </text>
+                      )}
+
+                      {/* Central Person Display Name */}
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        y={nameY}
+                        fill={layout.rootNode.textColor}
+                        fontSize={13}
+                        fontWeight="700"
+                        className="font-sans select-none pointer-events-none"
+                      >
+                        {rootName}
+                      </text>
+
+                      {/* Maiden Name (for women) */}
+                      {rootMaiden && (
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          y={maidenY}
+                          fill={isDark ? '#94a3b8' : '#64748b'}
+                          fontSize={isDrilled ? 9.5 : 10}
+                          fontStyle="italic"
+                          className="font-sans select-none pointer-events-none"
+                        >
+                          {rootMaiden}
+                        </text>
+                      )}
+
+                      {/* Lifespan with Age in brackets */}
+                      {rootLifespan && (
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          y={datesY}
+                          fill={isDark ? '#64748b' : '#94a3b8'}
+                          fontSize={isDrilled ? 9 : 9.5}
+                          className="font-sans select-none pointer-events-none font-mono"
+                        >
+                          {rootLifespan}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })()}
               </svg>
             ) : (
               <div className="text-slate-400 text-sm">No root person selected.</div>
@@ -711,6 +819,11 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                         <div className="font-semibold text-slate-900 dark:text-white text-xs truncate">
                           {getPersonFullName(inspectedPerson)}
                         </div>
+                        {inspectedPerson.maidenName && (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                            née {inspectedPerson.maidenName}
+                          </div>
+                        )}
                         <div className="text-[11px] text-slate-400 dark:text-slate-500 capitalize">
                           Gender: {inspectedPerson.gender || 'Unspecified'}
                         </div>
@@ -718,37 +831,45 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                     </div>
 
                     {/* Vital details */}
-                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-850 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-1.5 text-[11px]">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span>
-                          <strong>Born:</strong> {inspectedPerson.birthDate || 'Unknown date'}
-                        </span>
-                      </div>
-                      {inspectedPerson.birthPlace && (
-                        <div className="flex items-center gap-1.5 text-[11px]">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                          <span className="truncate">
-                            <strong>Place:</strong> {inspectedPerson.birthPlace}
-                          </span>
+                    {(() => {
+                      const inspectedAge = calculateAge(inspectedPerson.birthDate, inspectedPerson.deathDate);
+                      return (
+                        <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-850 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span>
+                              <strong>Born:</strong> {inspectedPerson.birthDate || 'Unknown date'}
+                            </span>
+                          </div>
+                          {inspectedPerson.birthPlace && (
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              <span className="truncate">
+                                <strong>Place:</strong> {inspectedPerson.birthPlace}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span>
+                              <strong>Died:</strong>{' '}
+                              {inspectedPerson.deathDate || (inspectedPerson.isDeceased ? 'Deceased' : 'Living / Unknown')}
+                              {(inspectedPerson.deathDate || inspectedPerson.isDeceased) && inspectedAge !== null && (
+                                <span className="text-slate-400 dark:text-slate-500 ml-1">({inspectedAge})</span>
+                              )}
+                            </span>
+                          </div>
+                          {inspectedPerson.deathPlace && (
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              <span className="truncate">
+                                <strong>Place:</strong> {inspectedPerson.deathPlace}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      <div className="flex items-center gap-1.5 text-[11px]">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span>
-                          <strong>Died:</strong>{' '}
-                          {inspectedPerson.deathDate || (inspectedPerson.isDeceased ? 'Deceased' : 'Living / Unknown')}
-                        </span>
-                      </div>
-                      {inspectedPerson.deathPlace && (
-                        <div className="flex items-center gap-1.5 text-[11px]">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                          <span className="truncate">
-                            <strong>Place:</strong> {inspectedPerson.deathPlace}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 space-y-1.5">

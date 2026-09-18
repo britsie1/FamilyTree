@@ -112,3 +112,51 @@ export function getPersonDisplayInfo(person?: Person | null): PersonDisplayInfo 
   displayInfoCache.set(person, computed);
   return computed;
 }
+
+/**
+ * Formats a person's lifespan with their age at death in brackets for deceased individuals.
+ * For living individuals, age is omitted.
+ * Examples:
+ * - '1925 – 2002 (77)' (deceased with age at death)
+ * - 'b. 1960' (living, age omitted)
+ * - 'b. 1920 (†)' (deceased with unknown death date)
+ * - 'd. 1985' (only death date known)
+ */
+export function formatLifespanWithAge(person?: Person | null): string {
+  if (!person) return '';
+
+  const birthParts = person.birthDate ? parseDateParts(person.birthDate) : null;
+  const deathParts = person.deathDate ? parseDateParts(person.deathDate) : null;
+  const birthYear = birthParts?.year || '';
+  const deathYear = deathParts?.year || '';
+
+  if (birthYear && deathYear) {
+    const age = calculateAge(person.birthDate, person.deathDate);
+    return age !== null ? `${birthYear} – ${deathYear} (${age})` : `${birthYear} – ${deathYear}`;
+  }
+
+  if (birthYear) {
+    if (person.isDeceased) {
+      return `b. ${birthYear} (†)`;
+    }
+    return `b. ${birthYear}`;
+  }
+
+  if (deathYear) {
+    return `d. ${deathYear}`;
+  }
+
+  if (person.isDeceased) {
+    return '(†)';
+  }
+
+  return '';
+}
+
+/**
+ * Returns formatted maiden name (e.g. 'née Smith') if maidenName is present.
+ */
+export function getPersonMaidenNameLabel(person?: Person | null): string {
+  if (!person || !person.maidenName?.trim()) return '';
+  return `née ${person.maidenName.trim()}`;
+}
