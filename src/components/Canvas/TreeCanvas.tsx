@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { TreeData, LayoutNode, TreeLayout, LayoutStyle, TreeLink, Person } from '../../types/tree';
+import type { TreeData, LayoutNode, TreeLayout, LayoutStyle, TreeLink, Person, PersonDocument } from '../../types/tree';
 import { PersonCard } from './PersonCard';
 import { ConnectorLines } from './ConnectorLines';
 import { FamilyGroupEnclosures } from './FamilyGroupEnclosures';
@@ -41,6 +41,7 @@ interface TreeCanvasProps {
     worldPosition: { x: number; y: number }
   ) => void;
   onOpenTreeLink?: (person: Person, link: TreeLink) => void;
+  onPreviewDocument?: (doc: PersonDocument, personName: string) => void;
 
   // Optional overrides
   layoutStyle?: LayoutStyle;
@@ -94,6 +95,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   isMiniMapOpen: propIsMiniMapOpen,
   onToggleMiniMap: propOnToggleMiniMap,
   onOpenTreeLink,
+  onPreviewDocument: propOnPreviewDocument,
 }) => {
   // Read directly from useCanvasStore
   const storeZoom = useCanvasStore((s) => s.zoom);
@@ -606,6 +608,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   const onAddParentRef = useRef(onAddParent);
   const onToggleCollapseRef = useRef(onToggleCollapse);
   const onOpenTreeLinkRef = useRef(onOpenTreeLink);
+  const onPreviewDocumentRef = useRef(propOnPreviewDocument);
   const layoutRef = useRef(layout);
 
   useEffect(() => {
@@ -617,6 +620,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     onAddParentRef.current = onAddParent;
     onToggleCollapseRef.current = onToggleCollapse;
     onOpenTreeLinkRef.current = onOpenTreeLink;
+    onPreviewDocumentRef.current = propOnPreviewDocument;
     layoutRef.current = layout;
   });
 
@@ -674,6 +678,14 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
   const handleCardOpenTreeLink = useCallback((person: Person, link: TreeLink) => {
     onOpenTreeLinkRef.current?.(person, link);
+  }, []);
+
+  const handleCardPreviewDocument = useCallback((doc: PersonDocument, personName: string) => {
+    if (onPreviewDocumentRef.current) {
+      onPreviewDocumentRef.current(doc, personName);
+    } else {
+      useModalStore.getState().openPreviewDoc(doc, personName);
+    }
   }, []);
 
   // Memoized sets for O(1) card lookups
@@ -1034,6 +1046,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               onPortMouseDown={handlePortMouseDown}
               isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
               onOpenTreeLink={handleCardOpenTreeLink}
+              onPreviewDocument={handleCardPreviewDocument}
             />
           );
         })}

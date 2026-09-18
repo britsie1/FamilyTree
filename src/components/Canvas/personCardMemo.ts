@@ -69,7 +69,8 @@ export function arePersonCardPropsEqual(
     prev.onAddSibling !== next.onAddSibling ||
     prev.onAddParent !== next.onAddParent ||
     prev.onToggleCollapse !== next.onToggleCollapse ||
-    prev.onOpenTreeLink !== next.onOpenTreeLink
+    prev.onOpenTreeLink !== next.onOpenTreeLink ||
+    prev.onPreviewDocument !== next.onPreviewDocument
   ) {
     return false;
   }

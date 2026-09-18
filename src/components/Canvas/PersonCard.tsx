@@ -1,10 +1,10 @@
 import React, { memo } from 'react';
-import type { LayoutNode, LayoutStyle, Person, TreeLink } from '../../types/tree';
+import type { LayoutNode, LayoutStyle, Person, TreeLink, PersonDocument } from '../../types/tree';
 import { getPersonDisplayInfo } from '../../services/displayUtils';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
 import { getDirectImageUrl } from '../../services/googleDriveService';
 import { arePersonCardPropsEqual } from './personCardMemo';
-import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink } from 'lucide-react';
+import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip } from 'lucide-react';
 
 export interface PersonCardProps {
   node: LayoutNode;
@@ -38,6 +38,7 @@ export interface PersonCardProps {
   ) => void;
   isConnectTarget?: boolean;
   onOpenTreeLink?: (person: Person, link: TreeLink) => void;
+  onPreviewDocument?: (doc: PersonDocument, personName: string) => void;
 }
 
 const GENDER_STYLES: Record<string, { avatarBg: string; borderAccent: string }> = {
@@ -81,6 +82,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   onPortMouseDown,
   isConnectTarget = false,
   onOpenTreeLink,
+  onPreviewDocument,
 }) => {
   const { data: person, x, y, width, height } = node;
   const currentX = dragOffset ? x + dragOffset.x : x;
@@ -88,6 +90,20 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
 
   const displayInfo = node.displayInfo ?? getPersonDisplayInfo(person);
   const { displayName, fullName, isUnnamed, initials, birthYear, standardDateText } = displayInfo;
+
+  const hasDocuments = Boolean(person.documents && person.documents.length > 0);
+  const documentCount = person.documents?.length || 0;
+  const documentTooltip = hasDocuments
+    ? `${documentCount} attached document${documentCount === 1 ? '' : 's'}: ${person.documents!.map((d) => d.name).join(', ')}`
+    : '';
+
+  const handleAttachmentClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect(person.id, e);
+    if (person.documents && person.documents.length === 1) {
+      onPreviewDocument?.(person.documents[0], displayName);
+    }
+  };
 
   // Temporal 4D calculations
   const isTemporalActive = temporalYear !== null && temporalYear !== undefined;
@@ -227,24 +243,42 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
 
       <div className="flex items-center gap-3 p-2.5 h-full relative">
         {/* Avatar */}
-        <div
-          className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm border flex-shrink-0 overflow-hidden shadow-inner ${styles.avatarBg} ${
-            isUnborn ? 'opacity-40' : ''
-          }`}
-        >
-          {person.avatarUrl ? (
-            <img
-              src={getDirectImageUrl(person.avatarUrl)}
-              alt={displayName}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-          ) : initials !== '?' ? (
-            <span>{initials}</span>
-          ) : (
-            <User className="w-5 h-5 opacity-60" />
+        <div className="relative flex-shrink-0">
+          <div
+            className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm border overflow-hidden shadow-inner ${styles.avatarBg} ${
+              isUnborn ? 'opacity-40' : ''
+            }`}
+          >
+            {person.avatarUrl ? (
+              <img
+                src={getDirectImageUrl(person.avatarUrl)}
+                alt={displayName}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : initials !== '?' ? (
+              <span>{initials}</span>
+            ) : (
+              <User className="w-5 h-5 opacity-60" />
+            )}
+          </div>
+
+          {/* Attachment Indicator Badge on Avatar */}
+          {hasDocuments && (
+            <button
+              type="button"
+              data-testid="person-card-attachment-badge"
+              title={documentTooltip}
+              onClick={handleAttachmentClick}
+              className={`absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full shadow-md border-2 border-white dark:border-slate-900 flex items-center justify-center cursor-pointer pointer-events-auto transition-transform hover:scale-110 z-10 ${
+                documentCount > 1 ? 'px-1.5 h-5 gap-0.5 text-[10px] font-bold' : 'w-5 h-5'
+              }`}
+            >
+              <Paperclip className="w-2.5 h-2.5 stroke-[2.5]" />
+              {documentCount > 1 && <span>{documentCount}</span>}
+            </button>
           )}
         </div>
 
@@ -279,6 +313,17 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
               >
                 <GitFork className="w-3.5 h-3.5 rotate-90" />
               </span>
+            )}
+            {hasDocuments && (
+              <button
+                type="button"
+                data-testid="person-card-attachment-icon"
+                title={documentTooltip}
+                onClick={handleAttachmentClick}
+                className="text-amber-500 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 cursor-pointer flex items-center flex-shrink-0 transition-colors p-0.5 rounded hover:bg-amber-50 dark:hover:bg-amber-950/40"
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
 
