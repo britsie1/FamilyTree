@@ -532,10 +532,9 @@ export const SunburstModal: React.FC<SunburstModalProps> = ({
                   const maidenName = node.person ? getPersonMaidenNameLabel(node.person) : '';
                   const lifeYearsWithAge = node.person ? formatLifespanWithAge(node.person) : '';
 
-                  // Show maiden name & dates when arc has sufficient angular span or node is active
-                  const showDetails = arcAngleDegrees >= 14 || isHovered || isSelected;
-                  const hasMaiden = Boolean(showDetails && maidenName);
-                  const hasDates = Boolean(showDetails && lifeYearsWithAge);
+                  // Always show maiden name and lifespan dates with age whenever text is displayed
+                  const hasMaiden = Boolean(maidenName);
+                  const hasDates = Boolean(lifeYearsWithAge);
 
                   // Vertical layout along spoke
                   let nameY = 0;
