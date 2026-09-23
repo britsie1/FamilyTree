@@ -29,8 +29,11 @@ import {
   X,
   Sun,
   Moon,
+  Activity,
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/useThemeStore';
+import { useModalStore } from '../../stores/useModalStore';
+import { auditTreeHealth } from '../../services/treeHealthAndStatsService';
 
 interface TopNavbarProps {
   tree: TreeData;
@@ -147,6 +150,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
   const peopleCount = Object.keys(tree.people).length;
   const unionCount = Object.keys(tree.unions).length;
+  const health = React.useMemo(() => auditTreeHealth(tree), [tree]);
 
   return (
     <header className="h-14 sm:h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-40 relative select-none gap-1 sm:gap-2 text-slate-900 dark:text-slate-100">
@@ -328,6 +332,22 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             <span className="hidden sm:inline">Trees</span>
           </button>
         )}
+
+        <button
+          onClick={() => useModalStore.getState().openStatisticsModal()}
+          className="hidden sm:flex items-center gap-1 sm:gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 hover:border-indigo-300 dark:hover:border-slate-600 hover:text-indigo-700 dark:hover:text-indigo-300 text-slate-700 dark:text-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+          title={`Tree Health: ${health.score}% (${health.errorCount} errors, ${health.warningCount} warnings). Click to view statistics and health audit.`}
+        >
+          <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+          <span className="hidden md:inline">Stats</span>
+          {health.errorCount > 0 ? (
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+          ) : health.warningCount > 0 ? (
+            <span className="w-2 h-2 rounded-full bg-amber-500" />
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          )}
+        </button>
       </div>
 
       {/* Mobile-Only Header Action Buttons (< sm) */}
@@ -339,6 +359,20 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           aria-label="Search relatives"
         >
           <Search className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => useModalStore.getState().openStatisticsModal()}
+          className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 transition-colors cursor-pointer relative"
+          title={`Tree Health: ${health.score}%. Tap to view statistics and health audit.`}
+          aria-label="Tree Statistics & Health"
+        >
+          <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          {health.errorCount > 0 ? (
+            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+          ) : health.warningCount > 0 ? (
+            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-500" />
+          ) : null}
         </button>
 
         {isReadOnly ? (
@@ -769,6 +803,22 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       <span>Switch & Manage Trees</span>
                     </button>
                   )}
+
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      useModalStore.getState().openStatisticsModal();
+                    }}
+                    className="col-span-2 flex items-center justify-between py-2.5 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer active:scale-98 transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>Tree Health & Statistics</span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                      {health.score}%
+                    </span>
+                  </button>
 
                   <button
                     onClick={() => {

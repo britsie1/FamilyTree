@@ -113,6 +113,17 @@ export function useTreeKeyboardShortcuts(options?: UseTreeKeyboardShortcutsOptio
           );
         }
       }
+
+      // 5. Tree Health & Statistics toggle ('h' or 'H')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (modalState.isStatisticsModalOpen) {
+          modalState.closeStatisticsModal();
+        } else {
+          modalState.openStatisticsModal();
+        }
+        return;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);

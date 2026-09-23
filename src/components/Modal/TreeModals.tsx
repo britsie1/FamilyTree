@@ -16,6 +16,7 @@ import { LinkExistingTreeModal } from './LinkExistingTreeModal';
 import { ShareTreeModal } from './ShareTreeModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { SunburstModal } from './SunburstModal';
+import { TreeStatisticsModal } from './TreeStatisticsModal';
 
 export interface TreeModalsProps {
   onSwitchTree: (
@@ -91,6 +92,9 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
   const isSunburstModalOpen = useModalStore((s) => s.isSunburstModalOpen);
   const closeSunburstModal = useModalStore((s) => s.closeSunburstModal);
   const sunburstPersonId = useModalStore((s) => s.sunburstPersonId);
+
+  const isStatisticsModalOpen = useModalStore((s) => s.isStatisticsModalOpen);
+  const closeStatisticsModal = useModalStore((s) => s.closeStatisticsModal);
 
   const relModal = useModalStore((s) => s.relModal);
   const closeRelationshipModal = useModalStore((s) => s.closeRelationshipModal);
@@ -267,6 +271,16 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
           tree={tree}
           initialPersonId={sunburstPersonId || selectedPersonId}
           onSelectPersonInTree={selectPerson}
+        />
+      )}
+
+      {/* Tree Health & Statistics Modal */}
+      {isStatisticsModalOpen && (
+        <TreeStatisticsModal
+          isOpen={isStatisticsModalOpen}
+          onClose={closeStatisticsModal}
+          tree={tree}
+          onSelectPerson={selectPerson}
         />
       )}
     </>

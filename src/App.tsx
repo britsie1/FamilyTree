@@ -212,6 +212,10 @@ function FamilyTreeMain() {
                 useModalStore.getState().openSunburstModal(targetId);
               }
             }}
+            onOpenStatistics={() => {
+              setContextMenu(null);
+              useModalStore.getState().openStatisticsModal();
+            }}
             onDeselectAll={() => { setContextMenu(null); useCanvasStore.getState().clearSelection(); }}
             onClose={() => setContextMenu(null)}
           />

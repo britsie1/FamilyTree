@@ -16,12 +16,14 @@ export type ActiveModal =
       preferredUnionId?: string;
     }
   | { type: 'sunburst'; personId: string }
+  | { type: 'tree_statistics' }
   | null;
 
 export interface ModalStoreState {
   activeModal: ActiveModal;
 
   // Convenience state flags & payloads for direct component binding
+  isStatisticsModalOpen: boolean;
   isEdgeCaseModalOpen: boolean;
   isTreeManagerOpen: boolean;
   isCreateTreeModalOpen: boolean;
@@ -46,6 +48,9 @@ export interface ModalStoreState {
   // Ergonomic helper actions
   openSunburstModal: (personId: string) => void;
   closeSunburstModal: () => void;
+
+  openStatisticsModal: () => void;
+  closeStatisticsModal: () => void;
 
   // Ergonomic helper actions
   openEdgeCaseModal: () => void;
@@ -75,6 +80,7 @@ export interface ModalStoreState {
 }
 
 const initialModalFlags = {
+  isStatisticsModalOpen: false,
   isEdgeCaseModalOpen: false,
   isTreeManagerOpen: false,
   isCreateTreeModalOpen: false,
@@ -98,6 +104,13 @@ export const useModalStore = create<ModalStoreState>((set) => ({
 
   openModal: (modal) => {
     switch (modal.type) {
+      case 'tree_statistics':
+        set({
+          activeModal: modal,
+          ...initialModalFlags,
+          isStatisticsModalOpen: true,
+        });
+        break;
       case 'sunburst':
         set({
           activeModal: modal,
@@ -190,6 +203,19 @@ export const useModalStore = create<ModalStoreState>((set) => ({
       activeModal: state.activeModal?.type === 'sunburst' ? null : state.activeModal,
       isSunburstModalOpen: false,
       sunburstPersonId: null,
+    }));
+  },
+
+  openStatisticsModal: () => {
+    set({
+      activeModal: { type: 'tree_statistics' },
+      isStatisticsModalOpen: true,
+    });
+  },
+  closeStatisticsModal: () => {
+    set((state) => ({
+      activeModal: state.activeModal?.type === 'tree_statistics' ? null : state.activeModal,
+      isStatisticsModalOpen: false,
     }));
   },
 

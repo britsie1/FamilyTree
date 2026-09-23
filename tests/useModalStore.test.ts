@@ -110,4 +110,14 @@ describe('useModalStore', () => {
     assert.strictEqual(useModalStore.getState().sunburstPersonId, null);
     assert.strictEqual(useModalStore.getState().activeModal, null);
   });
+
+  it('opens and closes tree statistics modal', () => {
+    useModalStore.getState().openStatisticsModal();
+    assert.strictEqual(useModalStore.getState().isStatisticsModalOpen, true);
+    assert.deepStrictEqual(useModalStore.getState().activeModal, { type: 'tree_statistics' });
+
+    useModalStore.getState().closeStatisticsModal();
+    assert.strictEqual(useModalStore.getState().isStatisticsModalOpen, false);
+    assert.strictEqual(useModalStore.getState().activeModal, null);
+  });
 });
