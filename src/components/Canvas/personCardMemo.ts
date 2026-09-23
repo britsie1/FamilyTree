@@ -19,7 +19,10 @@ export function arePersonCardPropsEqual(
     prev.temporalYear !== next.temporalYear ||
     prev.isRoomHonoree !== next.isRoomHonoree ||
     prev.isConnectTarget !== next.isConnectTarget ||
-    prev.layoutStyle !== next.layoutStyle
+    prev.layoutStyle !== next.layoutStyle ||
+    prev.isBeaconActive !== next.isBeaconActive ||
+    prev.isSearchMatch !== next.isSearchMatch ||
+    prev.isSearchDimmed !== next.isSearchDimmed
   ) {
     return false;
   }

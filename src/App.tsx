@@ -133,11 +133,106 @@ function FamilyTreeMain() {
     switchTreeRef.current = handleSwitchTree;
   }, [handleSwitchTree]);
 
-  useTreeKeyboardShortcuts({ onEscape: () => { if (contextMenu) { setContextMenu(null); return true; } } });
+  const beaconTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const centerAnimRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (beaconTimerRef.current) clearTimeout(beaconTimerRef.current);
+      if (centerAnimRef.current) cancelAnimationFrame(centerAnimRef.current);
+    };
+  }, []);
+
+  const handleCenterOnPerson = useCallback((personId: string) => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    const personLayout = layout.nodes[personId];
+    if (!personLayout) return;
+
+    const rect = container.getBoundingClientRect();
+    const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+    // Offset center to account for 384px inspector sidebar on desktop
+    const visibleCenterX = isDesktop ? (rect.width - 384) / 2 : rect.width / 2;
+    const visibleCenterY = rect.height / 2;
+
+    const targetWorldX = personLayout.x + personLayout.width / 2;
+    const targetWorldY = personLayout.y + personLayout.height / 2;
+
+    const currentZoom = useCanvasStore.getState().zoom;
+    const targetZoom = Math.min(Math.max(currentZoom, 0.85), 1.25);
+
+    const targetPanX = visibleCenterX - targetWorldX * targetZoom;
+    const targetPanY = visibleCenterY - targetWorldY * targetZoom;
+
+    // Smoothly animate camera pan and zoom to target person
+    if (centerAnimRef.current) cancelAnimationFrame(centerAnimRef.current);
+    const startPan = useCanvasStore.getState().pan;
+    const startZoom = currentZoom;
+    const startTime = performance.now();
+    const duration = 320; // ms
+
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(progress);
+
+      useCanvasStore.getState().setPan({
+        x: startPan.x + (targetPanX - startPan.x) * eased,
+        y: startPan.y + (targetPanY - startPan.y) * eased,
+      });
+      useCanvasStore.getState().setZoom(
+        startZoom + (targetZoom - startZoom) * eased
+      );
+
+      if (progress < 1) {
+        centerAnimRef.current = requestAnimationFrame(step);
+      } else {
+        centerAnimRef.current = null;
+      }
+    };
+
+    centerAnimRef.current = requestAnimationFrame(step);
+
+    useCanvasStore.getState().setBeaconPersonId(personId);
+    if (beaconTimerRef.current) clearTimeout(beaconTimerRef.current);
+    beaconTimerRef.current = setTimeout(() => {
+      useCanvasStore.getState().setBeaconPersonId(null);
+    }, 2400);
+  }, [layout.nodes]);
+
+  useEffect(() => {
+    useCanvasStore.getState().registerCenterHandler(handleCenterOnPerson);
+    return () => {
+      useCanvasStore.getState().registerCenterHandler(null);
+    };
+  }, [handleCenterOnPerson]);
+
+  useTreeKeyboardShortcuts({
+    onEscape: () => {
+      if (contextMenu) {
+        setContextMenu(null);
+        return true;
+      }
+    },
+    onFitToScreen: fitToScreen,
+  });
   const { handleOpenTreeLink, handleOpenLinkModal, handleLinkTrees, handleRemoveTreeLink, handleCreateTreeFromSelection } = useTreeLinking({ onSwitchTree: handleSwitchTree });
   const { handleQuickLink, handleQuickSpawnRelative } = useQuickConnect();
-  const { handleMakeCopy, handleSelectPreset, handleImportFile, handleExportImage, handleExportJson, handleExportGedcom, handleAddPerson } = useTreeIO({
+  const {
+    handleMakeCopy,
+    handleSelectPreset,
+    handleImportFile,
+    handleExportImage,
+    handleExportJson,
+    handleExportGedcom,
+    handleAddPerson,
+    handleExportSvg,
+    handleExportFullImage,
+  } = useTreeIO({
     containerRef: canvasContainerRef,
+    layout,
     onSwitchTree: handleSwitchTree,
     onClearUrl: () => clearTreeUrl(true),
   });
@@ -163,6 +258,8 @@ function FamilyTreeMain() {
         onExportGedcom={handleExportGedcom}
         onImportFile={handleImportFile}
         onExportImage={handleExportImage}
+        onExportSvg={handleExportSvg}
+        onExportFullImage={handleExportFullImage}
         onSelectPerson={selectPerson}
         onOpenEdgeCaseModal={useModalStore.getState().openEdgeCaseModal}
         onUndo={useTreeStore.getState().undo} onRedo={useTreeStore.getState().redo}
@@ -210,6 +307,13 @@ function FamilyTreeMain() {
               setContextMenu(null);
               if (targetId) {
                 useModalStore.getState().openSunburstModal(targetId);
+              }
+            }}
+            onCalculateKinship={() => {
+              const targetId = contextMenu.targetPersonId || selectedPersonId;
+              setContextMenu(null);
+              if (targetId) {
+                useModalStore.getState().openKinshipModal(targetId);
               }
             }}
             onOpenStatistics={() => {

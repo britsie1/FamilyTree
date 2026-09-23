@@ -9,6 +9,7 @@ interface ConnectorLinesProps {
   layoutStyle?: LayoutStyle;
   hoveredUnionId?: string | null;
   temporalYear?: number | null;
+  relationshipPathIds?: string[];
   onHoverUnion?: (unionId: string | null) => void;
   onSelectUnion?: (unionId: string) => void;
   onAddChildToUnion?: (unionId: string) => void;
@@ -22,6 +23,7 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
   layoutStyle = 'vertical',
   hoveredUnionId,
   temporalYear = null,
+  relationshipPathIds,
   onHoverUnion,
   onSelectUnion,
   onAddChildToUnion,
@@ -29,9 +31,108 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
   const [internalHoveredUnionId, setInternalHoveredUnionId] = useState<string | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
+  // Compute all edges and unions along the relationship path
+  const { pathEdgeIds, pathUnionIds } = React.useMemo(() => {
+    const edgeIds = new Set<string>();
+    const unionIds = new Set<string>();
+
+    if (!relationshipPathIds || relationshipPathIds.length < 2) {
+      return { pathEdgeIds: edgeIds, pathUnionIds: unionIds };
+    }
+
+    for (let i = 0; i < relationshipPathIds.length - 1; i++) {
+      const p1 = relationshipPathIds[i];
+      const p2 = relationshipPathIds[i + 1];
+
+      // Check direct edges between p1 and p2
+      for (const edge of edges) {
+        if (
+          (edge.sourceId === p1 && edge.targetId === p2) ||
+          (edge.sourceId === p2 && edge.targetId === p1)
+        ) {
+          edgeIds.add(edge.id);
+        }
+      }
+
+      // Check through unions
+      for (const [uId, u] of Object.entries(unions)) {
+        const isPartner1 = u.data.partnerIds.includes(p1);
+        const isPartner2 = u.data.partnerIds.includes(p2);
+        const isChild1 = u.data.childrenIds && u.data.childrenIds.includes(p1);
+        const isChild2 = u.data.childrenIds && u.data.childrenIds.includes(p2);
+
+        // Case A: p1 and p2 are spouses/partners in union u
+        if (isPartner1 && isPartner2) {
+          unionIds.add(uId);
+          for (const edge of edges) {
+            if (
+              (edge.sourceId === p1 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === p1) ||
+              (edge.sourceId === p2 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === p2)
+            ) {
+              edgeIds.add(edge.id);
+            }
+          }
+        }
+
+        // Case B: p1 is parent, p2 is child
+        if (isPartner1 && isChild2) {
+          unionIds.add(uId);
+          for (const edge of edges) {
+            if (
+              (edge.sourceId === p1 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === p1) ||
+              (edge.sourceId === uId && edge.targetId === p2) ||
+              (edge.sourceId === p2 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === uId)
+            ) {
+              edgeIds.add(edge.id);
+            }
+          }
+        }
+
+        // Case C: p2 is parent, p1 is child
+        if (isPartner2 && isChild1) {
+          unionIds.add(uId);
+          for (const edge of edges) {
+            if (
+              (edge.sourceId === p2 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === p2) ||
+              (edge.sourceId === uId && edge.targetId === p1) ||
+              (edge.sourceId === p1 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === uId)
+            ) {
+              edgeIds.add(edge.id);
+            }
+          }
+        }
+
+        // Case D: p1 and p2 are siblings (both children of union u)
+        if (isChild1 && isChild2) {
+          unionIds.add(uId);
+          for (const edge of edges) {
+            if (
+              (edge.sourceId === uId && edge.targetId === p1) ||
+              (edge.sourceId === p1 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === p2) ||
+              (edge.sourceId === p2 && edge.targetId === uId) ||
+              (edge.sourceId === uId && edge.targetId === uId && edge.id.includes('bus'))
+            ) {
+              edgeIds.add(edge.id);
+            }
+          }
+        }
+      }
+    }
+
+    return { pathEdgeIds: edgeIds, pathUnionIds: unionIds };
+  }, [relationshipPathIds, edges, unions]);
+
   const activeUnionId = hoveredUnionId ?? internalHoveredUnionId;
   const activePersonId = hoveredPersonId || selectedPersonId;
-  const hasAnyActive = Boolean(activePersonId || activeUnionId || hoveredEdgeId);
+  const hasActivePath = pathEdgeIds.size > 0;
+  const hasAnyActive = Boolean(activePersonId || activeUnionId || hoveredEdgeId || hasActivePath);
 
   // Determine if edge should be highlighted
   const isEdgeHighlighted = (edge: LayoutEdge): boolean => {
@@ -188,10 +289,11 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
       {/* Layer 1: Base Connector Lines */}
       {edges.map((edge) => {
         const highlighted = isEdgeHighlighted(edge);
-        if (highlighted) return null;
+        const isPath = pathEdgeIds.has(edge.id);
+        if (highlighted || isPath) return null;
 
         const { strokeColor, strokeDash, opacityMultiplier } = getEdgeStroke(edge);
-        const baseOpacity = hasAnyActive ? 0.22 : 0.85;
+        const baseOpacity = hasActivePath ? 0.12 : hasAnyActive ? 0.22 : 0.85;
         const finalOpacity = opacityMultiplier !== undefined ? opacityMultiplier : baseOpacity;
 
         return (
@@ -213,7 +315,7 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
       {/* Layer 2: Highlighted Foreground Lines with Glow Underlay */}
       {edges.map((edge) => {
         const highlighted = isEdgeHighlighted(edge);
-        if (!highlighted) return null;
+        if (!highlighted || pathEdgeIds.has(edge.id)) return null;
 
         const { strokeColor, strokeDash } = getEdgeStroke(edge);
 
@@ -245,20 +347,64 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
         );
       })}
 
+      {/* Layer 2.5: Highlighted Relationship Path Edges */}
+      {edges.map((edge) => {
+        if (!pathEdgeIds.has(edge.id)) return null;
+
+        return (
+          <g key={`path_edge_${edge.id}`} className="relationship-path-edge pointer-events-none">
+            {/* Wide radiant glowing halo underlay */}
+            <path
+              d={edge.pathD}
+              fill="none"
+              stroke="#6366f1"
+              strokeWidth={11}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.45}
+              className="animate-pulse"
+            />
+            {/* High-contrast solid indigo path core */}
+            <path
+              d={edge.pathD}
+              fill="none"
+              stroke="#4338ca"
+              strokeWidth={4.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Flowing animated dash tracer */}
+            <path
+              d={edge.pathD}
+              fill="none"
+              stroke="#e0e7ff"
+              strokeWidth={2.5}
+              strokeDasharray="7 7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="relationship-path-dash"
+            />
+          </g>
+        );
+      })}
+
       {/* Layer 3: Junction Connection Dots */}
-      {junctionDots.map((dot) => (
-        <circle
-          key={dot.id}
-          cx={dot.x}
-          cy={dot.y}
-          r={dot.isHighlighted ? 4.8 : 3.5}
-          fill={dot.color}
-          stroke="#ffffff"
-          strokeWidth={1.6}
-          opacity={hasAnyActive && !dot.isHighlighted ? 0.22 : 1.0}
-          className="transition-all duration-150"
-        />
-      ))}
+      {junctionDots.map((dot) => {
+        const isPathDot = Array.from(pathUnionIds).some((uId) => dot.id.includes(uId));
+        return (
+          <circle
+            key={dot.id}
+            cx={dot.x}
+            cy={dot.y}
+            r={isPathDot ? 5.5 : dot.isHighlighted ? 4.8 : 3.5}
+            fill={isPathDot ? '#4f46e5' : dot.color}
+            stroke="#ffffff"
+            strokeWidth={isPathDot ? 2.2 : 1.6}
+            opacity={hasActivePath && !isPathDot ? 0.15 : hasAnyActive && !dot.isHighlighted ? 0.22 : 1.0}
+            className="transition-all duration-150"
+          />
+        );
+      })}
 
       {/* Layer 4: Interactive Invisible Hit Areas for Connector Lines */}
       {edges.map((edge) => (
@@ -283,7 +429,8 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
           hoveredEdgeId &&
           (edges.find((e) => e.id === hoveredEdgeId)?.sourceId === union.id ||
             edges.find((e) => e.id === hoveredEdgeId)?.targetId === union.id);
-        const isActive = isPartnerActive || isChildActive || isUnionHovered || isEdgeHitForUnion;
+        const isPathUnion = pathUnionIds.has(union.id);
+        const isActive = isPartnerActive || isChildActive || isUnionHovered || isEdgeHitForUnion || isPathUnion;
 
         const unionType = union.data.type || 'married';
         const isDivorced = unionType === 'divorced';
@@ -359,6 +506,14 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
               <>
                 <circle r={18} fill="none" stroke="#f59e0b" strokeWidth={2} className="animate-ping opacity-60" />
                 <circle r={16} fill="none" stroke="#f59e0b" strokeWidth={1.8} />
+              </>
+            )}
+
+            {/* Glowing radar pulse if union connects relatives on the relationship path */}
+            {isPathUnion && (
+              <>
+                <circle r={19} fill="none" stroke="#6366f1" strokeWidth={3} className="animate-ping opacity-60" />
+                <circle r={16} fill="none" stroke="#818cf8" strokeWidth={2} className="animate-pulse opacity-85" />
               </>
             )}
 

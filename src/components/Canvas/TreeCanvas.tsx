@@ -11,6 +11,7 @@ import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useModalStore } from '../../stores/useModalStore';
+import { Search, X } from 'lucide-react';
 import {
   calculatePinchTransform,
   getTouchDistance,
@@ -113,6 +114,26 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   const storeToggleCollapse = useCanvasStore((s) => s.toggleCollapse);
   const storeIsMiniMapOpen = useCanvasStore((s) => s.isMiniMapOpen);
   const storeToggleMiniMap = useCanvasStore((s) => s.toggleMiniMap);
+  const beaconPersonId = useCanvasStore((s) => s.beaconPersonId);
+  const canvasSearchQuery = useCanvasStore((s) => s.canvasSearchQuery);
+  const setCanvasSearchQuery = useCanvasStore((s) => s.setCanvasSearchQuery);
+
+  const searchMatchSet = useMemo(() => {
+    if (!canvasSearchQuery.trim()) return null;
+    const query = canvasSearchQuery.toLowerCase();
+    const set = new Set<string>();
+    for (const p of Object.values(tree.people)) {
+      const nameString = `${p.firstName || ''} ${p.middleNames || ''} ${p.knownAs || ''} ${p.lastName || ''} ${p.maidenName || ''}`.toLowerCase();
+      if (
+        nameString.includes(query) ||
+        (p.notes && p.notes.toLowerCase().includes(query)) ||
+        p.id.toLowerCase().includes(query)
+      ) {
+        set.add(p.id);
+      }
+    }
+    return set;
+  }, [tree.people, canvasSearchQuery]);
 
   const zoom = propZoom !== undefined ? propZoom : storeZoom;
   const pan = propPan !== undefined ? propPan : storePan;
@@ -937,6 +958,23 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           className="border-2 border-indigo-500 bg-indigo-500/15 rounded-lg shadow-xs"
         />
       )}
+      {/* Search Highlight HUD Banner */}
+      {searchMatchSet !== null && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-3.5 py-1.5 rounded-2xl shadow-xl flex items-center gap-2.5 z-40 text-xs border border-indigo-500/40 animate-in slide-in-from-top-2">
+          <Search className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <span>
+            Highlighting <strong>{searchMatchSet.size}</strong> {searchMatchSet.size === 1 ? 'relative' : 'relatives'}
+          </span>
+          <button
+            onClick={() => setCanvasSearchQuery('')}
+            className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+            title="Clear search highlight"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Background Architectural Grid Pattern */}
       <svg
         className={`absolute inset-0 w-full h-full pointer-events-none ${isDark ? 'opacity-30' : 'opacity-40'} canvas-background`}
@@ -983,6 +1021,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           layoutStyle={layoutStyle}
           hoveredUnionId={selectedUnionId}
           temporalYear={temporalYear}
+          relationshipPathIds={relationshipPathIds}
           onAddChildToUnion={onAddChildToUnion}
           onSelectUnion={onSelectUnion}
         />
@@ -1018,6 +1057,11 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
         {/* HTML Interactive Person Cards (Culled to visible viewport) */}
         {visibleNodes.map((node: LayoutNode) => {
+          const isSearchActive = searchMatchSet !== null;
+          const isSearchMatch = isSearchActive ? searchMatchSet.has(node.id) : false;
+          const isSearchDimmed = isSearchActive ? !searchMatchSet.has(node.id) : false;
+          const isBeaconActive = beaconPersonId === node.id;
+
           return (
             <PersonCard
               key={node.id}
@@ -1047,6 +1091,9 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
               onOpenTreeLink={handleCardOpenTreeLink}
               onPreviewDocument={handleCardPreviewDocument}
+              isBeaconActive={isBeaconActive}
+              isSearchMatch={isSearchMatch}
+              isSearchDimmed={isSearchDimmed}
             />
           );
         })}

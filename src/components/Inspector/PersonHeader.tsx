@@ -23,6 +23,7 @@ import {
   Camera,
   Loader2,
   Compass,
+  Crosshair,
 } from 'lucide-react';
 
 export interface PersonHeaderProps {
@@ -265,6 +266,15 @@ export const PersonHeader: React.FC<PersonHeaderProps> = ({
             </div>
 
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => useCanvasStore.getState().centerOnPerson(person.id)}
+                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                title="Locate & Center on Canvas"
+                aria-label="Locate on canvas"
+              >
+                <Crosshair className="w-4 h-4" />
+              </button>
+
               {/* Mobile minimize button */}
               <button
                 onClick={onToggleMobileMinimized}

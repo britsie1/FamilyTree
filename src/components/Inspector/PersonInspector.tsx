@@ -7,7 +7,7 @@ import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useCollabStore } from '../../stores/useCollabStore';
 import { useTemporalStore } from '../../stores/useTemporalStore';
 import { useModalStore } from '../../stores/useModalStore';
-import { Sparkles, X } from 'lucide-react';
+import { Sparkles, X, HeartHandshake } from 'lucide-react';
 
 import { PersonHeader } from './PersonHeader';
 import { PersonBioSection } from './PersonBioSection';
@@ -179,16 +179,34 @@ export const PersonInspector: React.FC<PersonInspectorProps> = ({
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug mb-2">
                 {relationship.headline}
               </p>
+              <button
+                type="button"
+                onClick={() => useModalStore.getState().openKinshipModal(person.id)}
+                className="w-full py-1 px-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <HeartHandshake className="w-3.5 h-3.5" />
+                <span>Explore Kinship & Paths...</span>
+              </button>
             </div>
           ) : (
-            <div className="bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-2.5 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <Sparkles className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Tip:</strong> Ctrl+Click another person on the tree to find their relationship (Aunt, Cousin, Grandparent, etc.).
-              </span>
+            <div className="bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-2.5 flex flex-col gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Tip:</strong> Ctrl+Click another person on the tree to find their relationship (Aunt, Cousin, Grandparent, etc.).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => useModalStore.getState().openKinshipModal(person.id)}
+                className="w-full py-1.5 px-3 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 text-indigo-700 dark:text-indigo-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <HeartHandshake className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Calculate Kinship & Lineage...</span>
+              </button>
             </div>
           )}
 

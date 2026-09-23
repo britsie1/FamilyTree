@@ -17,6 +17,8 @@ import { ShareTreeModal } from './ShareTreeModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { SunburstModal } from './SunburstModal';
 import { TreeStatisticsModal } from './TreeStatisticsModal';
+import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
+import { KinshipModal } from './KinshipModal';
 
 export interface TreeModalsProps {
   onSwitchTree: (
@@ -95,6 +97,13 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
 
   const isStatisticsModalOpen = useModalStore((s) => s.isStatisticsModalOpen);
   const closeStatisticsModal = useModalStore((s) => s.closeStatisticsModal);
+
+  const isKeyboardShortcutsOpen = useModalStore((s) => s.isKeyboardShortcutsOpen);
+  const closeKeyboardShortcuts = useModalStore((s) => s.closeKeyboardShortcuts);
+
+  const isKinshipModalOpen = useModalStore((s) => s.isKinshipModalOpen);
+  const closeKinshipModal = useModalStore((s) => s.closeKinshipModal);
+  const kinshipSourcePersonId = useModalStore((s) => s.kinshipSourcePersonId);
 
   const relModal = useModalStore((s) => s.relModal);
   const closeRelationshipModal = useModalStore((s) => s.closeRelationshipModal);
@@ -280,6 +289,25 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
           isOpen={isStatisticsModalOpen}
           onClose={closeStatisticsModal}
           tree={tree}
+          onSelectPerson={selectPerson}
+        />
+      )}
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      {isKeyboardShortcutsOpen && (
+        <KeyboardShortcutsModal
+          isOpen={isKeyboardShortcutsOpen}
+          onClose={closeKeyboardShortcuts}
+        />
+      )}
+
+      {/* Kinship & Relationship Calculator Modal */}
+      {isKinshipModalOpen && (
+        <KinshipModal
+          isOpen={isKinshipModalOpen}
+          onClose={closeKinshipModal}
+          tree={tree}
+          initialPersonId={kinshipSourcePersonId || selectedPersonId}
           onSelectPerson={selectPerson}
         />
       )}

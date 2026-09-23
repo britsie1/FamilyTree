@@ -8,14 +8,16 @@ import { getTreeYearBounds } from '../services/temporalEngine';
 
 export interface UseTreeKeyboardShortcutsOptions {
   onEscape?: () => boolean | void;
+  onFitToScreen?: () => void;
 }
 
 export function useTreeKeyboardShortcuts(options?: UseTreeKeyboardShortcutsOptions) {
   const onEscape = options?.onEscape;
+  const onFitToScreen = options?.onFitToScreen;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
         return;
       }
 
@@ -46,24 +48,22 @@ export function useTreeKeyboardShortcuts(options?: UseTreeKeyboardShortcutsOptio
         return;
       }
 
-      // 2. Zoom shortcuts (Ctrl/Meta + '+', '-', '0')
-      if (e.metaKey || e.ctrlKey) {
-        if (e.key === '=' || e.key === '+') {
-          e.preventDefault();
-          canvasState.setZoom((z) => Math.min(z * 1.15, 2.5));
-          return;
-        }
-        if (e.key === '-' || e.key === '_') {
-          e.preventDefault();
-          canvasState.setZoom((z) => Math.max(z * 0.85, 0.2));
-          return;
-        }
-        if (e.key === '0') {
-          e.preventDefault();
-          canvasState.setZoom(1);
-          canvasState.setPan({ x: 200, y: 100 });
-          return;
-        }
+      // 2. Zoom shortcuts (+ / -, with or without Ctrl/Meta)
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        canvasState.setZoom((z) => Math.min(z * 1.15, 2.5));
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        canvasState.setZoom((z) => Math.max(z * 0.85, 0.2));
+        return;
+      }
+      if (e.key === '0' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        canvasState.setZoom(1);
+        canvasState.setPan({ x: 200, y: 100 });
+        return;
       }
 
       // 3. Escape key handling
@@ -106,15 +106,73 @@ export function useTreeKeyboardShortcuts(options?: UseTreeKeyboardShortcutsOptio
           temporalState.setTemporalYear((y) =>
             Math.max(bounds.minYear, (y ?? bounds.defaultYear) - 1)
           );
+          return;
         } else if (e.key === 'ArrowRight') {
           e.preventDefault();
           temporalState.setTemporalYear((y) =>
             Math.min(bounds.maxYear, (y ?? bounds.defaultYear) + 1)
           );
+          return;
         }
       }
 
-      // 5. Tree Health & Statistics toggle ('h' or 'H')
+      // 5. Fit to screen ('f' or 'F')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        if (onFitToScreen) {
+          onFitToScreen();
+        }
+        return;
+      }
+
+      // 6. Keyboard Shortcuts modal ('?' or Shift + '/')
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        if (modalState.isKeyboardShortcutsOpen) {
+          modalState.closeKeyboardShortcuts();
+        } else {
+          modalState.openKeyboardShortcuts();
+        }
+        return;
+      }
+
+      // 7. Toggle 4D Temporal Timeline ('t' or 'T')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        const bounds = getTreeYearBounds(treeState.tree);
+        temporalState.toggleTimeline(bounds.defaultYear);
+        return;
+      }
+
+      // 8. Toggle MiniMap radar ('m' or 'M')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        canvasState.toggleMiniMap();
+        return;
+      }
+
+      // 9. Toggle Layout style vertical / horizontal ('l' or 'L')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        canvasState.toggleLayoutStyle();
+        return;
+      }
+
+      // 10. Focus Relative Search bar ('/')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === '/') {
+        e.preventDefault();
+        const searchInput =
+          document.querySelector<HTMLInputElement>('[data-testid="relative-search-input"]') ||
+          document.querySelector<HTMLInputElement>('input[placeholder*="Find"]') ||
+          document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+
+      // 11. Tree Health & Statistics toggle ('h' or 'H')
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'h') {
         e.preventDefault();
         if (modalState.isStatisticsModalOpen) {
@@ -124,9 +182,25 @@ export function useTreeKeyboardShortcuts(options?: UseTreeKeyboardShortcutsOptio
         }
         return;
       }
+
+      // 12. Delete selected relative ('Delete' or 'Backspace')
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+        if (!isReadOnly && canvasState.selectedPersonId) {
+          const person = treeState.tree.people[canvasState.selectedPersonId];
+          if (person) {
+            e.preventDefault();
+            const displayName = person.knownAs?.trim() || person.firstName || 'this relative';
+            if (window.confirm(`Are you sure you want to remove ${displayName} from the tree?`)) {
+              treeState.deletePerson(person.id);
+              canvasState.clearSelection();
+            }
+            return;
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onEscape]);
+  }, [onEscape, onFitToScreen]);
 }

@@ -4,7 +4,7 @@ import { getPersonDisplayInfo } from '../../services/displayUtils';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
 import { getDirectImageUrl } from '../../services/googleDriveService';
 import { arePersonCardPropsEqual } from './personCardMemo';
-import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip } from 'lucide-react';
+import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip, GitCommit } from 'lucide-react';
 
 export interface PersonCardProps {
   node: LayoutNode;
@@ -39,6 +39,9 @@ export interface PersonCardProps {
   isConnectTarget?: boolean;
   onOpenTreeLink?: (person: Person, link: TreeLink) => void;
   onPreviewDocument?: (doc: PersonDocument, personName: string) => void;
+  isBeaconActive?: boolean;
+  isSearchMatch?: boolean;
+  isSearchDimmed?: boolean;
 }
 
 const GENDER_STYLES: Record<string, { avatarBg: string; borderAccent: string }> = {
@@ -83,6 +86,9 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   isConnectTarget = false,
   onOpenTreeLink,
   onPreviewDocument,
+  isBeaconActive = false,
+  isSearchMatch = false,
+  isSearchDimmed = false,
 }) => {
   const { data: person, x, y, width, height } = node;
   const currentX = dragOffset ? x + dragOffset.x : x;
@@ -137,6 +143,8 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
     cardStateClasses = `${styles.borderAccent} ring-1 ring-emerald-500/70 border-emerald-400 shadow-md`;
   }
 
+  const isPathDimmed = hasActiveComparison && !isOnRelationshipPath && !isSelected && !isCompared && !isBeaconActive;
+
   return (
     <div
       data-testid="person-card"
@@ -147,18 +155,28 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
         width: `${width}px`,
         height: `${height}px`,
       }}
-      className={`group select-none pointer-events-auto transition-all duration-150 cursor-grab active:cursor-grabbing rounded-xl bg-white dark:bg-slate-900 border border-l-4 shadow-sm ${cardStateClasses} ${
-        isConnectTarget
+      className={`group select-none pointer-events-auto transition-all duration-200 cursor-grab active:cursor-grabbing rounded-xl bg-white dark:bg-slate-900 border border-l-4 shadow-sm ${cardStateClasses} ${
+        isBeaconActive
+          ? 'ring-4 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-950 border-indigo-500 shadow-2xl z-45'
+          : isConnectTarget
           ? 'ring-4 ring-indigo-500/80 border-indigo-500 shadow-2xl z-40 scale-[1.03] animate-pulse'
           : isSelected || isMultiSelected
           ? 'ring-2 ring-indigo-600 border-indigo-600 shadow-lg z-30'
           : isCompared
           ? 'ring-2 ring-purple-600 border-purple-600 shadow-lg z-30'
           : isOnRelationshipPath
-          ? 'ring-2 ring-indigo-300 border-indigo-400 shadow-md z-25'
+          ? 'ring-4 ring-indigo-500 border-indigo-600 shadow-xl z-35 bg-indigo-50/25 dark:bg-indigo-950/40'
+          : isSearchMatch
+          ? 'ring-2 ring-indigo-500 border-indigo-500 shadow-lg scale-[1.02] z-30'
           : isHovered
           ? 'border-slate-400 dark:border-slate-600 shadow-md z-20'
           : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 z-10'
+      } ${
+        isSearchDimmed && !isBeaconActive && !isSelected
+          ? 'opacity-25 grayscale hover:opacity-75 transition-opacity'
+          : isPathDimmed
+          ? 'opacity-35 grayscale-[40%] hover:opacity-80 transition-opacity'
+          : ''
       }`}
       onClick={(e) => {
         e.stopPropagation();
@@ -173,6 +191,21 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       onMouseLeave={() => onHover(null)}
       onMouseDown={(e) => onDragStart(e, person.id)}
     >
+      {/* Interactive Beacon Radar Pulse (Target Locate) */}
+      {isBeaconActive && (
+        <div
+          aria-hidden="true"
+          className="absolute -inset-3 rounded-2xl pointer-events-none z-50 overflow-visible"
+        >
+          {/* Expanding radar ping wave 1 */}
+          <span className="absolute inset-0 rounded-2xl border-2 border-indigo-500 bg-indigo-500/25 animate-ping opacity-80 duration-1000" />
+          {/* Expanding radar ping wave 2 (offset) */}
+          <span className="absolute -inset-2 rounded-2xl border border-indigo-400 bg-indigo-400/15 animate-ping opacity-60 duration-1500 delay-300" />
+          {/* Pulsing vibrant outer glow halo */}
+          <span className="absolute -inset-1 rounded-2xl ring-4 ring-indigo-500/80 shadow-[0_0_30px_rgba(99,102,241,0.7)] animate-pulse" />
+        </div>
+      )}
+
       {/* Honoree Pill Badge */}
       {isRoomHonoree && (
         <span
@@ -198,7 +231,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       {hasActiveComparison && isSelected && (
         <span
           title="Reference Person (A)"
-          className="absolute -top-2 -left-2 bg-indigo-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md z-35"
+          className="absolute -top-2.5 -left-2 bg-indigo-600 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg z-35 ring-2 ring-white dark:ring-slate-900 animate-in zoom-in-75 duration-150"
         >
           A
         </span>
@@ -206,7 +239,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       {isCompared && (
         <span
           title="Comparison Target (B)"
-          className="absolute -top-2 -right-2 bg-purple-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md z-35 animate-bounce"
+          className="absolute -top-2.5 -right-2 bg-purple-600 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg z-35 ring-2 ring-white dark:ring-slate-900 animate-in zoom-in-75 duration-150"
         >
           B
         </span>
@@ -214,9 +247,10 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       {isOnRelationshipPath && !isSelected && !isCompared && (
         <span
           title="On Relationship Connection Path"
-          className="absolute -top-2 right-2 bg-indigo-500/90 text-white text-[9px] font-semibold px-1.5 py-0.2 rounded-full shadow-xs z-35"
+          className="absolute -top-2.5 right-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md z-35 flex items-center gap-1 border border-indigo-300 dark:border-indigo-700 animate-in zoom-in-75 duration-150"
         >
-          Path
+          <GitCommit className="w-3 h-3" />
+          <span>Path</span>
         </span>
       )}
 

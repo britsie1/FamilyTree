@@ -30,8 +30,11 @@ import {
   Sun,
   Moon,
   Activity,
+  Keyboard,
+  Sparkles,
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/useThemeStore';
+import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useModalStore } from '../../stores/useModalStore';
 import { auditTreeHealth } from '../../services/treeHealthAndStatsService';
 
@@ -52,6 +55,8 @@ interface TopNavbarProps {
   onExportGedcom: () => void;
   onImportFile: (file: File) => void;
   onExportImage: () => void;
+  onExportSvg?: () => void;
+  onExportFullImage?: () => void;
   onSelectPerson: (personId: string) => void;
   onOpenEdgeCaseModal: () => void;
   onUndo?: () => void;
@@ -77,6 +82,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   onExportGedcom,
   onImportFile,
   onExportImage,
+  onExportSvg,
+  onExportFullImage,
   onSelectPerson,
   onOpenEdgeCaseModal,
   onUndo,
@@ -163,12 +170,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             autoFocus
             placeholder="Search relative by name..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              useCanvasStore.getState().setCanvasSearchQuery(e.target.value);
+            }}
             className="flex-1 bg-transparent text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none py-1.5"
           />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                useCanvasStore.getState().setCanvasSearchQuery('');
+              }}
               className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
               title="Clear search"
             >
@@ -179,6 +192,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             onClick={() => {
               setIsMobileSearchOpen(false);
               setSearchQuery('');
+              useCanvasStore.getState().setCanvasSearchQuery('');
             }}
             className="px-2.5 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer"
           >
@@ -199,8 +213,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       key={p.id}
                       onClick={() => {
                         onSelectPerson(p.id);
+                        useCanvasStore.getState().centerOnPerson(p.id);
                         setIsMobileSearchOpen(false);
                         setSearchQuery('');
+                        useCanvasStore.getState().setCanvasSearchQuery('');
                       }}
                       className="flex items-center gap-3 p-2.5 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors active:bg-indigo-100 dark:active:bg-slate-750"
                     >
@@ -433,10 +449,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 mr-1.5 sm:mr-2 flex-shrink-0" />
             <input
               type="text"
+              data-testid="relative-search-input"
               placeholder="Find..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
+                useCanvasStore.getState().setCanvasSearchQuery(e.target.value);
                 setIsSearchOpen(true);
               }}
               onFocus={() => setIsSearchOpen(true)}
@@ -458,8 +476,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       key={p.id}
                       onClick={() => {
                         onSelectPerson(p.id);
+                        useCanvasStore.getState().centerOnPerson(p.id);
                         setIsSearchOpen(false);
                         setSearchQuery('');
+                        useCanvasStore.getState().setCanvasSearchQuery('');
                       }}
                       className="flex items-center gap-2 p-2 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
                     >
@@ -562,12 +582,55 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
           {isExportOpen && (
             <div className="absolute top-full right-0 mt-1.5 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-1 z-50 animate-in fade-in duration-100">
+              {onExportSvg && (
+                <button
+                  onClick={() => {
+                    setIsExportOpen(false);
+                    onExportSvg();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-white">Export Vector SVG (.svg)</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Infinite vector clarity, print ready</p>
+                  </div>
+                </button>
+              )}
+              {onExportFullImage && (
+                <button
+                  onClick={() => {
+                    setIsExportOpen(false);
+                    onExportFullImage();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
+                >
+                  <ImageIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-white">Export Full Tree (.png)</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Unclipped high-res full pedigree</p>
+                  </div>
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setIsExportOpen(false);
+                  onExportImage();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
+              >
+                <ImageIcon className="w-4 h-4 text-teal-600 dark:text-teal-400 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white">Export Screen View (.png)</p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">Current canvas viewport snapshot</p>
+                </div>
+              </button>
               <button
                 onClick={() => {
                   setIsExportOpen(false);
                   onExportGedcom();
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer border-t border-slate-100 dark:border-slate-800"
               >
                 <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                 <div>
@@ -588,22 +651,19 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">Layout & manual coordinates</p>
                 </div>
               </button>
-              <button
-                onClick={() => {
-                  setIsExportOpen(false);
-                  onExportImage();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
-              >
-                <ImageIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">Export PNG Image</p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">High-resolution snapshot</p>
-                </div>
-              </button>
             </div>
           )}
         </div>
+
+        {/* Keyboard Shortcuts button */}
+        <button
+          onClick={() => useModalStore.getState().openKeyboardShortcuts()}
+          title="Keyboard shortcuts & hotkeys (?)"
+          aria-label="Keyboard shortcuts"
+          className="hidden md:flex p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
+        >
+          <Keyboard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        </button>
 
         {/* Edge Case & Help info modal */}
         <button

@@ -56,6 +56,19 @@ export interface CanvasStoreState {
     overrides: LayoutOverrides | ((prev: LayoutOverrides) => LayoutOverrides)
   ) => void;
   clearLayoutOverrides: () => void;
+
+  // Visual beacon pulse for located nodes
+  beaconPersonId: string | null;
+  setBeaconPersonId: (id: string | null) => void;
+
+  // Real-time canvas search query
+  canvasSearchQuery: string;
+  setCanvasSearchQuery: (query: string) => void;
+
+  // Center on person viewport handler
+  centerHandler: ((personId: string) => void) | null;
+  registerCenterHandler: (handler: ((personId: string) => void) | null) => void;
+  centerOnPerson: (personId: string) => void;
 }
 
 export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
@@ -248,5 +261,29 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   },
   clearLayoutOverrides: () => {
     set({ layoutOverrides: {} });
+  },
+
+  // Visual beacon pulse for located nodes
+  beaconPersonId: null,
+  setBeaconPersonId: (beaconPersonId) => {
+    set({ beaconPersonId });
+  },
+
+  // Real-time canvas search query
+  canvasSearchQuery: '',
+  setCanvasSearchQuery: (canvasSearchQuery) => {
+    set({ canvasSearchQuery });
+  },
+
+  // Center on person viewport handler
+  centerHandler: null,
+  registerCenterHandler: (handler) => {
+    set({ centerHandler: handler });
+  },
+  centerOnPerson: (personId) => {
+    const handler = get().centerHandler;
+    if (handler) {
+      handler(personId);
+    }
   },
 }));

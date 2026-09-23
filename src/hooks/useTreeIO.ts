@@ -1,7 +1,7 @@
 import { useCallback, type RefObject } from 'react';
 import confetti from 'canvas-confetti';
 import { toPng } from 'html-to-image';
-import type { TreeData } from '../types/tree';
+import type { TreeData, TreeLayout } from '../types/tree';
 import {
   saveCurrentTree,
   exportTreeToJsonFile,
@@ -12,6 +12,7 @@ import {
   createBlankTree,
 } from '../services/storage';
 import { parseGedcom, exportGedcomToFile } from '../services/gedcomService';
+import { exportTreeAsSvg, exportTreeAsFullImage } from '../services/treeExportService';
 import { useTreeStore } from '../stores/useTreeStore';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
@@ -19,11 +20,12 @@ import { useThemeStore } from '../stores/useThemeStore';
 
 export interface UseTreeIOOptions {
   containerRef: RefObject<HTMLDivElement | null>;
+  layout?: TreeLayout;
   onSwitchTree: (tree: TreeData, isCloud?: boolean) => void;
   onClearUrl: () => void;
 }
 
-export function useTreeIO({ containerRef, onSwitchTree, onClearUrl }: UseTreeIOOptions) {
+export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: UseTreeIOOptions) {
   const tree = useTreeStore((s) => s.tree);
   const addPerson = useTreeStore((s) => s.addPerson);
   const makeCopyAction = useTreeStore((s) => s.makeCopy);
@@ -97,6 +99,27 @@ export function useTreeIO({ containerRef, onSwitchTree, onClearUrl }: UseTreeIOO
     }
   }, [containerRef, isDark, tree.name]);
 
+  const handleExportSvg = useCallback(() => {
+    if (!layout) return;
+    try {
+      exportTreeAsSvg(tree, layout, isDark);
+    } catch (err: any) {
+      alert(`Error exporting SVG: ${err.message}`);
+    }
+  }, [tree, layout, isDark]);
+
+  const handleExportFullImage = useCallback(async () => {
+    if (!layout) {
+      return handleExportImage();
+    }
+    try {
+      await exportTreeAsFullImage(tree, layout, isDark);
+    } catch {
+      // Fallback to screen capture
+      await handleExportImage();
+    }
+  }, [tree, layout, isDark, handleExportImage]);
+
   const handleExportJson = useCallback(() => {
     exportTreeToJsonFile(tree);
   }, [tree]);
@@ -117,6 +140,8 @@ export function useTreeIO({ containerRef, onSwitchTree, onClearUrl }: UseTreeIOO
     handleSelectPreset,
     handleImportFile,
     handleExportImage,
+    handleExportFullImage,
+    handleExportSvg,
     handleExportJson,
     handleExportGedcom,
     handleAddPerson,

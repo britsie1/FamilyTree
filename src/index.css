@@ -93,3 +93,18 @@
 .smooth-transition {
   transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
 }
+
+/* Animated flowing dashed line for relationship path */
+@keyframes path-dash-flow {
+  from {
+    stroke-dashoffset: 28;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.relationship-path-dash {
+  animation: path-dash-flow 1.2s linear infinite;
+}
+

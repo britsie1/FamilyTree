@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { GitFork, XCircle, Users, Link2, Compass, Activity } from 'lucide-react';
+import { GitFork, XCircle, Users, Link2, Compass, Activity, HeartHandshake } from 'lucide-react';
 
 interface ContextMenuProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface ContextMenuProps {
   onCreateNewTree: () => void;
   onLinkExistingTree?: () => void;
   onOpenSunburst?: () => void;
+  onCalculateKinship?: () => void;
   onOpenStatistics?: () => void;
   onDeselectAll: () => void;
   onClose: () => void;
@@ -22,6 +23,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onCreateNewTree,
   onLinkExistingTree,
   onOpenSunburst,
+  onCalculateKinship,
   onOpenStatistics,
   onDeselectAll,
   onClose,
@@ -145,6 +147,28 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               </div>
               <div className="text-[10px] text-slate-400 dark:text-slate-500 group-hover:text-amber-600 dark:group-hover:text-amber-400 leading-snug">
                 Radial multi-generation ancestor chart
+              </div>
+            </div>
+          </button>
+        )}
+
+        {onCalculateKinship && selectedCount === 1 && (
+          <button
+            onClick={() => {
+              onClose();
+              onCalculateKinship();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-indigo-50/80 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors group text-left cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-pink-100 dark:bg-pink-950/80 text-pink-600 dark:text-pink-400 flex items-center justify-center group-hover:bg-pink-600 group-hover:text-white transition-colors flex-shrink-0">
+              <HeartHandshake className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold leading-snug text-slate-900 dark:text-white group-hover:text-pink-700 dark:group-hover:text-pink-400">
+                Calculate Kinship...
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 group-hover:text-pink-600 dark:group-hover:text-pink-400 leading-snug">
+                Kinship degree & relationship path
               </div>
             </div>
           </button>

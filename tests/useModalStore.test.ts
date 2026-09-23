@@ -120,4 +120,26 @@ describe('useModalStore', () => {
     assert.strictEqual(useModalStore.getState().isStatisticsModalOpen, false);
     assert.strictEqual(useModalStore.getState().activeModal, null);
   });
+
+  it('opens and closes keyboard shortcuts modal', () => {
+    useModalStore.getState().openKeyboardShortcuts();
+    assert.strictEqual(useModalStore.getState().isKeyboardShortcutsOpen, true);
+    assert.deepStrictEqual(useModalStore.getState().activeModal, { type: 'keyboard_shortcuts' });
+
+    useModalStore.getState().closeKeyboardShortcuts();
+    assert.strictEqual(useModalStore.getState().isKeyboardShortcutsOpen, false);
+    assert.strictEqual(useModalStore.getState().activeModal, null);
+  });
+
+  it('opens and closes kinship modal with optional sourcePersonId', () => {
+    useModalStore.getState().openKinshipModal('person-7');
+    assert.strictEqual(useModalStore.getState().isKinshipModalOpen, true);
+    assert.strictEqual(useModalStore.getState().kinshipSourcePersonId, 'person-7');
+    assert.deepStrictEqual(useModalStore.getState().activeModal, { type: 'kinship', sourcePersonId: 'person-7' });
+
+    useModalStore.getState().closeKinshipModal();
+    assert.strictEqual(useModalStore.getState().isKinshipModalOpen, false);
+    assert.strictEqual(useModalStore.getState().kinshipSourcePersonId, null);
+    assert.strictEqual(useModalStore.getState().activeModal, null);
+  });
 });

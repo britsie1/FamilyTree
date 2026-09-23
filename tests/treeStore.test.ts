@@ -383,6 +383,39 @@ describe('Centralized Zustand Stores', () => {
       canvasStore.clearLayoutOverrides();
       assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides, {});
     });
+
+    it('manages beaconPersonId and canvasSearchQuery in useCanvasStore', () => {
+      const canvasStore = useCanvasStore.getState();
+      assert.strictEqual(canvasStore.beaconPersonId, null);
+      assert.strictEqual(canvasStore.canvasSearchQuery, '');
+
+      canvasStore.setBeaconPersonId('person-beacon-1');
+      assert.strictEqual(useCanvasStore.getState().beaconPersonId, 'person-beacon-1');
+
+      canvasStore.setCanvasSearchQuery('Alexander');
+      assert.strictEqual(useCanvasStore.getState().canvasSearchQuery, 'Alexander');
+
+      canvasStore.setBeaconPersonId(null);
+      canvasStore.setCanvasSearchQuery('');
+      assert.strictEqual(useCanvasStore.getState().beaconPersonId, null);
+      assert.strictEqual(useCanvasStore.getState().canvasSearchQuery, '');
+    });
+
+    it('registers and invokes centerOnPerson handler', () => {
+      const canvasStore = useCanvasStore.getState();
+      let centeredPersonId: string | null = null;
+
+      canvasStore.registerCenterHandler((id) => {
+        centeredPersonId = id;
+      });
+
+      canvasStore.centerOnPerson('p-42');
+      assert.strictEqual(centeredPersonId, 'p-42');
+
+      canvasStore.registerCenterHandler(null);
+      canvasStore.centerOnPerson('p-99');
+      assert.strictEqual(centeredPersonId, 'p-42'); // Unregistered, not updated
+    });
   });
 
   describe('useTemporalStore', () => {

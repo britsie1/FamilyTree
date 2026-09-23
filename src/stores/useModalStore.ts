@@ -17,6 +17,8 @@ export type ActiveModal =
     }
   | { type: 'sunburst'; personId: string }
   | { type: 'tree_statistics' }
+  | { type: 'keyboard_shortcuts' }
+  | { type: 'kinship'; sourcePersonId?: string }
   | null;
 
 export interface ModalStoreState {
@@ -24,6 +26,9 @@ export interface ModalStoreState {
 
   // Convenience state flags & payloads for direct component binding
   isStatisticsModalOpen: boolean;
+  isKeyboardShortcutsOpen: boolean;
+  isKinshipModalOpen: boolean;
+  kinshipSourcePersonId: string | null;
   isEdgeCaseModalOpen: boolean;
   isTreeManagerOpen: boolean;
   isCreateTreeModalOpen: boolean;
@@ -51,6 +56,12 @@ export interface ModalStoreState {
 
   openStatisticsModal: () => void;
   closeStatisticsModal: () => void;
+
+  openKeyboardShortcuts: () => void;
+  closeKeyboardShortcuts: () => void;
+
+  openKinshipModal: (sourcePersonId?: string) => void;
+  closeKinshipModal: () => void;
 
   // Ergonomic helper actions
   openEdgeCaseModal: () => void;
@@ -81,6 +92,9 @@ export interface ModalStoreState {
 
 const initialModalFlags = {
   isStatisticsModalOpen: false,
+  isKeyboardShortcutsOpen: false,
+  isKinshipModalOpen: false,
+  kinshipSourcePersonId: null,
   isEdgeCaseModalOpen: false,
   isTreeManagerOpen: false,
   isCreateTreeModalOpen: false,
@@ -174,6 +188,21 @@ export const useModalStore = create<ModalStoreState>((set) => ({
           },
         });
         break;
+      case 'keyboard_shortcuts':
+        set({
+          activeModal: modal,
+          ...initialModalFlags,
+          isKeyboardShortcutsOpen: true,
+        });
+        break;
+      case 'kinship':
+        set({
+          activeModal: modal,
+          ...initialModalFlags,
+          isKinshipModalOpen: true,
+          kinshipSourcePersonId: modal.sourcePersonId || null,
+        });
+        break;
     }
   },
 
@@ -189,6 +218,34 @@ export const useModalStore = create<ModalStoreState>((set) => ({
       activeModal: null,
       ...initialModalFlags,
     });
+  },
+
+  openKeyboardShortcuts: () => {
+    set({
+      activeModal: { type: 'keyboard_shortcuts' },
+      isKeyboardShortcutsOpen: true,
+    });
+  },
+  closeKeyboardShortcuts: () => {
+    set((state) => ({
+      activeModal: state.activeModal?.type === 'keyboard_shortcuts' ? null : state.activeModal,
+      isKeyboardShortcutsOpen: false,
+    }));
+  },
+
+  openKinshipModal: (sourcePersonId?: string) => {
+    set({
+      activeModal: { type: 'kinship', sourcePersonId },
+      isKinshipModalOpen: true,
+      kinshipSourcePersonId: sourcePersonId || null,
+    });
+  },
+  closeKinshipModal: () => {
+    set((state) => ({
+      activeModal: state.activeModal?.type === 'kinship' ? null : state.activeModal,
+      isKinshipModalOpen: false,
+      kinshipSourcePersonId: null,
+    }));
   },
 
   openSunburstModal: (personId: string) => {
