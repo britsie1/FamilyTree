@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { createDoubleInLawPreset } from '../src/services/storage.ts';
 import { computeLayoutAsync } from '../src/services/layoutClient.ts';
-import type { LayoutNode } from '../src/types/tree.ts';
+import { computeLayout } from '../src/services/layoutEngine.ts';
+import type { LayoutNode, TreeData } from '../src/types/tree.ts';
 
 describe('Spatial Viewport Culling & Async Layout', () => {
   it('computes layout asynchronously via computeLayoutAsync', async () => {
@@ -94,5 +95,20 @@ describe('Spatial Viewport Culling & Async Layout', () => {
 
     // n4 (2000, 2000) -> culled
     assert.strictEqual(isVisible(nodes.n4), false);
+  });
+
+  it('prevents stale layout when switching trees (Bug 4.8)', () => {
+    const treeB: TreeData = {
+      id: 'tree_b',
+      name: 'Tree B',
+      people: {
+        pb1: { id: 'pb1', firstName: 'Alice', lastName: 'Wonderland', unionIds: [] },
+      },
+      unions: {},
+    };
+
+    const layoutB = computeLayout(treeB, 'vertical', false, new Set(), true);
+    assert.ok(layoutB.nodes.pb1, 'Tree B layout must contain pb1');
+    assert.strictEqual(layoutB.nodes.gf_smith, undefined, 'Tree B layout must not contain tree A nodes');
   });
 });

@@ -284,11 +284,15 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
+  const draggingPersonIdRef = useRef<string | null>(null);
+  const layoutRef = useRef(layout);
 
   useEffect(() => {
     zoomRef.current = zoom;
     panRef.current = pan;
-  }, [zoom, pan]);
+    draggingPersonIdRef.current = draggingPersonId;
+    layoutRef.current = layout;
+  }, [zoom, pan, draggingPersonId, layout]);
 
   useEffect(() => {
     const container = canvasContainerRef.current;
@@ -402,7 +406,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     if (!container) return;
 
     interface TouchState {
-      mode: 'none' | 'pan' | 'pinch';
+      mode: 'none' | 'pan' | 'pinch' | 'dragCard';
+      cardPersonId?: string | null;
       startTouch1: TouchCoord;
       startTouch2: TouchCoord;
       startPan: { x: number; y: number };
@@ -415,6 +420,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
     const touchState: TouchState = {
       mode: 'none',
+      cardPersonId: null,
       startTouch1: { clientX: 0, clientY: 0 },
       startTouch2: { clientX: 0, clientY: 0 },
       startPan: { x: 0, y: 0 },
@@ -441,10 +447,38 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       const target = e.target as HTMLElement | null;
       const isBackground =
         target === container || Boolean(target?.classList?.contains('canvas-background'));
+      const cardEl = target?.closest('[data-person-id]') as HTMLElement | null;
+      const isActionButton = Boolean(target?.closest('button'));
 
       if (e.touches.length === 1) {
         const t1 = e.touches[0];
+
+        // If single touch starts on a person card (and not an action button on it), initiate card dragging (Bug 4.2)
+        if (cardEl && !isActionButton) {
+          const personId = cardEl.getAttribute('data-person-id');
+          const node = personId ? layoutRef.current.nodes[personId] : null;
+          if (node && personId) {
+            touchState.mode = 'dragCard';
+            touchState.cardPersonId = personId;
+            touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+            touchState.hasMoved = false;
+            touchState.startedOnBackground = false;
+
+            setDraggingPersonId(personId);
+            draggingPersonIdRef.current = personId;
+            hasMovedCardRef.current = false;
+            dragStartRef.current = {
+              mouseX: t1.clientX,
+              mouseY: t1.clientY,
+              nodeX: node.x,
+              nodeY: node.y,
+            };
+            return;
+          }
+        }
+
         touchState.mode = 'pan';
+        touchState.cardPersonId = null;
         touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
         touchState.startPan = { ...panRef.current };
         touchState.startZoom = zoomRef.current;
@@ -452,12 +486,20 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         touchState.startedOnBackground = isBackground;
         setIsPanning(true);
       } else if (e.touches.length >= 2) {
+        // If transitioning from card drag to 2-finger pinch zoom, cancel card drag
+        if (touchState.mode === 'dragCard') {
+          setDraggingPersonId(null);
+          setDragOffset(null);
+          dragOffsetRef.current = null;
+        }
+
         const t1 = e.touches[0];
         const t2 = e.touches[1];
         const dist = getTouchDistance(t1, t2);
         const mid = getTouchMidpoint(t1, t2, rect);
 
         touchState.mode = 'pinch';
+        touchState.cardPersonId = null;
         touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
         touchState.startTouch2 = { clientX: t2.clientX, clientY: t2.clientY };
         touchState.startPan = { ...panRef.current };
@@ -478,7 +520,21 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
       const rect = container.getBoundingClientRect();
 
-      if (e.touches.length === 1 && touchState.mode === 'pan') {
+      if (e.touches.length === 1 && touchState.mode === 'dragCard') {
+        const t1 = e.touches[0];
+        const dx = (t1.clientX - dragStartRef.current.mouseX) / zoomRef.current;
+        const dy = (t1.clientY - dragStartRef.current.mouseY) / zoomRef.current;
+
+        if (Math.hypot(dx, dy) > 4) {
+          touchState.hasMoved = true;
+          hasMovedCardRef.current = true;
+          suppressClick = true;
+        }
+
+        const offset = { x: dx, y: dy };
+        dragOffsetRef.current = offset;
+        setDragOffset(offset);
+      } else if (e.touches.length === 1 && touchState.mode === 'pan') {
         const t1 = e.touches[0];
         const dx = t1.clientX - touchState.startTouch1.clientX;
         const dy = t1.clientY - touchState.startTouch1.clientY;
@@ -530,15 +586,46 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     const handleTouchEnd = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         // One finger lifted during pinch: smoothly transition back to 1-finger pan
-        const t1 = e.touches[0];
-        touchState.mode = 'pan';
-        touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
-        touchState.startPan = { ...panRef.current };
-        return;
+        if (touchState.mode === 'pinch') {
+          const t1 = e.touches[0];
+          touchState.mode = 'pan';
+          touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
+          touchState.startPan = { ...panRef.current };
+          return;
+        }
       }
 
       if (e.touches.length === 0) {
         // All fingers lifted
+        if (touchState.mode === 'dragCard') {
+          const targetId = touchState.cardPersonId || draggingPersonIdRef.current;
+          if (hasMovedCardRef.current && targetId) {
+            const finalOffset = dragOffsetRef.current || { x: 0, y: 0 };
+            const finalX = dragStartRef.current.nodeX + finalOffset.x;
+            const finalY = dragStartRef.current.nodeY + finalOffset.y;
+            onUpdatePersonPosition(targetId, finalX, finalY);
+            if (onFinishDragPerson) {
+              onFinishDragPerson(targetId);
+            }
+          }
+
+          setDraggingPersonId(null);
+          setDragOffset(null);
+          dragOffsetRef.current = null;
+          touchState.mode = 'none';
+          touchState.cardPersonId = null;
+
+          if (hasMovedCardRef.current) {
+            if (suppressClickTimer) clearTimeout(suppressClickTimer);
+            suppressClickTimer = setTimeout(() => {
+              suppressClick = false;
+            }, 120);
+          } else {
+            suppressClick = false;
+          }
+          return;
+        }
+
         if (!touchState.hasMoved && touchState.startedOnBackground) {
           onSelectPerson(null);
         }
@@ -560,7 +647,13 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     };
 
     const handleTouchCancel = () => {
+      if (touchState.mode === 'dragCard') {
+        setDraggingPersonId(null);
+        setDragOffset(null);
+        dragOffsetRef.current = null;
+      }
       touchState.mode = 'none';
+      touchState.cardPersonId = null;
       touchState.hasMoved = false;
       suppressClick = false;
       setIsPanning(false);
@@ -602,7 +695,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
     // Only pan or marquee if clicking on empty background
     if (e.target === canvasContainerRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
-      if (e.shiftKey) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         setIsMarqueeSelecting(true);
         setMarqueeBox({
@@ -630,7 +723,6 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   const onToggleCollapseRef = useRef(onToggleCollapse);
   const onOpenTreeLinkRef = useRef(onOpenTreeLink);
   const onPreviewDocumentRef = useRef(propOnPreviewDocument);
-  const layoutRef = useRef(layout);
 
   useEffect(() => {
     onSelectPersonRef.current = onSelectPerson;
@@ -664,10 +756,32 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     if (!node) return;
 
     setDraggingPersonId(personId);
+    draggingPersonIdRef.current = personId;
     hasMovedCardRef.current = false;
     dragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
+      nodeX: node.x,
+      nodeY: node.y,
+    };
+  }, []);
+
+  // Touch Start on a Card (Start Dragging Node on Touchscreen) - referentially stable callback (Bug 4.2)
+  const handleCardTouchStart = useCallback((e: React.TouchEvent, personId: string) => {
+    if (e.touches.length !== 1) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) return;
+
+    const node = layoutRef.current.nodes[personId];
+    if (!node) return;
+
+    const t = e.touches[0];
+    setDraggingPersonId(personId);
+    draggingPersonIdRef.current = personId;
+    hasMovedCardRef.current = false;
+    dragStartRef.current = {
+      mouseX: t.clientX,
+      mouseY: t.clientY,
       nodeX: node.x,
       nodeY: node.y,
     };
@@ -892,8 +1006,14 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             }
           }
 
-          if (matchedIds.length > 0 && onMultiSelectPeople) {
-            onMultiSelectPeople(matchedIds, true);
+          const isAppend = Boolean(e.ctrlKey || e.metaKey);
+          if (onMultiSelectPeople) {
+            if (matchedIds.length > 0 || !isAppend) {
+              onMultiSelectPeople(matchedIds, isAppend);
+            }
+          }
+          if (matchedIds.length === 0 && !isAppend) {
+            onSelectPerson(null);
           }
         }
         setIsMarqueeSelecting(false);
@@ -1087,6 +1207,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               onAddSibling={handleCardAddSibling}
               onAddParent={handleCardAddParent}
               onDragStart={handleCardDragStart}
+              onTouchStart={handleCardTouchStart}
               onPortMouseDown={handlePortMouseDown}
               isConnectTarget={connectingState?.hoveredTargetPersonId === node.id}
               onOpenTreeLink={handleCardOpenTreeLink}

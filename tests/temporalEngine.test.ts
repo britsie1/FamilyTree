@@ -255,5 +255,25 @@ describe('Temporal Engine', () => {
       assert.ok(bounds.minYear <= 1910);
       assert.ok(bounds.maxYear >= 2026);
     });
+
+    test('supports pre-1800 ancestors down to 1500 without clamping to 1800 (Bug 4.7)', () => {
+      const historicalTree: TreeData = {
+        id: 'tree_historical',
+        name: 'Historical Lineage',
+        people: {
+          anc_1650: {
+            id: 'anc_1650',
+            firstName: 'Geoffrey',
+            lastName: 'Chaucer',
+            birthDate: '1652',
+            unionIds: [],
+          },
+        },
+        unions: {},
+      };
+      const bounds = getTreeYearBounds(historicalTree);
+      assert.equal(bounds.minYear, 1640); // 1652 rounded down to decade (1652-5)/10 * 10
+      assert.ok(bounds.minYear < 1800);
+    });
   });
 });

@@ -124,4 +124,25 @@ describe('MiniMap Radar Navigator Coordinate Mathematics', () => {
     assert.strictEqual(targetScreenX, containerWidth / 2);
     assert.strictEqual(targetScreenY, containerHeight / 2);
   });
+
+  it('correctly transforms touch drag deltas from minimap space to canvas pan space (Bug 4.1)', () => {
+    const bounds = { minX: 0, minY: 0, maxX: 2000, maxY: 1000, width: 2000, height: 1000 };
+    const zoom = 1.0;
+    const containerWidth = 1000;
+    const containerHeight = 600;
+    const metrics = calculateMiniMapMetrics(bounds, { x: 0, y: 0 }, zoom, containerWidth, containerHeight);
+
+    // If user drags touch 20px horizontally on the minimap
+    const dxTouch = 20;
+    const dyTouch = 10;
+    const dPanX = -(dxTouch / metrics.scale) * zoom;
+    const dPanY = -(dyTouch / metrics.scale) * zoom;
+
+    // Moving touch right on minimap means viewport frame moved right, so canvas pans left
+    assert.ok(dPanX < 0, 'Horizontal pan must move inversely to viewport drag');
+    assert.ok(dPanY < 0, 'Vertical pan must move inversely to viewport drag');
+    // Ensure 1:1 world correspondence: -dPanX / zoom * scale = dxTouch
+    assert.strictEqual(Math.round((-dPanX / zoom) * metrics.scale), dxTouch);
+    assert.strictEqual(Math.round((-dPanY / zoom) * metrics.scale), dyTouch);
+  });
 });

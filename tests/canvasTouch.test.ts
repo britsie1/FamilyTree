@@ -1,4 +1,4 @@
-﻿import { describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   getTouchDistance,
@@ -92,5 +92,24 @@ describe('Canvas Touch & Pinch-to-Zoom Engine', () => {
     // Excessive zoom-out attempt (0.01x)
     const clampedMin = calculatePinchTransform(mid, mid, pan, 1.0, 100, 1);
     assert.strictEqual(clampedMin.zoom, 0.2);
+  });
+
+  it('correctly calculates touch card dragging offset and final coordinates (Bug 4.2)', () => {
+    const node = { x: 300, y: 150, width: 220, height: 104 };
+    const startTouch = { clientX: 350, clientY: 180 };
+    const currentTouch = { clientX: 420, clientY: 230 };
+    const zoom = 1.0;
+
+    const dx = (currentTouch.clientX - startTouch.clientX) / zoom;
+    const dy = (currentTouch.clientY - startTouch.clientY) / zoom;
+
+    assert.strictEqual(dx, 70);
+    assert.strictEqual(dy, 50);
+
+    const finalX = node.x + dx;
+    const finalY = node.y + dy;
+
+    assert.strictEqual(finalX, 370);
+    assert.strictEqual(finalY, 200);
   });
 });

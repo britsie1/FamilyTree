@@ -402,6 +402,14 @@ export async function patchCloudPerson(
   }
 
   const cleaned = cleanForFirestore(updates) as Record<string, any>;
+  if (updates.isDeceased === false) {
+    if (!updates.deathDate) {
+      cleaned.deathDate = deleteField();
+    }
+    if (!updates.deathPlace) {
+      cleaned.deathPlace = deleteField();
+    }
+  }
   const now = new Date().toISOString();
 
   // If subcollection storage is enabled

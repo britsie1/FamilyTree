@@ -101,7 +101,14 @@ export const PersonVitalDatesSection: React.FC<PersonVitalDatesSectionProps> = (
             type="checkbox"
             checked={person.isDeceased || false}
             disabled={isReadOnly}
-            onChange={(e) => handleUpdate(person.id, { isDeceased: e.target.checked })}
+            onChange={(e) => {
+              const isDeceased = e.target.checked;
+              if (!isDeceased) {
+                handleUpdate(person.id, { isDeceased: false, deathDate: undefined, deathPlace: undefined });
+              } else {
+                handleUpdate(person.id, { isDeceased: true });
+              }
+            }}
             className="rounded text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
           />
           Deceased

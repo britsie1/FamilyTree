@@ -412,6 +412,31 @@ describe('Centralized Zustand Stores', () => {
       assert.strictEqual(useCanvasStore.getState().comparisonPersonId, 'person_1');
     });
 
+    it('manages multiSelectPeople with replace, append, and empty selection (Bug 4.4)', () => {
+      // Initial selection: p1, p2
+      useCanvasStore.getState().multiSelectPeople(['p1', 'p2'], false);
+      assert.strictEqual(useCanvasStore.getState().selectedPersonIds.size, 2);
+      assert.ok(useCanvasStore.getState().selectedPersonIds.has('p1'));
+      assert.ok(useCanvasStore.getState().selectedPersonIds.has('p2'));
+
+      // Replace selection with p3 (append = false)
+      useCanvasStore.getState().multiSelectPeople(['p3'], false);
+      assert.strictEqual(useCanvasStore.getState().selectedPersonIds.size, 1);
+      assert.ok(useCanvasStore.getState().selectedPersonIds.has('p3'));
+      assert.strictEqual(useCanvasStore.getState().selectedPersonId, 'p3');
+
+      // Append p4 (append = true)
+      useCanvasStore.getState().multiSelectPeople(['p4'], true);
+      assert.strictEqual(useCanvasStore.getState().selectedPersonIds.size, 2);
+      assert.ok(useCanvasStore.getState().selectedPersonIds.has('p3'));
+      assert.ok(useCanvasStore.getState().selectedPersonIds.has('p4'));
+
+      // Empty drag deselects when append = false
+      useCanvasStore.getState().multiSelectPeople([], false);
+      assert.strictEqual(useCanvasStore.getState().selectedPersonIds.size, 0);
+      assert.strictEqual(useCanvasStore.getState().selectedPersonId, null);
+    });
+
     it('supports transient drag without mutating tree', () => {
       const canvasStore = useCanvasStore.getState();
       const treeBefore = useTreeStore.getState().tree;

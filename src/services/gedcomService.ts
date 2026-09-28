@@ -1,5 +1,5 @@
 import type { TreeData, Person, Union, Gender, UnionType } from '../types/tree';
-import { generateId } from './storage';
+import { generateId, sanitizeFilename } from './storage';
 import { sanitizeTree } from './treeOperations';
 
 interface GedcomLine {
@@ -642,7 +642,7 @@ export function exportGedcomToFile(tree: TreeData): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const sanitizedName = (tree.name || 'family_tree').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const sanitizedName = sanitizeFilename(tree.name);
   a.download = `${sanitizedName}.ged`;
   document.body.appendChild(a);
   a.click();

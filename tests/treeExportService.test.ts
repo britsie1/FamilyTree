@@ -43,4 +43,40 @@ describe('treeExportService', () => {
     assert.ok(svgString.includes('Tom &amp; Jerry &lt;Special&gt;'), 'Special characters should be escaped in XML');
     assert.ok(!svgString.includes('Tom & Jerry <Special>'), 'Raw unescaped chars should not exist in text');
   });
+
+  it('preserves non-Latin unicode characters in sanitizeFilename (Bug 4.5)', async () => {
+    const { sanitizeFilename } = await import('../src/services/storage.ts');
+
+    assert.equal(sanitizeFilename('Famille François'), 'Famille_François');
+    assert.equal(sanitizeFilename('Παπαδόπουλος'), 'Παπαδόπουλος');
+    assert.equal(sanitizeFilename('Русское Дерево'), 'Русское_Дерево');
+    assert.equal(sanitizeFilename('עץ משפחה'), 'עץ_משפחה');
+    assert.equal(sanitizeFilename('شجرة العائلة'), 'شجرة_العائلة');
+    assert.equal(sanitizeFilename('田中家族'), '田中家族');
+    assert.equal(sanitizeFilename('Tree /:?*<>| "name"'), 'Tree_name');
+    assert.equal(sanitizeFilename(''), 'family_tree');
+    assert.equal(sanitizeFilename(undefined), 'family_tree');
+  });
+
+  it('renders custom photo avatar image element and clipPath when person has avatarUrl (Bug 4.6)', () => {
+    const tree = createDoubleInLawPreset();
+    const firstPersonId = Object.keys(tree.people)[0];
+    tree.people[firstPersonId].avatarUrl = 'https://example.com/photo.jpg';
+
+    const layout = computeLayout(tree, 'vertical');
+    const svgString = generateTreeSvgString(tree, layout, false);
+
+    assert.ok(
+      svgString.includes(`id="avatar-clip-${firstPersonId}"`),
+      'Should define clipPath for custom avatar'
+    );
+    assert.ok(
+      svgString.includes(`href="https://example.com/photo.jpg"`),
+      'Should render image tag with avatar source'
+    );
+    assert.ok(
+      svgString.includes(`clip-path="url(#avatar-clip-${firstPersonId})"`),
+      'Should link image to circular clip-path'
+    );
+  });
 });

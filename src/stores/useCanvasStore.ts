@@ -190,9 +190,11 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       const next = append ? new Set(state.selectedPersonIds) : new Set<string>();
       personIds.forEach((id) => next.add(id));
       const nextSelected =
-        next.size > 0 && (!state.selectedPersonId || !next.has(state.selectedPersonId))
-          ? personIds[0] || Array.from(next)[0]
-          : state.selectedPersonId;
+        next.size === 0
+          ? null
+          : !state.selectedPersonId || !next.has(state.selectedPersonId)
+            ? personIds[0] || Array.from(next)[0]
+            : state.selectedPersonId;
       return {
         selectedPersonIds: next,
         selectedPersonId: nextSelected,

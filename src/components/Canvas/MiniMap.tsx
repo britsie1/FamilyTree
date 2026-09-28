@@ -78,6 +78,20 @@ export const MiniMap: React.FC<MiniMapProps> = ({
     centerOnWorldCoord(targetWorldX, targetWorldY);
   };
 
+  // Convert touch in MiniMap coordinates to world coordinates and center canvas (Bug 4.1)
+  const handleMapTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (isDraggingViewport || !mapRef.current || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const rect = mapRef.current.getBoundingClientRect();
+    const clickMapX = touch.clientX - rect.left;
+    const clickMapY = touch.clientY - rect.top;
+
+    const targetWorldX = (clickMapX - offsetX) / scale + bounds.minX;
+    const targetWorldY = (clickMapY - offsetY) / scale + bounds.minY;
+
+    centerOnWorldCoord(targetWorldX, targetWorldY);
+  };
+
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsDraggingViewport(true);
@@ -110,6 +124,48 @@ export const MiniMap: React.FC<MiniMapProps> = ({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Drag viewport boundary frame on touch devices (Bug 4.1)
+  const handleViewportTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    e.stopPropagation();
+    setIsDraggingViewport(true);
+
+    const touch = e.touches[0];
+    const startClientX = touch.clientX;
+    const startClientY = touch.clientY;
+    const startPanX = pan.x;
+    const startPanY = pan.y;
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length !== 1) return;
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault();
+      }
+      const currentTouch = moveEvent.touches[0];
+      const dxScreen = currentTouch.clientX - startClientX;
+      const dyScreen = currentTouch.clientY - startClientY;
+
+      const dPanX = -(dxScreen / scale) * zoom;
+      const dPanY = -(dyScreen / scale) * zoom;
+
+      onPanChange({
+        x: startPanX + dPanX,
+        y: startPanY + dPanY,
+      });
+    };
+
+    const handleTouchEnd = () => {
+      setIsDraggingViewport(false);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+    };
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
   };
 
   if (!isOpen) {
@@ -148,6 +204,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
         width={MAP_WIDTH}
         height={MAP_HEIGHT}
         onClick={handleMapClick}
+        onTouchStart={handleMapTouchStart}
         className="cursor-crosshair bg-slate-100/70 dark:bg-slate-950/70"
       >
         {/* Subtle grid pattern */}
@@ -220,6 +277,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
               : 'cursor-grab hover:stroke-indigo-600 dark:hover:stroke-indigo-400'
           }`}
           onMouseDown={handleViewportMouseDown}
+          onTouchStart={handleViewportTouchStart}
         />
       </svg>
     </div>

@@ -266,7 +266,7 @@ export function getTreeYearBounds(tree: TreeData): { minYear: number; maxYear: n
 
   Object.values(tree.people).forEach((p) => {
     const bYear = extractYear(p.birthDate);
-    if (bYear && bYear > 1500 && bYear <= currentYear) {
+    if (bYear && bYear >= 1500 && bYear <= currentYear) {
       minFoundYear = Math.min(minFoundYear, bYear);
       hasValidYear = true;
     }
@@ -274,14 +274,14 @@ export function getTreeYearBounds(tree: TreeData): { minYear: number; maxYear: n
 
   Object.values(tree.unions).forEach((u) => {
     const mYear = extractYear(u.marriageDate);
-    if (mYear && mYear > 1500 && mYear <= currentYear) {
+    if (mYear && mYear >= 1500 && mYear <= currentYear) {
       minFoundYear = Math.min(minFoundYear, mYear);
       hasValidYear = true;
     }
   });
 
-  // Default floor rounded down to decade or 1850 minimum
-  const minYear = hasValidYear ? Math.max(1800, Math.floor((minFoundYear - 5) / 10) * 10) : 1850;
+  // Default floor rounded down to decade or 1850 default if no dates recorded
+  const minYear = hasValidYear ? Math.max(1500, Math.floor((minFoundYear - 5) / 10) * 10) : 1850;
   const maxYear = currentYear;
   const defaultYear = hasValidYear
     ? Math.min(Math.max(minFoundYear + 30, minYear), maxYear)

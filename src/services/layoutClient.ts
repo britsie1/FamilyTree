@@ -121,6 +121,8 @@ export function useAsyncLayout(
   adjustSpacing: boolean,
   layoutOverrides?: LayoutOverrides
 ): { layout: TreeLayout; isComputing: boolean } {
+  const lastTreeIdRef = useRef(tree.id);
+
   // Initialize with synchronous computation so first render has immediate layout
   const [layout, setLayout] = useState<TreeLayout>(() =>
     computeLayout(tree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, layoutOverrides)
@@ -128,6 +130,23 @@ export function useAsyncLayout(
   const [isComputing, setIsComputing] = useState(false);
   const currentSeqRef = useRef(0);
   const hasMountedRef = useRef(false);
+
+  // When tree.id changes (tree switching), immediately discard the stale layout from the previous tree
+  // and compute the new tree's initial layout synchronously so the canvas renders without visual tearing (Bug 4.8)
+  if (lastTreeIdRef.current !== tree.id) {
+    lastTreeIdRef.current = tree.id;
+    currentSeqRef.current++;
+    const immediateLayout = computeLayout(
+      tree,
+      layoutStyle,
+      groupByFamily,
+      collapsedPersonIds,
+      adjustSpacing,
+      layoutOverrides
+    );
+    setLayout(immediateLayout);
+    return { layout: immediateLayout, isComputing: false };
+  }
 
   useEffect(() => {
     // Skip on very first render since initial state computed it

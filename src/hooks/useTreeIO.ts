@@ -6,6 +6,7 @@ import {
   saveCurrentTree,
   exportTreeToJsonFile,
   importTreeFromJsonString,
+  sanitizeFilename,
   createDoubleInLawPreset,
   createDivorceBlendedPreset,
   createThreeGenSampleTree,
@@ -88,7 +89,7 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
         backgroundColor: isDark ? '#020617' : '#f8fafc',
       });
       const a = document.createElement('a');
-      a.download = `${(tree.name || 'family_tree').replace(/[^a-zA-Z0-9_-]/g, '_')}.png`;
+      a.download = `${sanitizeFilename(tree.name)}.png`;
       a.href = dataUrl;
       document.body.appendChild(a);
       a.click();

@@ -764,6 +764,17 @@ export function loadCurrentTree(): TreeData {
   return defaultTree;
 }
 
+/**
+ * Sanitizes a tree name or string for use in safe filenames across operating systems,
+ * preserving Unicode letters and digits (e.g. Cyrillic, Greek, Hebrew, Arabic, CJK, accented Latin)
+ * while replacing invalid characters and collapsing separators.
+ */
+export function sanitizeFilename(name?: string | null, fallback: string = 'family_tree'): string {
+  if (!name || typeof name !== 'string') return fallback;
+  const sanitized = name.trim().replace(/[^\p{L}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '');
+  return sanitized || fallback;
+}
+
 export function exportTreeToJsonFile(tree: TreeData): void {
   const sanitized = sanitizeTree(tree);
   const jsonStr = JSON.stringify(sanitized, null, 2);
@@ -771,7 +782,7 @@ export function exportTreeToJsonFile(tree: TreeData): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const sanitizedName = (tree.name || 'family_tree').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const sanitizedName = sanitizeFilename(tree.name);
   a.download = `${sanitizedName}_export.json`;
   document.body.appendChild(a);
   a.click();

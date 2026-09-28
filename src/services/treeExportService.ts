@@ -1,5 +1,7 @@
 import type { TreeData, TreeLayout } from '../types/tree';
 import { getPersonDisplayInfo } from './displayUtils';
+import { sanitizeFilename } from './storage';
+import { getDirectImageUrl } from './googleDriveService';
 import confetti from 'canvas-confetti';
 
 /**
@@ -141,10 +143,31 @@ export function generateTreeSvgString(
       `      <!-- Card Base -->`,
       `      <rect x="0" y="0" width="${node.width}" height="${node.height}" rx="12" fill="${cardBg}" stroke="${cardBorder}" stroke-width="1" />`,
       `      <!-- Gender Accent Line -->`,
-      `      <path d="M0 12 Q0 0 12 0 L12 ${node.height} Q0 ${node.height} 0 ${node.height - 12} Z" fill="${genderAccent}" />`,
-      `      <!-- Avatar Circle -->`,
-      `      <circle cx="34" cy="${node.height / 2}" r="18" fill="${avatarFill}" stroke="${genderAccent}" stroke-width="1.5" />`,
-      `      <text x="34" y="${node.height / 2 + 4}" font-size="11" font-weight="bold" fill="${avatarTextColor}" text-anchor="middle">${escapeXml(initials || '?')}</text>`,
+      `      <path d="M0 12 Q0 0 12 0 L12 ${node.height} Q0 ${node.height} 0 ${node.height - 12} Z" fill="${genderAccent}" />`
+    );
+
+    if (person.avatarUrl) {
+      const avatarSrc = getDirectImageUrl(person.avatarUrl);
+      parts.push(
+        `      <clipPath id="avatar-clip-${person.id}">`,
+        `        <circle cx="34" cy="${node.height / 2}" r="18" />`,
+        `      </clipPath>`,
+        `      <!-- Avatar Circle (Background & Fallback) -->`,
+        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="${avatarFill}" stroke="${genderAccent}" stroke-width="1.5" />`,
+        `      <text x="34" y="${node.height / 2 + 4}" font-size="11" font-weight="bold" fill="${avatarTextColor}" text-anchor="middle">${escapeXml(initials || '?')}</text>`,
+        `      <!-- Custom Photo Avatar -->`,
+        `      <image href="${escapeXml(avatarSrc)}" x="16" y="${node.height / 2 - 18}" width="36" height="36" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar-clip-${person.id})" />`,
+        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="none" stroke="${genderAccent}" stroke-width="1.5" />`
+      );
+    } else {
+      parts.push(
+        `      <!-- Avatar Circle -->`,
+        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="${avatarFill}" stroke="${genderAccent}" stroke-width="1.5" />`,
+        `      <text x="34" y="${node.height / 2 + 4}" font-size="11" font-weight="bold" fill="${avatarTextColor}" text-anchor="middle">${escapeXml(initials || '?')}</text>`
+      );
+    }
+
+    parts.push(
       `      <!-- Name -->`,
       `      <text x="62" y="${dateSpan ? node.height / 2 - 2 : node.height / 2 + 5}" font-size="12" font-weight="600" fill="${textColor}">${escapeXml(displayName)}</text>`
     );
@@ -177,7 +200,7 @@ export function exportTreeAsSvg(
   const svgContent = generateTreeSvgString(tree, layout, isDark);
   const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const filename = `${(tree.name || 'family_tree').replace(/[^a-zA-Z0-9_-]/g, '_')}_vector.svg`;
+  const filename = `${sanitizeFilename(tree.name)}_vector.svg`;
 
   const link = document.createElement('a');
   link.href = url;
@@ -236,7 +259,7 @@ export async function exportTreeAsFullImage(
   });
 
   const pngUrl = canvas.toDataURL('image/png', 0.95);
-  const filename = `${(tree.name || 'family_tree').replace(/[^a-zA-Z0-9_-]/g, '_')}_full.png`;
+  const filename = `${sanitizeFilename(tree.name)}_full.png`;
 
   const link = document.createElement('a');
   link.href = pngUrl;

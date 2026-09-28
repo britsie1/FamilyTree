@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { unlinkParentFromChild, unlinkChild, sanitizeTree } from '../src/services/treeOperations.ts';
+import { unlinkParentFromChild, unlinkChild, sanitizeTree, updatePersonInTree } from '../src/services/treeOperations.ts';
 import type { TreeData } from '../src/types/tree.ts';
 
 describe('Tree Operations - Bug 3.4 & Bug 3.5', () => {
@@ -119,6 +119,57 @@ describe('Tree Operations - Bug 3.4 & Bug 3.5', () => {
       const sanitized = sanitizeTree(tree);
       assert.strictEqual(sanitized.unions['u_dead'], undefined);
       assert.deepStrictEqual(sanitized.people['p1'].unionIds, []);
+    });
+
+    it('clears deathDate and deathPlace when isDeceased is updated to false in updatePersonInTree (Bug 4.3)', () => {
+      const tree: TreeData = {
+        id: 'tree_vital_test',
+        name: 'Vital Test',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        people: {
+          p1: {
+            id: 'p1',
+            firstName: 'Living',
+            lastName: 'Person',
+            isDeceased: true,
+            deathDate: '2020-05-10',
+            deathPlace: 'Boston, MA',
+            unionIds: [],
+          },
+        },
+        unions: {},
+      };
+
+      const updated = updatePersonInTree(tree, 'p1', { isDeceased: false });
+      assert.strictEqual(updated.people['p1'].isDeceased, false);
+      assert.strictEqual(updated.people['p1'].deathDate, undefined);
+      assert.strictEqual(updated.people['p1'].deathPlace, undefined);
+    });
+
+    it('cleans orphaned deathDate and deathPlace from living people in sanitizeTree (Bug 4.3)', () => {
+      const tree: TreeData = {
+        id: 'tree_sanitize_vital',
+        name: 'Sanitize Vital Test',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        people: {
+          p1: {
+            id: 'p1',
+            firstName: 'Living',
+            lastName: 'Person',
+            isDeceased: false,
+            deathDate: '2020-05-10',
+            deathPlace: 'Boston, MA',
+            unionIds: [],
+          },
+        },
+        unions: {},
+      };
+
+      const sanitized = sanitizeTree(tree);
+      assert.strictEqual(sanitized.people['p1'].deathDate, undefined);
+      assert.strictEqual(sanitized.people['p1'].deathPlace, undefined);
     });
   });
 });

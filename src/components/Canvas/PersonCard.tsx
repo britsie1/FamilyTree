@@ -28,6 +28,7 @@ export interface PersonCardProps {
   onAddSibling: (personId: string) => void;
   onAddParent: (personId: string) => void;
   onDragStart: (e: React.MouseEvent, personId: string) => void;
+  onTouchStart?: (e: React.TouchEvent, personId: string) => void;
   dragOffset?: { x: number; y: number } | null;
   onPortMouseDown?: (
     e: React.MouseEvent,
@@ -81,6 +82,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   onAddSibling,
   onAddParent,
   onDragStart,
+  onTouchStart,
   dragOffset = null,
   onPortMouseDown,
   isConnectTarget = false,
@@ -190,6 +192,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       onMouseEnter={() => onHover(person.id)}
       onMouseLeave={() => onHover(null)}
       onMouseDown={(e) => onDragStart(e, person.id)}
+      onTouchStart={(e) => onTouchStart?.(e, person.id)}
     >
       {/* Interactive Beacon Radar Pulse (Target Locate) */}
       {isBeaconActive && (

@@ -195,6 +195,10 @@ export function sanitizeTree(tree: TreeData): TreeData {
       unionIds: validUnionIds,
       parentUnionId: validParentUnionId,
     };
+    if (person.isDeceased === false) {
+      delete nextTree.people[pId].deathDate;
+      delete nextTree.people[pId].deathPlace;
+    }
   }
 
   for (const [uId, u] of Object.entries(nextTree.unions)) {
@@ -584,14 +588,21 @@ export function updatePersonInTree(
   const current = tree.people[personId];
   if (!current) return tree;
 
+  const nextPerson: Person = {
+    ...current,
+    ...updates,
+  };
+
+  if (updates.isDeceased === false) {
+    delete nextPerson.deathDate;
+    delete nextPerson.deathPlace;
+  }
+
   return {
     ...tree,
     people: {
       ...tree.people,
-      [personId]: {
-        ...current,
-        ...updates,
-      },
+      [personId]: nextPerson,
     },
   };
 }
