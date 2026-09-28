@@ -299,7 +299,7 @@ export function getPersonTemporalInfo(person: Person, targetYear: number): Perso
 
   // If no birth year is recorded
   if (birthYear === null) {
-    if (deathYear !== null && targetYear > deathYear) {
+    if (deathYear !== null && targetYear >= deathYear) {
       return {
         personId: person.id,
         status: 'deceased',

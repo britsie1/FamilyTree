@@ -379,9 +379,45 @@ export function orderPeopleSubset(
     }
 
     const remaining = componentNodes.filter((n) => !walked.has(n)).sort();
-    for (const node of remaining) {
-      chain.push(node);
-      walked.add(node);
+    while (remaining.length > 0) {
+      let bestRemainingIdx = -1;
+      let targetPartnerInChain: string | null = null;
+      let targetChainIdx = -1;
+
+      for (let i = 0; i < remaining.length; i++) {
+        const remNode = remaining[i];
+        const walkedNeighbors = partnerGraph[remNode].filter((n) => walked.has(n));
+        if (walkedNeighbors.length > 0) {
+          walkedNeighbors.sort();
+          const p = walkedNeighbors[0];
+          const cIdx = chain.indexOf(p);
+          if (cIdx !== -1) {
+            bestRemainingIdx = i;
+            targetPartnerInChain = p;
+            targetChainIdx = cIdx;
+            break;
+          }
+        }
+      }
+
+      if (bestRemainingIdx !== -1 && targetPartnerInChain && targetChainIdx !== -1) {
+        const [nodeToInsert] = remaining.splice(bestRemainingIdx, 1);
+        walked.add(nodeToInsert);
+
+        // Find the right boundary of the partner cluster directly partnered with targetPartnerInChain in chain
+        let insertIdx = targetChainIdx;
+        while (
+          insertIdx + 1 < chain.length &&
+          partnerGraph[targetPartnerInChain].includes(chain[insertIdx + 1])
+        ) {
+          insertIdx++;
+        }
+        chain.splice(insertIdx + 1, 0, nodeToInsert);
+      } else {
+        const nodeToInsert = remaining.shift()!;
+        walked.add(nodeToInsert);
+        chain.push(nodeToInsert);
+      }
     }
 
     return chain;

@@ -584,7 +584,20 @@ export function findConsanguineousRelationship(
       (id) => ancestorsA.get(id)!.distance === dA && ancestorsB.get(id)!.distance === dB
     );
     const mrcaPeople = topMrcaIds.map((id) => tree.people[id]).filter(Boolean);
-    const isHalf = topMrcaIds.length === 1;
+
+    const pathToMrca = ancestorsA.get(mrcaId)!.path; // [A, ..., MRCA]
+    const pathToB = ancestorsB.get(mrcaId)!.path; // [B, ..., MRCA]
+    const pathToBReversed = [...pathToB].reverse(); // [MRCA, ..., B]
+    const path = [...pathToMrca.slice(0, -1), ...pathToBReversed];
+    const genDiff = dB - dA;
+
+    let isHalf = false;
+    if (topMrcaIds.length === 1 && pathToMrca.length >= 2 && pathToB.length >= 2) {
+      const childAId = pathToMrca[pathToMrca.length - 2];
+      const childBId = pathToB[pathToB.length - 2];
+      const { halfSiblings } = getSiblings(tree, childAId);
+      isHalf = halfSiblings.some((s) => s.id === childBId);
+    }
 
     let isDoubleCousin = false;
     if (dA === 2 && dB === 2 && commonAncestorIds.length >= 4) {
@@ -594,12 +607,6 @@ export function findConsanguineousRelationship(
         isDoubleCousin = true;
       }
     }
-
-    const pathToMrca = ancestorsA.get(mrcaId)!.path; // [A, ..., MRCA]
-    const pathToB = ancestorsB.get(mrcaId)!.path; // [B, ..., MRCA]
-    const pathToBReversed = [...pathToB].reverse(); // [MRCA, ..., B]
-    const path = [...pathToMrca.slice(0, -1), ...pathToBReversed];
-    const genDiff = dB - dA;
 
     // SIBLINGS: dA === 1 && dB === 1
     if (dA === 1 && dB === 1) {

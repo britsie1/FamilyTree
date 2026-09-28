@@ -341,4 +341,63 @@ describe('Relationship Finder Engine', () => {
     const rel3 = findRelationship(twoCouplesTree, 'h1', 'w2');
     assert.equal(rel3.category, 'none');
   });
+
+  test('Bug 3.1: Single recorded ancestor does not falsely label full aunts/uncles/cousins as half-relatives', () => {
+    // Grandfather A (without recorded wife) -> Father B & Uncle C. Father B -> Child D
+    const singleAncestorTree: TreeData = {
+      id: 'single_ancestor_tree',
+      name: 'Single Ancestor Tree',
+      createdAt: '',
+      updatedAt: '',
+      people: {
+        gf: { id: 'gf', firstName: 'Grandpa', gender: 'male', unionIds: ['u_gf'] },
+        father: { id: 'father', firstName: 'Dad', gender: 'male', parentUnionId: 'u_gf', unionIds: ['u_dad'] },
+        uncle: { id: 'uncle', firstName: 'Uncle Bob', gender: 'male', parentUnionId: 'u_gf', unionIds: [] },
+        child: { id: 'child', firstName: 'Junior', gender: 'male', parentUnionId: 'u_dad', unionIds: [] },
+        cousin: { id: 'cousin', firstName: 'Cousin Jenny', gender: 'female', parentUnionId: 'u_uncle', unionIds: [] },
+      },
+      unions: {
+        u_gf: { id: 'u_gf', partnerIds: ['gf'], childrenIds: ['father', 'uncle'] },
+        u_dad: { id: 'u_dad', partnerIds: ['father'], childrenIds: ['child'] },
+        u_uncle: { id: 'u_uncle', partnerIds: ['uncle'], childrenIds: ['cousin'] },
+      },
+    };
+
+    // Child to Uncle must be Uncle / Nephew, NOT Half-uncle / Half-nephew
+    const childToUncle = findRelationship(singleAncestorTree, 'child', 'uncle');
+    assert.equal(childToUncle.category, 'collateral');
+    assert.equal(childToUncle.relationshipName, 'Uncle');
+    assert.equal(childToUncle.inverseRelationshipName, 'Nephew');
+
+    // Child to Cousin must be First cousin, NOT Half-first cousin
+    const childToCousin = findRelationship(singleAncestorTree, 'child', 'cousin');
+    assert.equal(childToCousin.category, 'cousin');
+    assert.equal(childToCousin.relationshipName, 'First cousin');
+
+    // Genuine half-relatives (different mothers recorded) must still be identified as half
+    const genuineHalfTree: TreeData = {
+      id: 'genuine_half_tree',
+      name: 'Genuine Half Tree',
+      createdAt: '',
+      updatedAt: '',
+      people: {
+        gf: { id: 'gf', firstName: 'Grandpa', gender: 'male', unionIds: ['u1', 'u2'] },
+        w1: { id: 'w1', firstName: 'Wife1', gender: 'female', unionIds: ['u1'] },
+        w2: { id: 'w2', firstName: 'Wife2', gender: 'female', unionIds: ['u2'] },
+        father: { id: 'father', firstName: 'Dad', gender: 'male', parentUnionId: 'u1', unionIds: ['u_dad'] },
+        half_uncle: { id: 'half_uncle', firstName: 'Half Uncle', gender: 'male', parentUnionId: 'u2', unionIds: [] },
+        child: { id: 'child', firstName: 'Junior', gender: 'male', parentUnionId: 'u_dad', unionIds: [] },
+      },
+      unions: {
+        u1: { id: 'u1', partnerIds: ['gf', 'w1'], childrenIds: ['father'] },
+        u2: { id: 'u2', partnerIds: ['gf', 'w2'], childrenIds: ['half_uncle'] },
+        u_dad: { id: 'u_dad', partnerIds: ['father'], childrenIds: ['child'] },
+      },
+    };
+
+    const childToHalfUncle = findRelationship(genuineHalfTree, 'child', 'half_uncle');
+    assert.equal(childToHalfUncle.category, 'collateral');
+    assert.equal(childToHalfUncle.relationshipName, 'Half-uncle');
+    assert.equal(childToHalfUncle.inverseRelationshipName, 'Half-nephew');
+  });
 });

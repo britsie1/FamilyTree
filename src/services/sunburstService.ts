@@ -697,13 +697,14 @@ export function buildSunburstLayout(
 
   let bounds: SunburstTreeLayout['bounds'];
   if (angleMode === '180') {
+    const bottomExtent = rootRadius + boundsPadding;
     bounds = {
       minX: -maxExtent,
       minY: -maxExtent,
       maxX: maxExtent,
-      maxY: boundsPadding,
+      maxY: bottomExtent,
       width: maxExtent * 2,
-      height: maxExtent + boundsPadding,
+      height: maxExtent + bottomExtent,
     };
   } else {
     bounds = {

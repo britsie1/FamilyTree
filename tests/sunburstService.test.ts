@@ -266,6 +266,12 @@ describe('sunburstService', () => {
       // Start angle for 180 fan spans from -PI to 0
       const firstGenNode = layout.nodes[0];
       assert.ok(firstGenNode.startAngle >= -Math.PI);
+
+      // Bug 3.7: bounds.maxY must encompass the entire central root circle (radius + padding)
+      assert.ok(
+        layout.bounds.maxY >= layout.rootNode.radius + 30,
+        `Expected maxY (${layout.bounds.maxY}) to be >= rootNode.radius + 30 (${layout.rootNode.radius + 30})`
+      );
     });
 
     it('returns null for invalid root person', () => {

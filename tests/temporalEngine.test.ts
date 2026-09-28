@@ -82,6 +82,36 @@ describe('Temporal Engine', () => {
       assert.equal(info2010.isLivingInYear, false);
       assert.equal(info2010.ageLabel, 'Passed in 2005 (age 75)');
     });
+
+    test('identifies deceased status and passedThisYear when birth year is missing (Bug 3.3)', () => {
+      const personNoBirth: Person = {
+        id: 'p_no_birth',
+        firstName: 'Historical',
+        lastName: 'Ancestor',
+        deathDate: '1975',
+        unionIds: [],
+      };
+
+      // Exact death year: status deceased, passedThisYear true
+      const info1975 = getPersonTemporalInfo(personNoBirth, 1975);
+      assert.equal(info1975.status, 'deceased');
+      assert.equal(info1975.isLivingInYear, false);
+      assert.equal(info1975.passedThisYear, true);
+      assert.equal(info1975.ageLabel, 'Passed in 1975');
+
+      // Post death year: status deceased, passedThisYear false
+      const info1980 = getPersonTemporalInfo(personNoBirth, 1980);
+      assert.equal(info1980.status, 'deceased');
+      assert.equal(info1980.isLivingInYear, false);
+      assert.equal(info1980.passedThisYear, false);
+      assert.equal(info1980.ageLabel, 'Passed in 1975');
+
+      // Pre death year: status living, passedThisYear false
+      const info1970 = getPersonTemporalInfo(personNoBirth, 1970);
+      assert.equal(info1970.status, 'living');
+      assert.equal(info1970.isLivingInYear, true);
+      assert.equal(info1970.passedThisYear, false);
+    });
   });
 
   describe('getUnionTemporalInfo', () => {

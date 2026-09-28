@@ -147,21 +147,14 @@ export function sanitizeTree(tree: TreeData): TreeData {
     }
   }
 
-  // Step 2: Clean up redundant empty 1-partner unions if the person has other active unions
+  // Step 2: Clean up empty 1-partner unions and dead 0-partner unions
   for (const [uId, u] of Object.entries(nextTree.unions)) {
     if (u.partnerIds.length === 1 && (!u.childrenIds || u.childrenIds.length === 0)) {
       const partnerId = u.partnerIds[0];
       const person = nextTree.people[partnerId];
+      delete nextTree.unions[uId];
       if (person) {
-        const otherActiveUnions = (person.unionIds || []).filter((id) => {
-          if (id === uId) return false;
-          const other = nextTree.unions[id];
-          return other && (other.partnerIds.length >= 2 || (other.childrenIds && other.childrenIds.length > 0));
-        });
-        if (otherActiveUnions.length > 0) {
-          delete nextTree.unions[uId];
-          person.unionIds = person.unionIds.filter((id) => id !== uId);
-        }
+        person.unionIds = (person.unionIds || []).filter((id) => id !== uId);
       }
     } else if (u.partnerIds.length === 0) {
       // If union has 0 partners, check if any of its children actually point to this union as parentUnionId
@@ -990,10 +983,32 @@ export function unlinkParentFromChild(
 ): TreeData {
   let nextTree = sanitizeTree(tree);
   const child = nextTree.people[childPersonId];
-  if (!child || !child.parentUnionId) return tree;
+  if (!child) return tree;
+  if (!child.parentUnionId) return nextTree;
 
   const currentUnion = nextTree.unions[child.parentUnionId];
-  if (!currentUnion || !currentUnion.partnerIds.includes(parentPersonId)) return tree;
+  if (!currentUnion) {
+    nextTree.people[childPersonId] = {
+      ...child,
+      parentUnionId: undefined,
+    };
+    return sanitizeTree(nextTree);
+  }
+
+  // If the union has no parents (orphan union), detach child and cleanup
+  if (currentUnion.partnerIds.length === 0) {
+    currentUnion.childrenIds = (currentUnion.childrenIds || []).filter((id) => id !== childPersonId);
+    nextTree.people[childPersonId] = {
+      ...child,
+      parentUnionId: undefined,
+    };
+    if (currentUnion.childrenIds.length === 0) {
+      delete nextTree.unions[currentUnion.id];
+    }
+    return sanitizeTree(nextTree);
+  }
+
+  if (!currentUnion.partnerIds.includes(parentPersonId)) return tree;
 
   // Case 1: Union has 2 parents
   if (currentUnion.partnerIds.length >= 2) {
@@ -1121,9 +1136,19 @@ export function unlinkChild(
   };
 
   if (union) {
-    const remainingChildren = union.childrenIds.filter((id) => id !== childPersonId);
-    if (remainingChildren.length === 0 && union.partnerIds.length === 0) {
+    const remainingChildren = (union.childrenIds || []).filter((id) => id !== childPersonId);
+    if (remainingChildren.length === 0 && union.partnerIds.length <= 1) {
       delete nextTree.unions[unionId];
+      if (union.partnerIds.length === 1) {
+        const partnerId = union.partnerIds[0];
+        const parent = nextTree.people[partnerId];
+        if (parent) {
+          nextTree.people[partnerId] = {
+            ...parent,
+            unionIds: (parent.unionIds || []).filter((id) => id !== unionId),
+          };
+        }
+      }
     } else {
       nextTree.unions[unionId] = {
         ...union,

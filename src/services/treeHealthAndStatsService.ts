@@ -556,29 +556,34 @@ export function auditTreeHealth(tree: TreeData): TreeHealthReport {
 
   const visitedGlobal = new Set<string>();
   const inStack = new Set<string>();
+  const stack: string[] = [];
   const cycleDetected = new Set<string>();
 
-  function dfsCycle(currId: string): boolean {
-    if (inStack.has(currId)) {
-      cycleDetected.add(currId);
-      return true;
-    }
-    if (visitedGlobal.has(currId)) return false;
+  function dfsCycle(currId: string): void {
+    if (visitedGlobal.has(currId)) return;
 
     visitedGlobal.add(currId);
     inStack.add(currId);
+    stack.push(currId);
 
     const parents = getParentsOf(currId);
     for (const parentId of parents) {
       if (parentId && tree.people[parentId]) {
-        if (dfsCycle(parentId)) {
-          cycleDetected.add(currId);
+        if (inStack.has(parentId)) {
+          const cycleStartIndex = stack.indexOf(parentId);
+          if (cycleStartIndex !== -1) {
+            for (let i = cycleStartIndex; i < stack.length; i++) {
+              cycleDetected.add(stack[i]);
+            }
+          }
+        } else if (!visitedGlobal.has(parentId)) {
+          dfsCycle(parentId);
         }
       }
     }
 
     inStack.delete(currId);
-    return cycleDetected.has(currId);
+    stack.pop();
   }
 
   for (const person of people) {

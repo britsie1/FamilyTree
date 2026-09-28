@@ -7,6 +7,7 @@ import {
   CARD_WIDTH,
   HORIZONTAL_SPACING,
 } from '../src/services/layoutEngine.ts';
+import { orderPeopleSubset } from '../src/services/layout/barycentricOrdering.ts';
 import {
   addChildToPerson,
   addSiblingToPerson,
@@ -1214,6 +1215,48 @@ describe('Widest-Row Spacing Adjustment', () => {
         );
       }
     }
+  });
+
+  describe('Bug 3.6: Star Partnership DFS Routing Cluster Skew', () => {
+    it('clusters multiple star partners with their common partner rather than appending them after unrelated branches', () => {
+      // Person A has partners B, C, D (star at A).
+      // Person C also has partner E, who is partnered with F (branch continuing past C).
+      const starBranchTree: TreeData = {
+        id: 'star_branch_tree',
+        name: 'Star Branch Tree',
+        createdAt: '',
+        updatedAt: '',
+        people: {
+          A: { id: 'A', firstName: 'Central', unionIds: ['u1', 'u2', 'u3'] },
+          B: { id: 'B', firstName: 'PartnerB', unionIds: ['u1'] },
+          C: { id: 'C', firstName: 'PartnerC', unionIds: ['u2', 'u4'] },
+          D: { id: 'D', firstName: 'PartnerD', unionIds: ['u3'] },
+          E: { id: 'E', firstName: 'PartnerE', unionIds: ['u4', 'u5'] },
+          F: { id: 'F', firstName: 'PartnerF', unionIds: ['u5'] },
+        },
+        unions: {
+          u1: { id: 'u1', partnerIds: ['A', 'B'], childrenIds: [] },
+          u2: { id: 'u2', partnerIds: ['A', 'C'], childrenIds: [] },
+          u3: { id: 'u3', partnerIds: ['A', 'D'], childrenIds: [] },
+          u4: { id: 'u4', partnerIds: ['C', 'E'], childrenIds: [] },
+          u5: { id: 'u5', partnerIds: ['E', 'F'], childrenIds: [] },
+        },
+      };
+
+      const ordered = orderPeopleSubset(['A', 'B', 'C', 'D', 'E', 'F'], starBranchTree, {});
+      assert.strictEqual(ordered.length, 6);
+
+      // In the old code, D was appended to the end: [B, A, C, E, F, D], placing D after unrelated E and F.
+      // With the fix, D is inserted at the boundary of A's partner cluster: [B, A, C, D, E, F], before E and F!
+      const idxD = ordered.indexOf('D');
+      const idxE = ordered.indexOf('E');
+      const idxF = ordered.indexOf('F');
+
+      assert.ok(
+        idxD < idxE && idxD < idxF,
+        `Expected D to be placed within A's cluster before unrelated nodes E and F, but got: [${ordered.join(', ')}]`
+      );
+    });
   });
 });
 

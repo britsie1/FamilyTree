@@ -274,6 +274,38 @@ describe('treeHealthAndStatsService', () => {
       assert.ok(health.errorCount >= 1);
       assert.ok(health.anomalies.some((a) => a.code === 'cyclic_pedigree'));
     });
+
+    it('only flags actual participants in cyclic pedigree, not innocent descendants (Bug 3.2)', () => {
+      // Cycle: p1 -> p2 -> p3 -> p1. Innocent child: p4 (child of p3)
+      const cycleWithDescendant: TreeData = {
+        id: 'cycle-descendant',
+        name: 'Cycle with Descendant',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        people: {
+          p1: { id: 'p1', firstName: 'A', lastName: 'Cycle', parentUnionId: 'u3', unionIds: ['u1'] },
+          p2: { id: 'p2', firstName: 'B', lastName: 'Cycle', parentUnionId: 'u1', unionIds: ['u2'] },
+          p3: { id: 'p3', firstName: 'C', lastName: 'Cycle', parentUnionId: 'u2', unionIds: ['u3', 'u4'] },
+          p4: { id: 'p4', firstName: 'Innocent', lastName: 'Descendant', parentUnionId: 'u4', unionIds: [] },
+        },
+        unions: {
+          u1: { id: 'u1', partnerIds: ['p1'], childrenIds: ['p2'] },
+          u2: { id: 'u2', partnerIds: ['p2'], childrenIds: ['p3'] },
+          u3: { id: 'u3', partnerIds: ['p3'], childrenIds: ['p1'] },
+          u4: { id: 'u4', partnerIds: ['p3'], childrenIds: ['p4'] },
+        },
+      };
+
+      const health = auditTreeHealth(cycleWithDescendant);
+      const cyclicIds = health.anomalies
+        .filter((a) => a.code === 'cyclic_pedigree')
+        .map((a) => a.personId);
+
+      assert.ok(cyclicIds.includes('p1'), 'p1 must be flagged in cycle');
+      assert.ok(cyclicIds.includes('p2'), 'p2 must be flagged in cycle');
+      assert.ok(cyclicIds.includes('p3'), 'p3 must be flagged in cycle');
+      assert.ok(!cyclicIds.includes('p4'), 'innocent descendant p4 must NOT be flagged in cycle');
+    });
   });
 
   describe('generateHealthReportMarkdown', () => {
