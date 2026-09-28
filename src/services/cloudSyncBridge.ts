@@ -2,6 +2,8 @@ import type { Person, Union } from '../types/tree';
 import {
   patchCloudPerson,
   patchCloudUnion,
+  deleteCloudPerson,
+  deleteCloudUnion,
   formatFirestoreError,
   ConcurrencyConflictError,
 } from './firestoreService';
@@ -10,7 +12,8 @@ import { useCollabStore } from '../stores/useCollabStore';
 interface PendingPersonPatch {
   treeId: string;
   personId: string;
-  updates: Partial<Person>;
+  updates?: Partial<Person>;
+  isDelete?: boolean;
   baseVersion?: number;
   attempts: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -20,7 +23,8 @@ interface PendingPersonPatch {
 interface PendingUnionPatch {
   treeId: string;
   unionId: string;
-  updates: Partial<Union>;
+  updates?: Partial<Union>;
+  isDelete?: boolean;
   baseVersion?: number;
   attempts: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -122,6 +126,7 @@ export class CloudSyncBridge {
       treeId,
       personId,
       updates: mergedUpdates,
+      isDelete: false,
       baseVersion: resolvedVersion,
       attempts: existing?.attempts || 0,
       timer,
@@ -164,6 +169,7 @@ export class CloudSyncBridge {
       treeId,
       unionId,
       updates: mergedUpdates,
+      isDelete: false,
       baseVersion: resolvedVersion,
       attempts: existing?.attempts || 0,
       timer,
@@ -171,25 +177,107 @@ export class CloudSyncBridge {
   }
 
   /**
-   * Sends the pending person patch to Firestore with error recovery and exponential retry.
+   * Queues a granular person deletion with debouncing.
+   */
+  public queuePersonDelete(
+    treeId: string,
+    personId: string,
+    options?: { baseVersion?: number; isSubcollection?: boolean }
+  ) {
+    if (!treeId || !personId) return;
+
+    const key = `${treeId}:person:${personId}`;
+    const existing = this.pendingPersonPatches.get(key);
+
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+
+    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
+    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
+
+    useCollabStore.getState().setCloudSyncStatus('saving');
+
+    const timer = setTimeout(async () => {
+      await this.sendPersonPatch(key);
+    }, DEBOUNCE_DELAY_MS);
+
+    this.pendingPersonPatches.set(key, {
+      treeId,
+      personId,
+      isDelete: true,
+      baseVersion: resolvedVersion,
+      attempts: existing?.attempts || 0,
+      timer,
+      isSubcollection,
+    });
+  }
+
+  /**
+   * Queues a granular union deletion with debouncing.
+   */
+  public queueUnionDelete(
+    treeId: string,
+    unionId: string,
+    options?: { baseVersion?: number }
+  ) {
+    if (!treeId || !unionId) return;
+
+    const key = `${treeId}:union:${unionId}`;
+    const existing = this.pendingUnionPatches.get(key);
+
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+
+    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
+
+    useCollabStore.getState().setCloudSyncStatus('saving');
+
+    const timer = setTimeout(async () => {
+      await this.sendUnionPatch(key);
+    }, DEBOUNCE_DELAY_MS);
+
+    this.pendingUnionPatches.set(key, {
+      treeId,
+      unionId,
+      isDelete: true,
+      baseVersion: resolvedVersion,
+      attempts: existing?.attempts || 0,
+      timer,
+    });
+  }
+
+  /**
+   * Sends the pending person patch or deletion to Firestore with error recovery and exponential retry.
    */
   public async sendPersonPatch(key: string): Promise<boolean> {
     const item = this.pendingPersonPatches.get(key);
     if (!item) return true;
 
     try {
-      const result = await patchCloudPerson(
-        item.treeId,
-        item.personId,
-        item.updates,
-        {
-          baseVersion: item.baseVersion,
-          isSubcollection: item.isSubcollection,
-        }
-      );
+      if (item.isDelete) {
+        await deleteCloudPerson(
+          item.treeId,
+          item.personId,
+          {
+            isSubcollection: item.isSubcollection,
+          }
+        );
+      } else {
+        const result = await patchCloudPerson(
+          item.treeId,
+          item.personId,
+          item.updates || {},
+          {
+            baseVersion: item.baseVersion,
+            isSubcollection: item.isSubcollection,
+          }
+        );
 
-      if (result?.version) {
-        this.baseVersion = result.version;
+        if (result?.version) {
+          this.baseVersion = result.version;
+        }
       }
 
       this.pendingPersonPatches.delete(key);
@@ -201,7 +289,7 @@ export class CloudSyncBridge {
     } catch (err: any) {
       item.attempts += 1;
       const formatted = formatFirestoreError(err);
-      console.error(`Granular person patch failed (attempt ${item.attempts}):`, err);
+      console.error(`Granular person ${item.isDelete ? 'deletion' : 'patch'} failed (attempt ${item.attempts}):`, err);
 
       const isOffline =
         (typeof navigator !== 'undefined' && !navigator.onLine) ||
@@ -227,24 +315,31 @@ export class CloudSyncBridge {
   }
 
   /**
-   * Sends the pending union patch to Firestore with error recovery and exponential retry.
+   * Sends the pending union patch or deletion to Firestore with error recovery and exponential retry.
    */
   public async sendUnionPatch(key: string): Promise<boolean> {
     const item = this.pendingUnionPatches.get(key);
     if (!item) return true;
 
     try {
-      const result = await patchCloudUnion(
-        item.treeId,
-        item.unionId,
-        item.updates,
-        {
-          baseVersion: item.baseVersion,
-        }
-      );
+      if (item.isDelete) {
+        await deleteCloudUnion(
+          item.treeId,
+          item.unionId
+        );
+      } else {
+        const result = await patchCloudUnion(
+          item.treeId,
+          item.unionId,
+          item.updates || {},
+          {
+            baseVersion: item.baseVersion,
+          }
+        );
 
-      if (result?.version) {
-        this.baseVersion = result.version;
+        if (result?.version) {
+          this.baseVersion = result.version;
+        }
       }
 
       this.pendingUnionPatches.delete(key);
@@ -256,7 +351,7 @@ export class CloudSyncBridge {
     } catch (err: any) {
       item.attempts += 1;
       const formatted = formatFirestoreError(err);
-      console.error(`Granular union patch failed (attempt ${item.attempts}):`, err);
+      console.error(`Granular union ${item.isDelete ? 'deletion' : 'patch'} failed (attempt ${item.attempts}):`, err);
 
       const isOffline =
         (typeof navigator !== 'undefined' && !navigator.onLine) ||

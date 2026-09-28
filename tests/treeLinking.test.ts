@@ -244,4 +244,27 @@ describe('Tree Linking & Branch Moving (Ancestry-style)', () => {
     assert.strictEqual(p3Link.treeId, 'tree_local_a');
     assert.strictEqual(p3Link.isCloud, false);
   });
+
+  it('correctly identifies removed member IDs when splitting a branch from a subcollections cloud tree', () => {
+    const cloudTree = createThreeGenSampleTree();
+    cloudTree.storageMode = 'subcollections';
+    (cloudTree as any).ownerId = 'user_123';
+
+    const selectedIds = ['p3', 'p7', 'p8', 'p9'];
+    const { newTree, updatedSourceTree, bridgePersonId } = splitBranchToNewTree(
+      cloudTree,
+      selectedIds,
+      'Split Subcollection Branch',
+      {
+        bridgePersonId: 'p3',
+        removeMovedFromSource: true,
+      }
+    );
+
+    assert.ok(newTree);
+    assert.strictEqual(bridgePersonId, 'p3');
+    const removedPersonIds = selectedIds.filter((pId) => pId !== bridgePersonId && !updatedSourceTree.people[pId]);
+    assert.deepStrictEqual(removedPersonIds.sort(), ['p7', 'p8', 'p9'].sort());
+    assert.strictEqual(updatedSourceTree.storageMode, 'subcollections');
+  });
 });

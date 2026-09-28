@@ -582,6 +582,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     },
 
     deleteUnion: (unionId: string) => {
+      const currentTree = get().tree;
       get().setTree((prev) => {
         const nextTree = { ...prev, unions: { ...prev.unions }, people: { ...prev.people } };
         delete nextTree.unions[unionId];
@@ -603,10 +604,32 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         });
         return nextTree;
       });
+
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        cloudSyncBridge.queueUnionDelete(currentTree.id, unionId);
+      }
     },
 
     deletePerson: (personId: string) => {
-      get().setTree((prev) => deletePersonFromTree(prev, personId));
+      const currentTree = get().tree;
+      const nextTree = deletePersonFromTree(currentTree, personId);
+      get().setTree(() => nextTree);
+
+      const collab = useCollabStore.getState();
+      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+        cloudSyncBridge.queuePersonDelete(currentTree.id, personId, {
+          isSubcollection: currentTree.storageMode === 'subcollections',
+        });
+
+        // Also queue deletion for any unions that were removed because they became empty
+        const oldUnionIds = Object.keys(currentTree.unions || {});
+        for (const uId of oldUnionIds) {
+          if (!nextTree.unions[uId]) {
+            cloudSyncBridge.queueUnionDelete(currentTree.id, uId);
+          }
+        }
+      }
     },
 
     addPerson: (overrides = {}) => {

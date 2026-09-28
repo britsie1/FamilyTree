@@ -332,6 +332,32 @@ describe('Centralized Zustand Stores', () => {
       cloudSyncBridge.clear();
       useCollabStore.getState().resetCollab();
     });
+
+    it('queues targeted granular person delete into cloudSyncBridge when isCloudTree is true', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(true);
+      useCollabStore.getState().setUserPermission('editor');
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+
+      useTreeStore.getState().deletePerson(personId);
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
+      assert.ok(cloudSyncBridge.getPendingCount() >= 1);
+      cloudSyncBridge.clear();
+      useCollabStore.getState().resetCollab();
+    });
+
+    it('queues targeted granular union delete into cloudSyncBridge when isCloudTree is true', () => {
+      cloudSyncBridge.clear();
+      useCollabStore.getState().setIsCloudTree(true);
+      useCollabStore.getState().setUserPermission('owner');
+      const unionId = Object.keys(useTreeStore.getState().tree.unions)[0];
+
+      useTreeStore.getState().deleteUnion(unionId);
+      assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
+      assert.strictEqual(cloudSyncBridge.getPendingCount(), 1);
+      cloudSyncBridge.clear();
+      useCollabStore.getState().resetCollab();
+    });
   });
 
   describe('useCanvasStore', () => {

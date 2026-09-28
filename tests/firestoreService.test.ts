@@ -171,6 +171,42 @@ describe('Firestore Cloud Service & Permission Resolution', () => {
     );
   });
 
+  it('deleteCloudPerson rejects cleanly if tree ID is missing or Firebase is unconfigured', async () => {
+    const { deleteCloudPerson } = await import('../src/services/firestoreService');
+    await assert.rejects(
+      async () => {
+        await deleteCloudPerson('', 'p1');
+      },
+      {
+        message: /Firebase is not configured or tree ID is missing/,
+      }
+    );
+  });
+
+  it('deleteCloudUnion rejects cleanly if tree ID is missing or Firebase is unconfigured', async () => {
+    const { deleteCloudUnion } = await import('../src/services/firestoreService');
+    await assert.rejects(
+      async () => {
+        await deleteCloudUnion('', 'u1');
+      },
+      {
+        message: /Firebase is not configured or tree ID is missing/,
+      }
+    );
+  });
+
+  it('deleteCloudPeople rejects cleanly if tree ID is missing or Firebase is unconfigured', async () => {
+    const { deleteCloudPeople } = await import('../src/services/firestoreService');
+    await assert.rejects(
+      async () => {
+        await deleteCloudPeople('', ['p1', 'p2']);
+      },
+      {
+        message: /Firebase is not configured or tree ID is missing/,
+      }
+    );
+  });
+
   it('estimateTreeDocumentSize computes byte size and detects trees approaching 1 MB threshold', async () => {
     const { estimateTreeDocumentSize, FIRESTORE_MAX_DOC_BYTES, FIRESTORE_WARN_DOC_BYTES } =
       await import('../src/services/firestoreService');

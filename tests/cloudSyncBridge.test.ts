@@ -71,4 +71,29 @@ describe('CloudSyncBridge Granular Synchronizer', () => {
     assert.ok(status === 'error' || status === 'offline');
     assert.ok(useCollabStore.getState().cloudSyncError);
   });
+
+  it('queues a person deletion and marks isDelete', () => {
+    assert.equal(bridge.hasPendingPatches(), false);
+    bridge.queuePersonDelete('tree_test', 'p1', { isSubcollection: true });
+    assert.equal(bridge.hasPendingPatches(), true);
+    assert.equal(bridge.getPendingCount(), 1);
+    assert.equal(useCollabStore.getState().cloudSyncStatus, 'saving');
+  });
+
+  it('cancels pending person update patch when person deletion is queued for the same person', () => {
+    bridge.queuePersonPatch('tree_test', 'p1', { firstName: 'Draft' });
+    assert.equal(bridge.getPendingCount(), 1);
+
+    // Now delete the same person
+    bridge.queuePersonDelete('tree_test', 'p1', { isSubcollection: true });
+    // Still 1 pending item, but now it is a deletion
+    assert.equal(bridge.getPendingCount(), 1);
+  });
+
+  it('queues a union deletion and marks isDelete', () => {
+    bridge.queueUnionDelete('tree_test', 'u1');
+    assert.equal(bridge.hasPendingPatches(), true);
+    assert.equal(bridge.getPendingCount(), 1);
+    assert.equal(useCollabStore.getState().cloudSyncStatus, 'saving');
+  });
 });

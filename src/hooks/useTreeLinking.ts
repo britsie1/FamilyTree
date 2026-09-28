@@ -16,6 +16,7 @@ import {
   getCloudTree,
   saveTreeToCloud,
   updateCloudTreeData,
+  deleteCloudPeople,
 } from '../services/firestoreService';
 import { useAuth } from './useAuth';
 import { useTreeStore } from '../stores/useTreeStore';
@@ -218,12 +219,25 @@ export function useTreeLinking({ onSwitchTree }: UseTreeLinkingOptions) {
       let targetNewTree = newTree;
       let targetSourceTree = updatedSourceTree;
 
+      // Identify people removed from source tree
+      const removedPersonIds = options.removeMovedFromSource
+        ? selectedArray.filter((pId) => pId !== bridgePersonId && !updatedSourceTree.people[pId])
+        : [];
+
       // If working on a cloud tree and authenticated, save new branch to cloud and update source in cloud
       if (isCurrentCloud && user) {
         try {
           const savedCloudNew = await saveTreeToCloud(newTree, user);
           targetNewTree = savedCloudNew;
-          await updateCloudTreeData(updatedSourceTree);
+          await updateCloudTreeData(updatedSourceTree, {
+            deletedPersonIds: removedPersonIds,
+          });
+          if (
+            removedPersonIds.length > 0 &&
+            (tree.storageMode === 'subcollections' || updatedSourceTree.storageMode === 'subcollections')
+          ) {
+            await deleteCloudPeople(updatedSourceTree.id, removedPersonIds, { isSubcollection: true });
+          }
         } catch (err) {
           console.error('Failed to sync newly split branch to cloud:', err);
         }

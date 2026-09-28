@@ -4,6 +4,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   collection,
   query,
   where,
@@ -279,7 +280,7 @@ export function estimateTreeDocumentSize(data: any): number {
  */
 export async function updateCloudTreeData(
   tree: TreeData,
-  options?: { baseVersion?: number }
+  options?: { baseVersion?: number; deletedPersonIds?: string[] }
 ): Promise<{ version: number }> {
   const db = getFirebaseDb();
   if (!db || !tree?.id) {
@@ -289,6 +290,11 @@ export async function updateCloudTreeData(
   const sanitized = sanitizeTree(tree);
   const docRef = doc(db, TREES_COLLECTION, sanitized.id);
   const now = new Date().toISOString();
+
+  // If subcollection storage is enabled and people were deleted, remove their subcollection docs
+  if (options?.deletedPersonIds && options.deletedPersonIds.length > 0 && sanitized.storageMode === 'subcollections') {
+    await deleteCloudPeople(sanitized.id, options.deletedPersonIds, { isSubcollection: true });
+  }
 
   // Check document size threshold for monolithic storage
   if (sanitized.storageMode !== 'subcollections') {
@@ -569,6 +575,153 @@ export async function patchCloudUnion(
       throw err;
     }
     console.error(`Failed to patch cloud union ${unionId}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Deletes a single person from Firestore (either from subcollection or monolithic document).
+ */
+export async function deleteCloudPerson(
+  treeId: string,
+  personId: string,
+  options?: { isSubcollection?: boolean }
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+  if (!personId) {
+    throw new Error('Person ID is missing.');
+  }
+
+  const now = new Date().toISOString();
+
+  if (options?.isSubcollection) {
+    const personDocRef = doc(db, TREES_COLLECTION, treeId, 'people', personId);
+    try {
+      await withTimeout(
+        deleteDoc(personDocRef),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+      await withTimeout(
+        updateDoc(rootDocRef, { updatedAt: now }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return;
+    } catch (err: any) {
+      console.error(`Failed to delete subcollection person ${personId}:`, err);
+      throw new Error(formatFirestoreError(err));
+    }
+  }
+
+  // Monolithic storage
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  try {
+    await withTimeout(
+      updateDoc(docRef, {
+        [`people.${personId}`]: deleteField(),
+        updatedAt: now,
+      }),
+      7000,
+      'Connection to Cloud Firestore timed out.'
+    );
+  } catch (err: any) {
+    console.error(`Failed to delete monolithic person ${personId}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Deletes a single union from Firestore.
+ */
+export async function deleteCloudUnion(
+  treeId: string,
+  unionId: string
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+  if (!unionId) {
+    throw new Error('Union ID is missing.');
+  }
+
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const now = new Date().toISOString();
+  try {
+    await withTimeout(
+      updateDoc(docRef, {
+        [`unions.${unionId}`]: deleteField(),
+        updatedAt: now,
+      }),
+      7000,
+      'Connection to Cloud Firestore timed out.'
+    );
+  } catch (err: any) {
+    console.error(`Failed to delete cloud union ${unionId}:`, err);
+    throw new Error(formatFirestoreError(err));
+  }
+}
+
+/**
+ * Deletes multiple people from Firestore (either from subcollection in batches or monolithic document).
+ */
+export async function deleteCloudPeople(
+  treeId: string,
+  personIds: string[],
+  options?: { isSubcollection?: boolean }
+): Promise<void> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+  if (!personIds || personIds.length === 0) return;
+
+  const now = new Date().toISOString();
+
+  if (options?.isSubcollection) {
+    try {
+      const batchSize = 400;
+      for (let i = 0; i < personIds.length; i += batchSize) {
+        const chunk = personIds.slice(i, i + batchSize);
+        const batch = writeBatch(db);
+        for (const pId of chunk) {
+          const pDocRef = doc(db, TREES_COLLECTION, treeId, 'people', pId);
+          batch.delete(pDocRef);
+        }
+        await withTimeout(batch.commit(), 7000, 'Failed to commit people deletion batch.');
+      }
+      const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+      await withTimeout(
+        updateDoc(rootDocRef, { updatedAt: now }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return;
+    } catch (err: any) {
+      console.error('Failed to batch delete subcollection people:', err);
+      throw new Error(formatFirestoreError(err));
+    }
+  }
+
+  // Monolithic storage
+  const docRef = doc(db, TREES_COLLECTION, treeId);
+  const updates: Record<string, any> = { updatedAt: now };
+  for (const pId of personIds) {
+    updates[`people.${pId}`] = deleteField();
+  }
+  try {
+    await withTimeout(
+      updateDoc(docRef, updates),
+      7000,
+      'Connection to Cloud Firestore timed out.'
+    );
+  } catch (err: any) {
+    console.error('Failed to delete monolithic people:', err);
     throw new Error(formatFirestoreError(err));
   }
 }

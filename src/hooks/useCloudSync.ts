@@ -269,8 +269,14 @@ export function useCloudSync(treeId: string | null | undefined) {
       autoSaveTimerRef.current = setTimeout(async () => {
         lastSavedCloudFingerprintRef.current = currentFingerprint;
         try {
+          const deletedPersonIds =
+            tree.storageMode === 'subcollections' && base?.people
+              ? Object.keys(base.people).filter((id) => !tree.people[id])
+              : undefined;
+
           const res = await updateCloudTreeData(tree, {
             baseVersion: cloudSyncBridge.getBaseVersion(),
+            deletedPersonIds,
           });
           if (res?.version) {
             cloudSyncBridge.setBaseVersion(res.version);
