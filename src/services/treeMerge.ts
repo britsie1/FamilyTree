@@ -141,7 +141,7 @@ export function threeWayMergePerson(
         return true;
       });
 
-      merged.unionIds = finalUnionIds.length > 0 ? finalUnionIds : lArr;
+      merged.unionIds = finalUnionIds;
       continue;
     }
 
@@ -295,7 +295,7 @@ export function threeWayMergeUnion(
         }
         return true;
       });
-      merged.childrenIds = finalChildrenIds.length > 0 ? finalChildrenIds : lArr;
+      merged.childrenIds = finalChildrenIds;
       continue;
     }
 
@@ -310,7 +310,13 @@ export function threeWayMergeUnion(
           combined.push(id);
         }
       }
-      merged.partnerIds = combined.length > 0 ? combined : lArr;
+      const finalPartnerIds = combined.filter((id) => {
+        if (bSet.has(id) && !rArr.includes(id) && bVal && (bVal as string[]).includes(id)) {
+          return false;
+        }
+        return true;
+      });
+      merged.partnerIds = finalPartnerIds;
       continue;
     }
 

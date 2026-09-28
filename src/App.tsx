@@ -56,6 +56,7 @@ function FamilyTreeMain() {
   const adjustSpacing = useCanvasStore((s) => s.adjustSpacing);
   const selectPerson = useCanvasStore((s) => s.selectPerson);
   const canvasOverrides = useCanvasStore((s) => s.layoutOverrides);
+  const canvasHorizontalOverrides = useCanvasStore((s) => s.horizontalOverrides);
 
   const isCloudTree = useCollabStore((s) => s.isCloudTree);
   const userPermission = useCollabStore((s) => s.userPermission);
@@ -80,9 +81,10 @@ function FamilyTreeMain() {
   }, [tree, focusPersonId]);
 
   const effectiveOverrides = useMemo(() => ({
-    ...(layoutStyle === 'horizontal' ? activeTree.horizontalOverrides : activeTree.layoutOverrides),
-    ...canvasOverrides,
-  }), [layoutStyle, activeTree.horizontalOverrides, activeTree.layoutOverrides, canvasOverrides]);
+    ...(layoutStyle === 'horizontal'
+      ? { ...activeTree.horizontalOverrides, ...canvasHorizontalOverrides }
+      : { ...activeTree.layoutOverrides, ...canvasOverrides }),
+  }), [layoutStyle, activeTree.horizontalOverrides, activeTree.layoutOverrides, canvasOverrides, canvasHorizontalOverrides]);
 
   const { layout } = useAsyncLayout(activeTree, layoutStyle, groupByFamily, collapsedPersonIds, adjustSpacing, effectiveOverrides);
 

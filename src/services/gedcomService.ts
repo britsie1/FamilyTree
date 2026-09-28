@@ -141,7 +141,7 @@ export function normalizeGedcomDate(dateStr?: string): string {
     if (months[m]) {
       const month = months[m];
       const year = monthYear[2];
-      return `${year}-${month}-01`;
+      return `${year}-${month}`;
     }
   }
 
@@ -535,12 +535,16 @@ export function exportGedcom(tree: TreeData): string {
 
     // DEAT
     if (person.isDeceased || person.deathDate || person.deathPlace) {
-      lines.push('1 DEAT');
-      if (person.deathDate) {
-        lines.push(`2 DATE ${formatGedcomDate(person.deathDate)}`);
-      }
-      if (person.deathPlace) {
-        lines.push(`2 PLAC ${person.deathPlace}`);
+      if (person.deathDate || person.deathPlace) {
+        lines.push('1 DEAT');
+        if (person.deathDate) {
+          lines.push(`2 DATE ${formatGedcomDate(person.deathDate)}`);
+        }
+        if (person.deathPlace) {
+          lines.push(`2 PLAC ${person.deathPlace}`);
+        }
+      } else {
+        lines.push('1 DEAT Y');
       }
     }
 

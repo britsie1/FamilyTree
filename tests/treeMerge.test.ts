@@ -155,4 +155,85 @@ describe('3-Way Concurrency Merge Engine', () => {
     // Version incremented
     assert.equal(result.merged.version, 3);
   });
+
+  it('correctly merges when all unions are deleted without resurrecting local array (Bug 2.1)', () => {
+    const localPerson: Person = {
+      ...basePerson,
+      notes: 'Local updated notes',
+      unionIds: ['u1'],
+    };
+    const remotePerson: Person = {
+      ...basePerson,
+      unionIds: [], // Remote removed all unions
+    };
+
+    const result = threeWayMergePerson(basePerson, localPerson, remotePerson, 'p1');
+    assert.equal(result.hasConflict, false);
+    assert.deepEqual(result.mergedPerson.unionIds, []);
+    assert.equal(result.mergedPerson.notes, 'Local updated notes');
+  });
+
+  it('correctly merges when all children are deleted from a union without resurrecting local array (Bug 2.1)', () => {
+    const baseUnion: Union = {
+      id: 'u1',
+      partnerIds: ['p1', 'p2'],
+      childrenIds: ['c1'],
+    };
+    const localUnion: Union = {
+      ...baseUnion,
+      type: 'married',
+    };
+    const remoteUnion: Union = {
+      ...baseUnion,
+      childrenIds: [], // Remote removed all children
+    };
+
+    const result = threeWayMergeUnion(baseUnion, localUnion, remoteUnion, 'u1');
+    assert.equal(result.hasConflict, false);
+    assert.deepEqual(result.mergedUnion.childrenIds, []);
+    assert.equal(result.mergedUnion.type, 'married');
+  });
+
+  it('correctly detects and merges remote partner removals (Bug 2.2)', () => {
+    const baseUnion: Union = {
+      id: 'u1',
+      partnerIds: ['p1', 'p2'],
+      childrenIds: ['c1'],
+    };
+    const localUnion: Union = {
+      ...baseUnion,
+      marriageDate: '1985-04-12',
+    };
+    const remoteUnion: Union = {
+      ...baseUnion,
+      partnerIds: ['p1'], // Remote removed partner p2
+    };
+
+    const result = threeWayMergeUnion(baseUnion, localUnion, remoteUnion, 'u1');
+    assert.equal(result.hasConflict, false);
+    assert.deepEqual(result.mergedUnion.partnerIds, ['p1']);
+    assert.equal(result.mergedUnion.marriageDate, '1985-04-12');
+  });
+
+  it('correctly merges when all partners are removed without resurrecting local array (Bug 2.1 & 2.2)', () => {
+    const baseUnion: Union = {
+      id: 'u1',
+      partnerIds: ['p1', 'p2'],
+      childrenIds: ['c1'],
+    };
+    const localUnion: Union = {
+      ...baseUnion,
+      type: 'separated',
+    };
+    const remoteUnion: Union = {
+      ...baseUnion,
+      partnerIds: [],
+    };
+
+    const result = threeWayMergeUnion(baseUnion, localUnion, remoteUnion, 'u1');
+    assert.equal(result.hasConflict, false);
+    assert.deepEqual(result.mergedUnion.partnerIds, []);
+    assert.equal(result.mergedUnion.type, 'separated');
+  });
 });
+

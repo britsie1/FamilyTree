@@ -214,6 +214,11 @@ export function sanitizeTree(tree: TreeData): TreeData {
     };
   }
 
+  // Step 4: Clean up collapsedPersonIds
+  if (nextTree.collapsedPersonIds) {
+    nextTree.collapsedPersonIds = nextTree.collapsedPersonIds.filter((id) => Boolean(nextTree.people[id]));
+  }
+
   return nextTree;
 }
 

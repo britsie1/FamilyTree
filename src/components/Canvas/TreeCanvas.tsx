@@ -164,7 +164,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       if (propOnUpdatePersonPosition) {
         propOnUpdatePersonPosition(id, x, y);
       } else {
-        useCanvasStore.getState().updatePersonPosition(id, x, y);
+        useCanvasStore.getState().updatePersonPosition(id, x, y, layoutStyle);
         useTreeStore.getState().updatePersonPosition(id, x, y, layoutStyle);
       }
     },

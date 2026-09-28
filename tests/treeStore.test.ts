@@ -358,6 +358,34 @@ describe('Centralized Zustand Stores', () => {
       cloudSyncBridge.clear();
       useCollabStore.getState().resetCollab();
     });
+
+    it('persists collapsedPersonIds, syncs to useCanvasStore, and supports undo/redo (Bug 2.6)', () => {
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      assert.strictEqual(Boolean(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId)), false);
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), false);
+
+      // Collapse branch
+      useTreeStore.getState().toggleCollapse(personId);
+      assert.ok(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId));
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), true);
+      assert.strictEqual(useTreeStore.getState().canUndo, true);
+
+      // Undo collapse
+      useTreeStore.getState().undo();
+      assert.strictEqual(Boolean(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId)), false);
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), false);
+      assert.strictEqual(useTreeStore.getState().canRedo, true);
+
+      // Redo collapse
+      useTreeStore.getState().redo();
+      assert.ok(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId));
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), true);
+
+      // Uncollapse by toggling again
+      useTreeStore.getState().toggleCollapse(personId);
+      assert.strictEqual(Boolean(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId)), false);
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), false);
+    });
   });
 
   describe('useCanvasStore', () => {
@@ -410,6 +438,21 @@ describe('Centralized Zustand Stores', () => {
       assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides, {});
     });
 
+    it('isolates horizontal and vertical layout overrides in useCanvasStore (Bug 2.3)', () => {
+      const canvasStore = useCanvasStore.getState();
+      // Update in vertical mode (default)
+      canvasStore.updatePersonPosition('p1', 100, 200, 'vertical');
+      // Update in horizontal mode
+      canvasStore.updatePersonPosition('p1', 500, 600, 'horizontal');
+
+      assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides['p1'], { x: 100, y: 200 });
+      assert.deepStrictEqual(useCanvasStore.getState().horizontalOverrides['p1'], { x: 500, y: 600 });
+
+      canvasStore.clearLayoutOverrides();
+      assert.deepStrictEqual(useCanvasStore.getState().layoutOverrides, {});
+      assert.deepStrictEqual(useCanvasStore.getState().horizontalOverrides, {});
+    });
+
     it('manages beaconPersonId and canvasSearchQuery in useCanvasStore', () => {
       const canvasStore = useCanvasStore.getState();
       assert.strictEqual(canvasStore.beaconPersonId, null);
@@ -441,6 +484,23 @@ describe('Centralized Zustand Stores', () => {
       canvasStore.registerCenterHandler(null);
       canvasStore.centerOnPerson('p-99');
       assert.strictEqual(centeredPersonId, 'p-42'); // Unregistered, not updated
+    });
+
+    it('routes toggleCollapse through registered collapse handler to useTreeStore (Bug 2.6)', () => {
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), false);
+
+      // Call toggleCollapse from useCanvasStore
+      useCanvasStore.getState().toggleCollapse(personId);
+
+      // TreeStore has received and recorded the collapse
+      assert.ok(useTreeStore.getState().tree.collapsedPersonIds?.includes(personId));
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), true);
+      assert.strictEqual(useTreeStore.getState().canUndo, true);
+
+      // Undo via treeStore restores canvasStore state
+      useTreeStore.getState().undo();
+      assert.strictEqual(useCanvasStore.getState().collapsedPersonIds.has(personId), false);
     });
   });
 

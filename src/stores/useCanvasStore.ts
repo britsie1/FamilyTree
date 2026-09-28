@@ -37,6 +37,9 @@ export interface CanvasStoreState {
   toggleFocus: (personId: string) => void;
   clearFocus: () => void;
   toggleCollapse: (personId: string) => void;
+  setCollapsedPersonIds: (ids: Set<string> | string[]) => void;
+  collapseHandler: ((personId: string) => void) | null;
+  registerCollapseHandler: (handler: ((personId: string) => void) | null) => void;
   clearSelection: () => void;
 
   // MiniMap Radar Navigator
@@ -51,9 +54,16 @@ export interface CanvasStoreState {
 
   // Presentation layout overrides
   layoutOverrides: LayoutOverrides;
-  updatePersonPosition: (personId: string, x: number, y: number) => void;
+  horizontalOverrides: LayoutOverrides;
+  updatePersonPosition: (
+    personId: string,
+    x: number,
+    y: number,
+    layoutStyle?: LayoutStyle
+  ) => void;
   setLayoutOverrides: (
-    overrides: LayoutOverrides | ((prev: LayoutOverrides) => LayoutOverrides)
+    overrides: LayoutOverrides | ((prev: LayoutOverrides) => LayoutOverrides),
+    layoutStyle?: LayoutStyle
   ) => void;
   clearLayoutOverrides: () => void;
 
@@ -213,7 +223,22 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
 
   clearFocus: () => set({ focusPersonId: null }),
 
+  collapseHandler: null,
+  registerCollapseHandler: (handler) => {
+    set({ collapseHandler: handler });
+  },
+
+  setCollapsedPersonIds: (ids) => {
+    const nextSet = ids instanceof Set ? ids : new Set(ids);
+    set({ collapsedPersonIds: nextSet });
+  },
+
   toggleCollapse: (personId) => {
+    const handler = get().collapseHandler;
+    if (handler) {
+      handler(personId);
+      return;
+    }
     set((state) => {
       const next = new Set(state.collapsedPersonIds);
       if (next.has(personId)) {
@@ -243,24 +268,47 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
 
   // Presentation layout overrides
   layoutOverrides: {},
-  updatePersonPosition: (personId, x, y) => {
-    set((state) => ({
-      layoutOverrides: {
-        ...state.layoutOverrides,
-        [personId]: { x, y },
-      },
-    }));
+  horizontalOverrides: {},
+  updatePersonPosition: (personId, x, y, layoutStyle) => {
+    const activeStyle = layoutStyle || get().layoutStyle;
+    set((state) => {
+      if (activeStyle === 'horizontal') {
+        return {
+          horizontalOverrides: {
+            ...state.horizontalOverrides,
+            [personId]: { x, y },
+          },
+        };
+      }
+      return {
+        layoutOverrides: {
+          ...state.layoutOverrides,
+          [personId]: { x, y },
+        },
+      };
+    });
   },
-  setLayoutOverrides: (overridesOrUpdater) => {
-    set((state) => ({
-      layoutOverrides:
-        typeof overridesOrUpdater === 'function'
-          ? overridesOrUpdater(state.layoutOverrides)
-          : overridesOrUpdater,
-    }));
+  setLayoutOverrides: (overridesOrUpdater, layoutStyle) => {
+    const activeStyle = layoutStyle || get().layoutStyle;
+    set((state) => {
+      if (activeStyle === 'horizontal') {
+        return {
+          horizontalOverrides:
+            typeof overridesOrUpdater === 'function'
+              ? overridesOrUpdater(state.horizontalOverrides)
+              : overridesOrUpdater,
+        };
+      }
+      return {
+        layoutOverrides:
+          typeof overridesOrUpdater === 'function'
+            ? overridesOrUpdater(state.layoutOverrides)
+            : overridesOrUpdater,
+      };
+    });
   },
   clearLayoutOverrides: () => {
-    set({ layoutOverrides: {} });
+    set({ layoutOverrides: {}, horizontalOverrides: {} });
   },
 
   // Visual beacon pulse for located nodes

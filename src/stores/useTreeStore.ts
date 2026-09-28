@@ -195,6 +195,10 @@ function getTargetKey(patches: Patch[]): string {
     return `layoutOverrides/${personId}:pos`;
   }
 
+  if (significant.some((p) => p.path[0] === 'collapsedPersonIds')) {
+    return `collapsedPersonIds:${Date.now()}`;
+  }
+
   return significant.map((p) => p.path.join('/')).sort().join(';');
 }
 
@@ -223,6 +227,7 @@ export interface TreeStoreState {
   // High-level mutations
   updateTreeName: (name: string) => void;
   updatePerson: (personId: string, updates: Partial<Person>) => void;
+  toggleCollapse: (personId: string) => void;
   updatePersonPosition: (
     personId: string,
     x: number,
@@ -290,6 +295,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
         saveCurrentTree(nextTree);
         set({ tree: nextTree });
+        useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
         return;
       }
 
@@ -306,6 +312,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
         saveCurrentTree(nextTree);
         set({ tree: nextTree });
+        useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
         return;
       }
 
@@ -329,6 +336,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       }
 
       saveCurrentTree(nextTree);
+      useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
 
       const now = Date.now();
       const targetKey = getTargetKey(patches);
@@ -421,6 +429,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         canUndo: historyPast.length > 0,
         canRedo: true,
       });
+      useCanvasStore.getState().setCollapsedPersonIds(previousTree.collapsedPersonIds || []);
     },
 
     redo: () => {
@@ -442,6 +451,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         canUndo: true,
         canRedo: historyFuture.length > 0,
       });
+      useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
     },
 
     resetHistory: (newTree: TreeData) => {
@@ -459,6 +469,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         canUndo: false,
         canRedo: false,
       });
+      useCanvasStore.getState().setCollapsedPersonIds(newTree.collapsedPersonIds || []);
     },
 
     beginTransaction: () => {
@@ -550,6 +561,19 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
           isSubcollection: currentTree.storageMode === 'subcollections',
         });
       }
+    },
+
+    toggleCollapse: (personId: string) => {
+      get().setTree((prev) => {
+        const currentList = prev.collapsedPersonIds || [];
+        const nextList = currentList.includes(personId)
+          ? currentList.filter((id) => id !== personId)
+          : [...currentList, personId];
+        return {
+          ...prev,
+          collapsedPersonIds: nextList,
+        };
+      }, true);
     },
 
     updatePersonPosition: (personId, x, y, layoutStyle) => {
@@ -773,3 +797,12 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     },
   };
 });
+
+// Sync initial collapsed state and register collapse handler to route canvas store toggles through tree store
+if (initialTree.collapsedPersonIds) {
+  useCanvasStore.getState().setCollapsedPersonIds(initialTree.collapsedPersonIds);
+}
+useCanvasStore.getState().registerCollapseHandler((personId) => {
+  useTreeStore.getState().toggleCollapse(personId);
+});
+

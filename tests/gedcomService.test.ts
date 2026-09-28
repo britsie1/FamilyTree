@@ -10,8 +10,9 @@ describe('GEDCOM Service', () => {
       assert.strictEqual(normalizeGedcomDate('1 DEC 2005'), '2005-12-01');
     });
 
-    it('normalizes month-year dates', () => {
-      assert.strictEqual(normalizeGedcomDate('MAY 1995'), '1995-05-01');
+    it('normalizes month-year dates without fabricating 01 days (Bug 2.4)', () => {
+      assert.strictEqual(normalizeGedcomDate('MAY 1995'), '1995-05');
+      assert.strictEqual(normalizeGedcomDate('MAR 1950'), '1950-03');
     });
 
     it('normalizes year-only dates', () => {
@@ -193,5 +194,39 @@ describe('GEDCOM Service', () => {
       assert.strictEqual(divUnion.type, 'divorced');
       assert.strictEqual(divUnion.partnerIds.length, 2);
     });
+
+    it('exports dateless deceased persons with compliant 1 DEAT Y line (Bug 2.5)', () => {
+      const tree = {
+        id: 'tree-deat-test',
+        name: 'Deceased Test',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        people: {
+          p1: {
+            id: 'p1',
+            firstName: 'Ghost',
+            lastName: 'Rider',
+            isDeceased: true,
+            unionIds: [],
+          },
+          p2: {
+            id: 'p2',
+            firstName: 'Living',
+            lastName: 'Person',
+            isDeceased: false,
+            unionIds: [],
+          },
+        },
+        unions: {},
+      };
+
+      const gedcom = exportGedcom(tree as any);
+      assert.ok(gedcom.includes('1 DEAT Y'));
+      // Ensure no standalone '1 DEAT' without Y or subordinate lines exists
+      const lines = gedcom.split('\n');
+      const nakedDeat = lines.find((l) => l.trim() === '1 DEAT');
+      assert.strictEqual(nakedDeat, undefined);
+    });
   });
 });
+
