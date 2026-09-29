@@ -14,6 +14,8 @@ import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
 import { cloudSyncBridge } from '../services/cloudSyncBridge';
 import { syncMerge } from '../services/syncMerge';
+import { createSnapshot } from '../services/snapshotService';
+import { notifyRepairsApplied } from '../stores/useNotificationStore';
 
 /**
  * Produces a stable structural fingerprint of a tree for equality checking,
@@ -191,6 +193,13 @@ export function useCloudSync(treeId: string | null | undefined) {
 
         const hasPendingLocal = currentFingerprint !== lastSavedCloudFingerprintRef.current;
         if (hasPendingLocal && lastBaseTreeRef.current) {
+          // Automatic snapshot before merging risky concurrent cloud changes
+          createSnapshot(
+            currentLocalTree,
+            'pre-cloud-merge',
+            `Automatic backup before merging cloud changes into ${currentLocalTree.name || 'tree'}`
+          ).catch(console.warn);
+
           // Perform deterministic syncMerge with tombstone resolution and invariant repair
           const mergeResult = syncMerge(currentLocalTree, remoteTree);
           lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(mergeResult.tree);
@@ -199,10 +208,25 @@ export function useCloudSync(treeId: string | null | undefined) {
           isRemoteSyncRef.current = true;
           setTree(mergeResult.tree, false);
 
+          if (mergeResult.repairsApplied) {
+            notifyRepairsApplied(1, 'Repaired data consistency during cloud synchronization merge.');
+          }
+
           if (mergeResult.notices.length > 0) {
             console.info('Cloud sync notices:', mergeResult.notices);
           }
         } else {
+          // If remote change involves significant record alterations (e.g. >= 3 records delta), capture snapshot
+          const localCount = Object.keys(currentLocalTree.people || {}).length;
+          const remoteCount = Object.keys(remoteTree.people || {}).length;
+          if (localCount > 0 && Math.abs(localCount - remoteCount) >= 3) {
+            createSnapshot(
+              currentLocalTree,
+              'pre-cloud-merge',
+              `Automatic backup before applying remote sync (${localCount} -> ${remoteCount} people)`
+            ).catch(console.warn);
+          }
+
           isRemoteSyncRef.current = true;
           lastSavedCloudFingerprintRef.current = remoteFingerprint;
           lastBaseTreeRef.current = remoteTree;

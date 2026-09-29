@@ -19,6 +19,7 @@ import { SunburstModal } from './SunburstModal';
 import { TreeStatisticsModal } from './TreeStatisticsModal';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { KinshipModal } from './KinshipModal';
+import { VersionHistoryModal } from './VersionHistoryModal';
 
 export interface TreeModalsProps {
   onSwitchTree: (
@@ -104,6 +105,9 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
   const isKinshipModalOpen = useModalStore((s) => s.isKinshipModalOpen);
   const closeKinshipModal = useModalStore((s) => s.closeKinshipModal);
   const kinshipSourcePersonId = useModalStore((s) => s.kinshipSourcePersonId);
+
+  const isVersionHistoryOpen = useModalStore((s) => s.isVersionHistoryOpen);
+  const closeVersionHistoryModal = useModalStore((s) => s.closeVersionHistoryModal);
 
   const relModal = useModalStore((s) => s.relModal);
   const closeRelationshipModal = useModalStore((s) => s.closeRelationshipModal);
@@ -309,6 +313,18 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
           tree={tree}
           initialPersonId={kinshipSourcePersonId || selectedPersonId}
           onSelectPerson={selectPerson}
+        />
+      )}
+
+      {/* Version History & Snapshots Modal */}
+      {isVersionHistoryOpen && (
+        <VersionHistoryModal
+          isOpen={isVersionHistoryOpen}
+          onClose={closeVersionHistoryModal}
+          currentTree={tree}
+          onRestoreTree={(restoredTree) => {
+            onSwitchTree(restoredTree, isCloudTree);
+          }}
         />
       )}
     </>

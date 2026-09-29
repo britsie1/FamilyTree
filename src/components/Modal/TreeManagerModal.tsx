@@ -20,6 +20,7 @@ import {
   getCloudTree,
   deleteCloudTree,
 } from '../../services/firestoreService';
+import { createSnapshot } from '../../services/snapshotService';
 import {
   X,
   Plus,
@@ -185,6 +186,15 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
     }
 
     if (window.confirm(`Are you sure you want to delete "${treeName}" from local storage?`)) {
+      const target = loadTreeById(treeId);
+      if (target && Object.keys(target.people || {}).length > 0) {
+        createSnapshot(
+          target,
+          'pre-tree-clear',
+          `Automatic backup before deleting tree "${treeName}"`
+        ).catch(console.warn);
+      }
+
       const res = deleteStoredTree(treeId);
       refreshLocalList();
       if (treeId === currentTreeId) {

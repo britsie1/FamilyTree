@@ -18,6 +18,7 @@ import { useTreeStore } from '../stores/useTreeStore';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
 import { useThemeStore } from '../stores/useThemeStore';
+import { createSnapshot } from '../services/snapshotService';
 
 export interface UseTreeIOOptions {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -50,6 +51,15 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
   }, [makeCopyAction, setIsCloudTree, setUserPermission, setAccessDeniedMessage, onClearUrl]);
 
   const handleSelectPreset = useCallback((presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => {
+    // Capture snapshot of current tree before switching presets if it contains data
+    if (tree && Object.keys(tree.people || {}).length > 0) {
+      createSnapshot(
+        tree,
+        presetKey === 'blank' ? 'pre-tree-clear' : 'pre-preset-switch',
+        `Automatic backup before switching to ${presetKey} template`
+      ).catch(console.warn);
+    }
+
     let nextTree: TreeData;
     if (presetKey === 'double_in_law') nextTree = createDoubleInLawPreset();
     else if (presetKey === 'divorce') nextTree = createDivorceBlendedPreset();
@@ -59,14 +69,25 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
     nextTree.id = `tree_${presetKey}_${Date.now().toString(36)}`;
     saveCurrentTree(nextTree);
     onSwitchTree(nextTree, false);
-  }, [onSwitchTree]);
+  }, [tree, onSwitchTree]);
 
   const handleImportFile = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
-        const imported = file.name.toLowerCase().endsWith('.ged')
+        const isGed = file.name.toLowerCase().endsWith('.ged');
+
+        // Capture snapshot before applying imported tree
+        if (tree && Object.keys(tree.people || {}).length > 0) {
+          createSnapshot(
+            tree,
+            isGed ? 'pre-gedcom-import' : 'pre-json-import',
+            `Automatic backup before importing ${file.name}`
+          ).catch(console.warn);
+        }
+
+        const imported = isGed
           ? parseGedcom(content, file.name.replace(/\.[^/.]+$/, ''))
           : importTreeFromJsonString(content);
 
@@ -78,7 +99,7 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
       }
     };
     reader.readAsText(file);
-  }, [onSwitchTree]);
+  }, [tree, onSwitchTree]);
 
   const handleExportImage = useCallback(async () => {
     const container = containerRef.current;

@@ -31,6 +31,10 @@ import { useTreeKeyboardShortcuts } from './hooks/useTreeKeyboardShortcuts';
 import { useTreeLinking } from './hooks/useTreeLinking';
 import { useQuickConnect } from './hooks/useQuickConnect';
 import { useTreeIO } from './hooks/useTreeIO';
+import { usePeriodicSnapshot } from './hooks/usePeriodicSnapshot';
+import { NotificationToastContainer } from './components/Toolbar/NotificationToastContainer';
+import { registerIngressRepairListener } from './services/schema';
+import { notifyRepairsApplied } from './stores/useNotificationStore';
 
 export function App() {
   return (
@@ -145,6 +149,18 @@ function FamilyTreeMain() {
     };
   }, []);
 
+  useEffect(() => {
+    registerIngressRepairListener((report) => {
+      notifyRepairsApplied(
+        report.changes.length,
+        `Repaired ${report.changes.length} data invariant ${report.changes.length === 1 ? 'issue' : 'issues'} at data boundary.`
+      );
+    });
+    return () => {
+      registerIngressRepairListener(null);
+    };
+  }, []);
+
   const handleCenterOnPerson = useCallback((personId: string) => {
     const container = canvasContainerRef.current;
     if (!container) return;
@@ -238,6 +254,8 @@ function FamilyTreeMain() {
     onSwitchTree: handleSwitchTree,
     onClearUrl: () => clearTreeUrl(true),
   });
+
+  usePeriodicSnapshot(tree);
 
   const currentRelationship = useMemo(() => (!selectedPersonId || !comparisonPersonId ? null : findRelationship(tree, selectedPersonId, comparisonPersonId)), [tree, selectedPersonId, comparisonPersonId]);
 
@@ -361,6 +379,8 @@ function FamilyTreeMain() {
         onSwitchTree={handleSwitchTree} onSelectPreset={handleSelectPreset}
         onCreateTreeFromSelection={handleCreateTreeFromSelection} onLinkTrees={handleLinkTrees}
       />
+
+      <NotificationToastContainer />
 
       <AccessDeniedOverlay onSwitchTree={handleSwitchTree} onClearUrl={() => clearTreeUrl(true)} />
     </div>

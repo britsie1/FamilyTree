@@ -20,6 +20,13 @@ export interface IngressResult {
   rawPayloadPreserved?: unknown;
 }
 
+export type IngressRepairListener = (report: RepairReport, tree: TreeData) => void;
+let globalIngressRepairListener: IngressRepairListener | null = null;
+
+export function registerIngressRepairListener(listener: IngressRepairListener | null): void {
+  globalIngressRepairListener = listener;
+}
+
 /**
  * Standard data ingress pipeline enforced at every app boundary:
  * 1. Stepwise migration (older/unversioned -> CURRENT_SCHEMA_VERSION).
@@ -68,6 +75,10 @@ export function processTreeIngress(
       err.rawPayload = raw;
     }
     throw err;
+  }
+
+  if (report.repaired && report.changes.length > 0 && globalIngressRepairListener) {
+    globalIngressRepairListener(report, repairedTree);
   }
 
   return {

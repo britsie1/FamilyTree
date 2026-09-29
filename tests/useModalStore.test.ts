@@ -142,4 +142,14 @@ describe('useModalStore', () => {
     assert.strictEqual(useModalStore.getState().kinshipSourcePersonId, null);
     assert.strictEqual(useModalStore.getState().activeModal, null);
   });
+
+  it('opens and closes version history modal', () => {
+    useModalStore.getState().openVersionHistoryModal();
+    assert.strictEqual(useModalStore.getState().isVersionHistoryOpen, true);
+    assert.deepStrictEqual(useModalStore.getState().activeModal, { type: 'version_history' });
+
+    useModalStore.getState().closeVersionHistoryModal();
+    assert.strictEqual(useModalStore.getState().isVersionHistoryOpen, false);
+    assert.strictEqual(useModalStore.getState().activeModal, null);
+  });
 });

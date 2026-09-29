@@ -164,3 +164,55 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
 5. **Compaction Policy**:
    - Retain tombstones for 30 days before purge.
 
+---
+
+### 9. Phase 3 Architecture (Invariant, Property, and Round-Trip Testing in CI)
+
+1. **Seeded Random Tree Generator (`src/test-utils/treeGenerator.ts`)**:
+   - Pure, deterministic pseudo-random generator (Linear Congruential Generator) producing reproducible family graphs.
+   - Generates multi-generational pedigrees with customizable depth, partners, child branching factors, and cross-line in-law connections.
+   - Guarantees 100% adherence to schema version 1 invariants.
+2. **Round-Trip & Mathematical Property Test Suites (`tests/propertyAndRoundTrip.test.ts`)**:
+   - **JSON Export / Import Preservation**: Verifies lossless preservation of graph topology, notes, and positions across `exportTreeToJsonFile` and `importTreeFromJsonString`.
+   - **GEDCOM 5.5.1 Export / Import Round-Trip**: Verifies family relationship recovery, date normalization, and INDI/FAM parsing.
+   - **Mathematical Merge Properties**:
+     - *Idempotence*: `syncMerge(A, A) == A`
+     - *Commutativity*: `syncMerge(A, B) == syncMerge(B, A)`
+     - *Associativity*: `syncMerge(syncMerge(A, B), C) == syncMerge(A, syncMerge(B, C))`
+   - **Operation Invariant Preservation**: Every operation in `src/services/treeOperations.ts` preserves zero invariant violations.
+   - **Migration Idempotence**: `migrate(migrate(T)) === migrate(T)`.
+   - **Multi-Client Concurrent Simulation**: 3 concurrent clients with network delays, offline edits, and tombstone exchanges converging to identical state.
+3. **Continuous Integration Pipeline (`.github/workflows/ci.yml`)**:
+   - Automated checks on every push and pull request to `main`.
+   - Runs `npm run lint` (`oxlint`), `npm test` (`tsx --test`), and `npm run build` (`tsc -b && vite build`).
+
+---
+
+### 10. Phase 4 Architecture (Automatic Local Snapshots and Restore Option)
+
+1. **Snapshot Storage Engine (`src/services/snapshotService.ts`)**:
+   - Built on native IndexedDB (`window.indexedDB`, DB `familytree_snapshots_db`, object store `snapshots`).
+   - Pure in-memory fallback layer when running in Node.js test environments or private browser contexts without IndexedDB.
+   - Indexed on `treeId`, `timestamp`, and composite `['treeId', 'timestamp']`.
+   - Metadata payload: `id`, `treeId`, `treeName`, `createdAt`, `timestamp`, `reason`, `description`, `treeData`, `personCount`, `unionCount`, `schemaVersion`.
+2. **Bounded Retention Policy (`calculateSnapshotIdsToPrune`)**:
+   - **Tier 1 (Recent)**: The most recent 20 snapshots are kept unconditionally.
+   - **Tier 2 (Daily Compaction)**: Snapshots older than the 20th within a 14-day window are compacted to at most 1 snapshot per calendar day.
+   - **Tier 3 (Expiry)**: Snapshots older than 14 days beyond the 20th are pruned automatically upon new snapshot creation.
+3. **Trigger Boundaries**:
+   - **Pre-Import**: Captured in `useTreeIO.ts` before importing `.ged` or `.json` files.
+   - **Pre-Preset Switch & Clear**: Captured before applying preset templates or blanking trees.
+   - **Pre-Tree Deletion**: Captured in `TreeManagerModal.tsx` before removing trees from storage.
+   - **Pre-Cloud Merge**: Captured in `useCloudSync.ts` before executing 3-way/syncMerge against remote updates.
+   - **Periodic Editing Auto-Save**: Throttled 5-minute debounced checkpoint in `usePeriodicSnapshot.ts` while user actively modifies tree data.
+4. **Restore Safety Guarantee ("Safety Undo")**:
+   - Restoring any snapshot via `restoreSnapshot(snapshotId, currentTree)` automatically takes a `pre-restore` snapshot of the active tree before applying restored data.
+   - If the user restores by mistake, their previous state is immediately available in the snapshot history.
+5. **Non-blocking UI Feedback (`useNotificationStore.ts`, `NotificationToastContainer.tsx`)**:
+   - Lightweight, accessible toast notifications (dismissible, auto-fading) for automatic snapshot creation and data boundary repairs (`registerIngressRepairListener`).
+6. **Version History Modal (`src/components/Modal/VersionHistoryModal.tsx`)**:
+   - Integrated into `TopNavbar` and `TreeModals`.
+   - Lists snapshots with color-coded reason badges, relative timestamps, record count diffs (+/- people and unions).
+   - Allows instant snapshot restoration, standalone JSON backup download, deletion, and manual checkpoint creation.
+
+

@@ -19,6 +19,7 @@ export type ActiveModal =
   | { type: 'tree_statistics' }
   | { type: 'keyboard_shortcuts' }
   | { type: 'kinship'; sourcePersonId?: string }
+  | { type: 'version_history' }
   | null;
 
 export interface ModalStoreState {
@@ -29,6 +30,7 @@ export interface ModalStoreState {
   isKeyboardShortcutsOpen: boolean;
   isKinshipModalOpen: boolean;
   kinshipSourcePersonId: string | null;
+  isVersionHistoryOpen: boolean;
   isEdgeCaseModalOpen: boolean;
   isTreeManagerOpen: boolean;
   isCreateTreeModalOpen: boolean;
@@ -63,6 +65,9 @@ export interface ModalStoreState {
   openKinshipModal: (sourcePersonId?: string) => void;
   closeKinshipModal: () => void;
 
+  openVersionHistoryModal: () => void;
+  closeVersionHistoryModal: () => void;
+
   // Ergonomic helper actions
   openEdgeCaseModal: () => void;
   closeEdgeCaseModal: () => void;
@@ -95,6 +100,7 @@ const initialModalFlags = {
   isKeyboardShortcutsOpen: false,
   isKinshipModalOpen: false,
   kinshipSourcePersonId: null,
+  isVersionHistoryOpen: false,
   isEdgeCaseModalOpen: false,
   isTreeManagerOpen: false,
   isCreateTreeModalOpen: false,
@@ -203,6 +209,13 @@ export const useModalStore = create<ModalStoreState>((set) => ({
           kinshipSourcePersonId: modal.sourcePersonId || null,
         });
         break;
+      case 'version_history':
+        set({
+          activeModal: modal,
+          ...initialModalFlags,
+          isVersionHistoryOpen: true,
+        });
+        break;
     }
   },
 
@@ -218,6 +231,19 @@ export const useModalStore = create<ModalStoreState>((set) => ({
       activeModal: null,
       ...initialModalFlags,
     });
+  },
+
+  openVersionHistoryModal: () => {
+    set({
+      activeModal: { type: 'version_history' },
+      isVersionHistoryOpen: true,
+    });
+  },
+  closeVersionHistoryModal: () => {
+    set((state) => ({
+      activeModal: state.activeModal?.type === 'version_history' ? null : state.activeModal,
+      isVersionHistoryOpen: false,
+    }));
   },
 
   openKeyboardShortcuts: () => {

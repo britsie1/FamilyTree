@@ -32,6 +32,7 @@ import {
   Activity,
   Keyboard,
   Sparkles,
+  History,
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
@@ -655,6 +656,16 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
         </div>
 
+        {/* Version History & Snapshots button */}
+        <button
+          onClick={() => useModalStore.getState().openVersionHistoryModal()}
+          title="Version History & Snapshots (automatic backups & restore)"
+          aria-label="Version History"
+          className="hidden sm:flex p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
+        >
+          <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 dark:text-indigo-400" />
+        </button>
+
         {/* Keyboard Shortcuts button */}
         <button
           onClick={() => useModalStore.getState().openKeyboardShortcuts()}
@@ -1041,6 +1052,20 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       ✨ Blank Tree
                     </button>
                   </div>
+                </div>
+
+                {/* Version History & Snapshots */}
+                <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      useModalStore.getState().openVersionHistoryModal();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 cursor-pointer active:bg-indigo-100 transition-colors"
+                  >
+                    <History className="w-4 h-4" />
+                    <span>Version History & Backups</span>
+                  </button>
                 </div>
 
                 {/* Export & Import */}
