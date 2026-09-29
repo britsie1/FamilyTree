@@ -52,23 +52,27 @@ service cloud.firestore {
     function isValidPersonDoc(data, personId) {
       return data.id == personId &&
              data.id is string &&
-             data.firstName is string &&
-             data.lastName is string &&
-             (data.gender is string && data.gender in ['male', 'female', 'other', 'unknown', 'unspecified']) &&
-             data.unionIds is list &&
              (!('deleted' in data) || data.deleted is bool) &&
              (!('rev' in data) || data.rev is int || data.rev is number) &&
-             (!('updatedAt' in data) || data.updatedAt is string);
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (data.get('deleted', false) == true || (
+               (!('firstName' in data) || data.firstName is string) &&
+               (!('lastName' in data) || data.lastName is string) &&
+               (!('gender' in data) || (data.gender is string && data.gender in ['male', 'female', 'other', 'unknown', 'unspecified'])) &&
+               (!('unionIds' in data) || data.unionIds is list)
+             ));
     }
 
     function isValidUnionDoc(data, unionId) {
       return data.id == unionId &&
              data.id is string &&
-             data.partnerIds is list &&
-             data.childrenIds is list &&
              (!('deleted' in data) || data.deleted is bool) &&
              (!('rev' in data) || data.rev is int || data.rev is number) &&
-             (!('updatedAt' in data) || data.updatedAt is string);
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (data.get('deleted', false) == true || (
+               (!('partnerIds' in data) || data.partnerIds is list) &&
+               (!('childrenIds' in data) || data.childrenIds is list)
+             ));
     }
 
     // Rules for family tree documents

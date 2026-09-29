@@ -26,28 +26,34 @@ describe('Firestore Security Rules & Shape Validation', () => {
 
   // Pure logic validators mirroring Firestore rule functions exactly
   function isValidPersonDoc(data: Record<string, any>, personId: string): boolean {
+    const isTombstone = data.deleted === true;
     return (
       data.id === personId &&
       typeof data.id === 'string' &&
-      typeof data.firstName === 'string' &&
-      typeof data.lastName === 'string' &&
-      ['male', 'female', 'other', 'unknown', 'unspecified'].includes(data.gender) &&
-      Array.isArray(data.unionIds) &&
       (!('deleted' in data) || typeof data.deleted === 'boolean') &&
       (!('rev' in data) || typeof data.rev === 'number') &&
-      (!('updatedAt' in data) || typeof data.updatedAt === 'string')
+      (!('updatedAt' in data) || typeof data.updatedAt === 'string') &&
+      (isTombstone ||
+        ((!('firstName' in data) || typeof data.firstName === 'string') &&
+          (!('lastName' in data) || typeof data.lastName === 'string') &&
+          (!('gender' in data) ||
+            (typeof data.gender === 'string' &&
+              ['male', 'female', 'other', 'unknown', 'unspecified'].includes(data.gender))) &&
+          (!('unionIds' in data) || Array.isArray(data.unionIds))))
     );
   }
 
   function isValidUnionDoc(data: Record<string, any>, unionId: string): boolean {
+    const isTombstone = data.deleted === true;
     return (
       data.id === unionId &&
       typeof data.id === 'string' &&
-      Array.isArray(data.partnerIds) &&
-      Array.isArray(data.childrenIds) &&
       (!('deleted' in data) || typeof data.deleted === 'boolean') &&
       (!('rev' in data) || typeof data.rev === 'number') &&
-      (!('updatedAt' in data) || typeof data.updatedAt === 'string')
+      (!('updatedAt' in data) || typeof data.updatedAt === 'string') &&
+      (isTombstone ||
+        ((!('partnerIds' in data) || Array.isArray(data.partnerIds)) &&
+          (!('childrenIds' in data) || Array.isArray(data.childrenIds))))
     );
   }
 
@@ -79,6 +85,22 @@ describe('Firestore Security Rules & Shape Validation', () => {
         deleted: false,
       };
       assert.ok(isValidPersonDoc(valid, 'p1'));
+    });
+
+    it('accepts person docs with optional fields missing (cleanForFirestore strips undefined)', () => {
+      assert.ok(isValidPersonDoc({ id: 'p1' }, 'p1'));
+      assert.ok(isValidPersonDoc({ id: 'p1', firstName: 'Ann' }, 'p1'));
+      assert.ok(isValidPersonDoc({ id: 'p1', firstName: '', gender: 'unspecified', unionIds: [] }, 'p1'));
+    });
+
+    it('accepts minimal tombstone person docs written by deleteCloudPerson', () => {
+      const tombstone = {
+        id: 'p1',
+        deleted: true,
+        deletedAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      assert.ok(isValidPersonDoc(tombstone, 'p1'));
     });
 
     it('rejects person doc when ID does not match path parameter', () => {
@@ -150,12 +172,19 @@ describe('Firestore Security Rules & Shape Validation', () => {
       assert.ok(isValidUnionDoc(valid, 'u1'));
     });
 
-    it('rejects union doc when partnerIds or childrenIds is missing or not a list', () => {
-      const missingPartners = {
+    it('accepts minimal union docs and tombstones', () => {
+      assert.ok(isValidUnionDoc({ id: 'u1' }, 'u1'));
+      assert.ok(isValidUnionDoc({ id: 'u1', childrenIds: [] }, 'u1'));
+      assert.ok(isValidUnionDoc({ id: 'u1', deleted: true, deletedAt: '2026-01-01T00:00:00.000Z' }, 'u1'));
+    });
+
+    it('rejects union doc when partnerIds or childrenIds is present but not a list', () => {
+      const badPartners = {
         id: 'u1',
+        partnerIds: 'p1',
         childrenIds: [],
       };
-      assert.strictEqual(isValidUnionDoc(missingPartners, 'u1'), false);
+      assert.strictEqual(isValidUnionDoc(badPartners, 'u1'), false);
 
       const invalidChildren = {
         id: 'u1',
