@@ -1,6 +1,7 @@
 import type { TreeData, Person, Union, Gender, UnionType } from '../types/tree';
 import { generateId, sanitizeFilename } from './storage';
 import { sanitizeTree } from './treeOperations';
+import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 
 interface GedcomLine {
   level: number;
@@ -406,12 +407,14 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
     description: `Imported from GEDCOM on ${new Date().toLocaleDateString()}`,
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people,
     unions,
     rootPersonId,
   };
 
-  return sanitizeTree(rawTree);
+  const ingress = processTreeIngress(rawTree);
+  return ingress.tree;
 }
 
 /**

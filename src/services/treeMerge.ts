@@ -1,4 +1,5 @@
 import type { TreeData, Person, Union, PersonDocument, TreeLink } from '../types/tree';
+import { CURRENT_SCHEMA_VERSION, repair, migrate } from './schema';
 
 export interface ConflictRecord {
   path: string[];
@@ -356,10 +357,14 @@ export function threeWayMergeUnion(
  * 3-way merge for the complete TreeData structure.
  */
 export function threeWayMergeTree(
-  base: TreeData,
-  local: TreeData,
-  remote: TreeData
+  rawBase: TreeData,
+  rawLocal: TreeData,
+  rawRemote: TreeData
 ): TreeMergeResult {
+  const base = migrate(rawBase);
+  const local = migrate(rawLocal);
+  const remote = migrate(rawRemote);
+
   const allConflicts: ConflictRecord[] = [];
 
   const merged: TreeData = {
@@ -368,6 +373,7 @@ export function threeWayMergeTree(
     createdAt: base.createdAt || local.createdAt || remote.createdAt,
     updatedAt: new Date().toISOString(),
     version: Math.max(local.version || 0, remote.version || 0, base.version || 0) + 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     storageMode: local.storageMode || remote.storageMode || base.storageMode,
     people: {},
     unions: {},
@@ -534,8 +540,20 @@ export function threeWayMergeTree(
     }
   }
 
+  // Repair output to guarantee invariant compliance
+  const { tree: repairedMerged, report } = repair(merged);
+  for (const change of report.changes) {
+    allConflicts.push({
+      path: change.path || ['tree'],
+      baseValue: undefined,
+      localValue: undefined,
+      remoteValue: undefined,
+      resolvedValue: change.description,
+    });
+  }
+
   return {
-    merged,
+    merged: repairedMerged,
     hasConflict: allConflicts.length > 0,
     conflicts: allConflicts,
   };

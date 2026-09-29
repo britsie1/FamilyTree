@@ -93,6 +93,7 @@ export interface TreeData {
   createdAt: string;
   updatedAt: string;
   version?: number;
+  schemaVersion?: number;
   storageMode?: 'monolithic' | 'subcollections';
   people: Record<string, Person>;
   unions: Record<string, Union>;
@@ -224,6 +225,7 @@ export interface CloudTreeMetadata {
   sharedEmails: string[];
   googleDriveConfig?: GoogleDriveConfig;
   version?: number;
+  schemaVersion?: number;
   storageMode?: 'monolithic' | 'subcollections';
 }
 

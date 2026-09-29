@@ -1,5 +1,6 @@
 import type { TreeData, Person, Union, NodePositionOverride, LayoutOverrides } from '../types/tree';
 import { sanitizeTree, linkPeopleAcrossTrees } from './treeOperations';
+import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 
 export type { NodePositionOverride, LayoutOverrides };
 
@@ -222,6 +223,7 @@ export function createDoubleInLawPreset(): TreeData {
     description: "Two brothers marrying two sisters. Their children are double first cousins who share both sets of grandparents.",
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people,
     unions,
     rootPersonId: 'me',
@@ -249,6 +251,7 @@ export function createBlankTree(): TreeData {
     description: 'A newly created family tree.',
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people,
     unions: {},
     rootPersonId: rootId,
@@ -286,6 +289,7 @@ export function createThreeGenSampleTree(): TreeData {
     description: '3+ Generations showing remarriage, multiple children, and grandchildren.',
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people,
     unions,
     rootPersonId: 'p7',
@@ -395,6 +399,7 @@ export function createDivorceBlendedPreset(): TreeData {
     description: 'First marriage resulted in a child, then divorced. Both partners remarried and had children with new partners.',
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people,
     unions,
     rootPersonId: 'c_shared',
@@ -464,8 +469,9 @@ export function loadTreeById(treeId: string): TreeData | null {
     const raw = store.getItem(`${TREE_DATA_PREFIX}${treeId}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.people && parsed.unions) {
-        return sanitizeTree(parsed);
+      if (parsed && typeof parsed === 'object') {
+        const ingress = processTreeIngress(parsed, { preserveRawOnError: true });
+        return ingress.tree;
       }
     }
   } catch (err) {
@@ -505,7 +511,9 @@ export function setActiveTreeId(treeId: string): void {
  */
 export function saveCurrentTree(tree: TreeData): void {
   const store = getLocalStorage();
-  const sanitized = sanitizeTree(tree);
+  const ingress = processTreeIngress(tree);
+  const sanitized = ingress.tree;
+  sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   sanitized.updatedAt = new Date().toISOString();
 
   if (!store) return;
@@ -547,7 +555,9 @@ export function saveCurrentTree(tree: TreeData): void {
  */
 export function saveTreeWithoutActivating(tree: TreeData): void {
   const store = getLocalStorage();
-  const sanitized = sanitizeTree(tree);
+  const ingress = processTreeIngress(tree);
+  const sanitized = ingress.tree;
+  sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   sanitized.updatedAt = new Date().toISOString();
 
   if (!store) return;
@@ -670,6 +680,7 @@ export function createAndSaveNewTree(name: string = 'New Family Tree'): TreeData
     description: 'A newly created family tree.',
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     people: {
       [rootId]: {
         id: rootId,
@@ -704,6 +715,7 @@ export function duplicateTree(treeId: string): TreeData | null {
     name: `${original.name || 'Tree'} (Copy)`,
     createdAt: now,
     updatedAt: now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
   };
 
   saveCurrentTree(copy);
@@ -792,11 +804,6 @@ export function exportTreeToJsonFile(tree: TreeData): void {
 
 export function importTreeFromJsonString(jsonString: string): TreeData {
   const parsed = JSON.parse(jsonString);
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Invalid JSON data format');
-  }
-  if (!parsed.people || !parsed.unions) {
-    throw new Error('JSON is missing people or unions record');
-  }
-  return sanitizeTree(parsed as TreeData);
+  const ingress = processTreeIngress(parsed, { preserveRawOnError: true });
+  return ingress.tree;
 }

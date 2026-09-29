@@ -2,12 +2,11 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { threeWayMergeTree } from '../src/services/treeMerge';
 import { parseGedcom } from '../src/services/gedcomService';
+import { importTreeFromJsonString } from '../src/services/storage';
 import type { TreeData } from '../src/types/tree';
 
-describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
-  it('Failure Scenario 1: Three-way merge leaves dangling partner reference on concurrent delete vs union edit', {
-    todo: 'Failing reproduction: threeWayMergeTree does not validate invariants or cascade deletes across unions. Resolved in Phase 1 & 2.',
-  }, () => {
+describe('Data Integrity Failure Scenarios (Regressions Fixed in Phase 1 & 2)', () => {
+  it('Failure Scenario 1: Three-way merge leaves dangling partner reference on concurrent delete vs union edit', () => {
     const baseTree: TreeData = {
       id: 'tree1',
       name: 'Base Tree',
@@ -46,9 +45,8 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
 
     const { merged } = threeWayMergeTree(baseTree, clientATree, clientBTree);
 
-    // In the ideal/safe data layer:
+    // In the safe data layer:
     // Every partnerId in a union must exist in merged.people!
-    // But currently, merged.people['p1'] is undefined while merged.unions['u1'].partnerIds contains 'p1'.
     for (const union of Object.values(merged.unions)) {
       for (const partnerId of union.partnerIds) {
         assert.ok(
@@ -59,9 +57,7 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
     }
   });
 
-  it('Failure Scenario 2: Concurrent edit vs delete creates orphan union references', {
-    todo: 'Failing reproduction: Hard delete in one client combined with child addition in another leaves dangling references. Resolved in Phase 1 & 2.',
-  }, () => {
+  it('Failure Scenario 2: Concurrent edit vs delete creates orphan union references', () => {
     const baseTree: TreeData = {
       id: 'tree1',
       name: 'Base Tree',
@@ -99,8 +95,6 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
 
     const { merged } = threeWayMergeTree(baseTree, clientATree, clientBTree);
 
-    // If u1 is kept because B edited it, but p1 is deleted because A deleted p1,
-    // u1 has no partners and references dead p1.
     // In safe data layer, all children and union references must resolve cleanly.
     if (merged.people['c1'] && merged.people['c1'].parentUnionId) {
       assert.ok(
@@ -115,9 +109,7 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
     }
   });
 
-  it('Failure Scenario 3: GEDCOM import accepts parent-child cycle without detection or rejection', {
-    todo: 'Failing reproduction: GEDCOM parser does not validate acyclicity invariants. Resolved in Phase 1.',
-  }, () => {
+  it('Failure Scenario 3: GEDCOM import accepts parent-child cycle without detection or rejection', () => {
     // Malformed GEDCOM: I1 is parent of I2, I2 is parent of I1
     const cyclicGedcom = `0 HEAD
 1 SOUR FamilyTree
@@ -141,8 +133,7 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
     const tree = parseGedcom(cyclicGedcom, 'Cyclic Tree');
 
     // A safe boundary must either reject this or repair the cycle.
-    // Currently, tree is produced with I1 and I2 having mutual ancestry cycles.
-    // We assert that the resulting tree has no cyclic ancestry:
+    // Assert that the resulting tree has no cyclic ancestry:
     const hasCycle = (pId: string, visited = new Set<string>()): boolean => {
       if (visited.has(pId)) return true;
       visited.add(pId);
@@ -158,9 +149,7 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
     assert.equal(hasCycle('I1') || hasCycle('I2'), false, 'Tree must not contain parent cycles');
   });
 
-  it('Failure Scenario 4: JSON import accepts inverted dates (death before birth)', {
-    todo: 'Failing reproduction: JSON import lacks date invariant validation. Resolved in Phase 1.',
-  }, () => {
+  it('Failure Scenario 4: JSON import accepts inverted dates (death before birth)', () => {
     const invalidJson = JSON.stringify({
       id: 'tree_invalid_dates',
       name: 'Invalid Dates Tree',
@@ -183,7 +172,6 @@ describe('Data Integrity Failure Scenarios (Phase 0 Reproductions)', () => {
     const imported = importTreeFromJsonString(invalidJson);
 
     // A safe boundary must validate or repair this anomaly.
-    // Currently, it accepts it without warning or repair.
     const p = imported.people['p1'];
     assert.ok(
       !p.deathDate || !p.birthDate || p.birthDate <= p.deathDate,

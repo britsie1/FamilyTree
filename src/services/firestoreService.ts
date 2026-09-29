@@ -27,9 +27,9 @@ import type {
   ShareRole,
   GoogleDriveConfig,
 } from '../types/tree';
-import { sanitizeTree } from './treeOperations';
 import { generateId, isPresetTreeId } from './storage';
 import { threeWayMergeTree } from './treeMerge';
+import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 
 export const RECOMMENDED_FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
@@ -287,7 +287,9 @@ export async function updateCloudTreeData(
     throw new Error('Firebase is not configured or tree ID is missing.');
   }
 
-  const sanitized = sanitizeTree(tree);
+  const ingress = processTreeIngress(tree);
+  const sanitized = ingress.tree;
+  sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   const docRef = doc(db, TREES_COLLECTION, sanitized.id);
   const now = new Date().toISOString();
 
@@ -315,6 +317,7 @@ export async function updateCloudTreeData(
     unions: sanitized.unions,
     googleDriveConfig: sanitized.googleDriveConfig || null,
     storageMode: sanitized.storageMode || 'monolithic',
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     updatedAt: now,
   });
 
@@ -808,7 +811,9 @@ export async function saveTreeToCloud(
   }
 
   const now = new Date().toISOString();
-  const sanitized = sanitizeTree(tree);
+  const ingress = processTreeIngress(tree);
+  const sanitized = ingress.tree;
+  sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   const treeAny = tree as any;
 
   // Auto-heal preset ID collisions: Presets must not be saved under global static IDs
@@ -841,6 +846,7 @@ export async function saveTreeToCloud(
     sharedEmails: existingMetadata?.sharedEmails || treeAny.sharedEmails || [],
     googleDriveConfig: existingMetadata?.googleDriveConfig || treeAny.googleDriveConfig || undefined,
     version: existingMetadata?.version || treeAny.version || 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     storageMode: existingMetadata?.storageMode || treeAny.storageMode || 'monolithic',
   };
 
@@ -923,9 +929,11 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
           console.warn(`Could not load people subcollection for tree ${treeId}:`, subErr);
         }
       }
+      const ingress = processTreeIngress({ ...data, people }, { preserveRawOnError: true });
       return {
-        ...sanitizeTree({ ...data, people }),
+        ...ingress.tree,
         version: data.version || 1,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         storageMode: data.storageMode || 'monolithic',
         ownerId: data.ownerId,
         ownerEmail: data.ownerEmail,
@@ -966,8 +974,11 @@ export function subscribeToCloudTree(
       }
       if (snap.exists()) {
         const data = snap.data() as CloudTreeData;
+        const ingress = processTreeIngress(data, { preserveRawOnError: true });
         const parsed: CloudTreeData = {
-          ...sanitizeTree(data),
+          ...ingress.tree,
+          version: data.version || 1,
+          schemaVersion: CURRENT_SCHEMA_VERSION,
           ownerId: data.ownerId,
           ownerEmail: data.ownerEmail,
           ownerDisplayName: data.ownerDisplayName,

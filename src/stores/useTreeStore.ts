@@ -9,6 +9,7 @@ import {
   saveCurrentTree,
   generateId,
 } from '../services/storage';
+import { checkInvariants } from '../services/schema';
 import {
   addChildToPerson,
   addSiblingToPerson,
@@ -261,6 +262,16 @@ export interface TreeStoreState {
 
 const initialTree = loadCurrentTree();
 
+function checkTreeInvariantsInDev(tree: TreeData) {
+  const isDev = import.meta.env?.DEV ?? (typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.NODE_ENV !== 'production');
+  if (isDev) {
+    const violations = checkInvariants(tree);
+    if (violations.length > 0) {
+      console.warn('[Data Integrity] Invariant violations detected in tree mutation:', violations);
+    }
+  }
+}
+
 export const useTreeStore = create<TreeStoreState>((set, get) => {
   const historyPast: HistoryStep[] = [];
   const historyFuture: HistoryStep[] = [];
@@ -293,6 +304,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
           return;
         }
 
+        checkTreeInvariantsInDev(nextTree);
         saveCurrentTree(nextTree);
         set({ tree: nextTree });
         useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
@@ -310,6 +322,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
           return;
         }
 
+        checkTreeInvariantsInDev(nextTree);
         saveCurrentTree(nextTree);
         set({ tree: nextTree });
         useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
@@ -335,6 +348,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         return;
       }
 
+      checkTreeInvariantsInDev(nextTree);
       saveCurrentTree(nextTree);
       useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
 
