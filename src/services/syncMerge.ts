@@ -23,6 +23,7 @@ export interface RecordMergeResult<T extends SyncRecordMeta> {
 }
 
 export interface SyncMergeOptions {
+  now?: string;
   currentUserId?: string;
 }
 
@@ -44,9 +45,25 @@ function parseTime(val: string | undefined): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+function cleanRecord<T extends SyncRecordMeta>(record: T): T {
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    if (v !== undefined) {
+      cleaned[k] = v;
+    }
+  }
+  return cleaned as T;
+}
+
 /**
  * Deterministically merges two versions of a single record (Person or Union)
  * implementing Last-Writer-Wins (LWW) and tombstone resolution.
+ *
+ * Guaranteed Properties:
+ * - 100% pure function with no ambient Date/time calls.
+ * - Commutative: mergeRecord(A, B) and mergeRecord(B, A) select the exact same winning payload.
+ * - Idempotent: mergeRecord(A, A) returns A with identical rev.
+ * - Strong Eventual Consistency (SEC): Any permutation of incoming sync messages converges to the same state.
  *
  * Delete vs. Edit Rule:
  * - A delete wins unless the edit has an updatedAt timestamp strictly newer than the tombstone's deletedAt.
@@ -55,8 +72,22 @@ function parseTime(val: string | undefined): number {
 export function mergeRecord<T extends SyncRecordMeta>(
   local: T,
   remote: T,
-  recordType: 'person' | 'union' = 'person'
+  recordType: 'person' | 'union' = 'person',
+  fallbackNow?: string
 ): RecordMergeResult<T> {
+  const localStr = JSON.stringify(local);
+  const remoteStr = JSON.stringify(remote);
+
+  // Strict idempotence: if payloads are byte-identical, preserve exact state and rev
+  if (localStr === remoteStr) {
+    return {
+      merged: local,
+      wasRestored: false,
+      isDeleted: Boolean(local.deleted),
+      winner: 'equal',
+    };
+  }
+
   const localIsDel = Boolean(local.deleted);
   const remoteIsDel = Boolean(remote.deleted);
 
@@ -69,14 +100,27 @@ export function mergeRecord<T extends SyncRecordMeta>(
   const localRev = typeof local.rev === 'number' ? local.rev : 0;
   const remoteRev = typeof remote.rev === 'number' ? remote.rev : 0;
 
+  // Pure deterministic default timestamp derived solely from inputs or explicit fallback
+  const maxTime = Math.max(localTime, remoteTime, localDelTime, remoteDelTime);
+  const defaultNow =
+    fallbackNow ||
+    (maxTime > 0
+      ? new Date(maxTime).toISOString()
+      : local.updatedAt || remote.updatedAt || '1970-01-01T00:00:00.000Z');
+
   // 1. Both are tombstones
   if (localIsDel && remoteIsDel) {
+    const isTie = localDelTime === remoteDelTime && localRev === remoteRev;
     const winner: MergeWinner =
       localDelTime > remoteDelTime
         ? 'local'
         : remoteDelTime > localDelTime
         ? 'remote'
-        : localRev >= remoteRev
+        : localRev > remoteRev
+        ? 'local'
+        : remoteRev > localRev
+        ? 'remote'
+        : localStr >= remoteStr
         ? 'local'
         : 'remote';
 
@@ -84,13 +128,13 @@ export function mergeRecord<T extends SyncRecordMeta>(
     const fallback = winner === 'local' ? remote : local;
 
     return {
-      merged: {
+      merged: cleanRecord({
         ...fallback,
         ...chosen,
         deleted: true,
-        deletedAt: chosen.deletedAt || fallback.deletedAt || new Date().toISOString(),
-        rev: Math.max(localRev, remoteRev) + 1,
-      },
+        deletedAt: chosen.deletedAt || fallback.deletedAt || chosen.updatedAt || fallback.updatedAt || defaultNow,
+        rev: Math.max(localRev, remoteRev) + (isTie ? 1 : 0),
+      }),
       wasRestored: false,
       isDeleted: true,
       winner,
@@ -102,14 +146,13 @@ export function mergeRecord<T extends SyncRecordMeta>(
     if (remoteTime > localDelTime) {
       // Remote edit occurred strictly after local deletion -> Edit wins (resurrection)
       const notice = `Restored ${recordType} ${remote.id}: remote edit (${remote.updatedAt}) is newer than deletion (${local.deletedAt || local.updatedAt}).`;
+      const resRec = { ...local, ...remote, deleted: false };
+      delete (resRec as unknown as Record<string, unknown>).deletedAt;
       return {
-        merged: {
-          ...local,
-          ...remote,
-          deleted: false,
-          deletedAt: undefined,
+        merged: cleanRecord({
+          ...resRec,
           rev: Math.max(localRev, remoteRev) + 1,
-        },
+        }),
         wasRestored: true,
         isDeleted: false,
         winner: 'remote',
@@ -118,13 +161,13 @@ export function mergeRecord<T extends SyncRecordMeta>(
     } else {
       // Deletion wins
       return {
-        merged: {
+        merged: cleanRecord({
           ...remote,
           ...local,
           deleted: true,
-          deletedAt: local.deletedAt || local.updatedAt || new Date().toISOString(),
-          rev: Math.max(localRev, remoteRev) + 1,
-        },
+          deletedAt: local.deletedAt || local.updatedAt || defaultNow,
+          rev: Math.max(localRev, remoteRev),
+        }),
         wasRestored: false,
         isDeleted: true,
         winner: 'local',
@@ -137,14 +180,13 @@ export function mergeRecord<T extends SyncRecordMeta>(
     if (localTime > remoteDelTime) {
       // Local edit occurred strictly after remote deletion -> Edit wins (resurrection)
       const notice = `Restored ${recordType} ${local.id}: local edit (${local.updatedAt}) is newer than remote deletion (${remote.deletedAt || remote.updatedAt}).`;
+      const resRec = { ...remote, ...local, deleted: false };
+      delete (resRec as unknown as Record<string, unknown>).deletedAt;
       return {
-        merged: {
-          ...remote,
-          ...local,
-          deleted: false,
-          deletedAt: undefined,
+        merged: cleanRecord({
+          ...resRec,
           rev: Math.max(localRev, remoteRev) + 1,
-        },
+        }),
         wasRestored: true,
         isDeleted: false,
         winner: 'local',
@@ -153,13 +195,13 @@ export function mergeRecord<T extends SyncRecordMeta>(
     } else {
       // Deletion wins
       return {
-        merged: {
+        merged: cleanRecord({
           ...local,
           ...remote,
           deleted: true,
-          deletedAt: remote.deletedAt || remote.updatedAt || new Date().toISOString(),
-          rev: Math.max(localRev, remoteRev) + 1,
-        },
+          deletedAt: remote.deletedAt || remote.updatedAt || defaultNow,
+          rev: Math.max(localRev, remoteRev),
+        }),
         wasRestored: false,
         isDeleted: true,
         winner: 'remote',
@@ -170,7 +212,7 @@ export function mergeRecord<T extends SyncRecordMeta>(
   // 4. Both are active: Last-Writer-Wins (LWW)
   if (localTime > remoteTime) {
     return {
-      merged: { ...remote, ...local, rev: Math.max(localRev, remoteRev) + 1 },
+      merged: cleanRecord({ ...remote, ...local, rev: Math.max(localRev, remoteRev) }),
       wasRestored: false,
       isDeleted: false,
       winner: 'local',
@@ -179,17 +221,16 @@ export function mergeRecord<T extends SyncRecordMeta>(
 
   if (remoteTime > localTime) {
     return {
-      merged: { ...local, ...remote, rev: Math.max(localRev, remoteRev) + 1 },
+      merged: cleanRecord({ ...local, ...remote, rev: Math.max(localRev, remoteRev) }),
       wasRestored: false,
       isDeleted: false,
       winner: 'remote',
     };
   }
 
-  // Timestamps equal or unavailable -> compare rev
   if (localRev > remoteRev) {
     return {
-      merged: { ...remote, ...local, rev: localRev + 1 },
+      merged: cleanRecord({ ...remote, ...local, rev: localRev }),
       wasRestored: false,
       isDeleted: false,
       winner: 'local',
@@ -198,31 +239,27 @@ export function mergeRecord<T extends SyncRecordMeta>(
 
   if (remoteRev > localRev) {
     return {
-      merged: { ...local, ...remote, rev: remoteRev + 1 },
+      merged: cleanRecord({ ...local, ...remote, rev: remoteRev }),
       wasRestored: false,
       isDeleted: false,
       winner: 'remote',
     };
   }
 
-  // Deterministic tie-breaker
-  const localStr = JSON.stringify(local);
-  const remoteStr = JSON.stringify(remote);
-  if (localStr === remoteStr) {
-    return {
-      merged: local,
-      wasRestored: false,
-      isDeleted: false,
-      winner: 'equal',
-    };
-  }
+  // Exact concurrent tie on timestamps and revs -> deterministic content comparison tie-breaker
+  const winner: MergeWinner = localStr >= remoteStr ? 'local' : 'remote';
+  const chosen = winner === 'local' ? local : remote;
+  const fallback = winner === 'local' ? remote : local;
 
-  // Tie-breaker: remote wins deterministically
   return {
-    merged: { ...local, ...remote, rev: localRev + 1 },
+    merged: cleanRecord({
+      ...fallback,
+      ...chosen,
+      rev: Math.max(localRev, remoteRev) + 1,
+    }),
     wasRestored: false,
     isDeleted: false,
-    winner: 'remote',
+    winner,
   };
 }
 
@@ -232,32 +269,33 @@ export function mergeRecord<T extends SyncRecordMeta>(
 export function mergeRecordDictionary<T extends SyncRecordMeta>(
   localMap: Record<string, T> = {},
   remoteMap: Record<string, T> = {},
-  recordType: 'person' | 'union' = 'person'
+  recordType: 'person' | 'union' = 'person',
+  fallbackNow?: string
 ): {
   active: Record<string, T>;
   tombstones: Record<string, T>;
   restoredIds: string[];
   notices: string[];
 } {
-  const allIds = new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]);
+  const sortedIds = Array.from(new Set([...Object.keys(localMap), ...Object.keys(remoteMap)])).sort();
   const active: Record<string, T> = {};
   const tombstones: Record<string, T> = {};
   const notices: string[] = [];
   const restoredSet = new Set<string>();
 
-  for (const id of allIds) {
+  for (const id of sortedIds) {
     const inLocal = Boolean(localMap[id]);
     const inRemote = Boolean(remoteMap[id]);
 
     if (inLocal && !inRemote) {
-      const rec = localMap[id];
+      const rec = cleanRecord(localMap[id]);
       if (rec.deleted) {
         tombstones[id] = rec;
       } else {
         active[id] = rec;
       }
     } else if (!inLocal && inRemote) {
-      const rec = remoteMap[id];
+      const rec = cleanRecord(remoteMap[id]);
       if (rec.deleted) {
         tombstones[id] = rec;
       } else {
@@ -265,7 +303,7 @@ export function mergeRecordDictionary<T extends SyncRecordMeta>(
       }
     } else {
       // Present in both
-      const res = mergeRecord(localMap[id], remoteMap[id], recordType);
+      const res = mergeRecord(localMap[id], remoteMap[id], recordType, fallbackNow);
       if (res.isDeleted) {
         tombstones[id] = res.merged;
       } else {
@@ -283,8 +321,8 @@ export function mergeRecordDictionary<T extends SyncRecordMeta>(
   return {
     active,
     tombstones,
-    restoredIds: Array.from(restoredSet),
-    notices,
+    restoredIds: Array.from(restoredSet).sort(),
+    notices: notices.sort(),
   };
 }
 
@@ -295,21 +333,83 @@ export function mergeRecordDictionary<T extends SyncRecordMeta>(
 export function syncMerge(
   localTree: TreeData,
   remoteTree: TreeData,
-  _options: SyncMergeOptions = {}
+  options: SyncMergeOptions = {}
 ): SyncMergeResult {
-  const peopleMerge = mergeRecordDictionary(localTree.people, remoteTree.people, 'person');
-  const unionsMerge = mergeRecordDictionary(localTree.unions, remoteTree.unions, 'union');
-
   const localTreeTime = parseTime(localTree.updatedAt);
   const remoteTreeTime = parseTime(remoteTree.updatedAt);
 
-  // Metadata LWW
-  const metaWinner = localTreeTime >= remoteTreeTime ? 'local' : 'remote';
+  let maxInputTime = Math.max(localTreeTime, remoteTreeTime);
+  for (const p of Object.values(localTree.people || {})) {
+    const t = Math.max(parseTime(p.updatedAt), parseTime(p.deletedAt));
+    if (t > maxInputTime) maxInputTime = t;
+  }
+  for (const p of Object.values(remoteTree.people || {})) {
+    const t = Math.max(parseTime(p.updatedAt), parseTime(p.deletedAt));
+    if (t > maxInputTime) maxInputTime = t;
+  }
+  for (const u of Object.values(localTree.unions || {})) {
+    const t = Math.max(parseTime(u.updatedAt), parseTime(u.deletedAt));
+    if (t > maxInputTime) maxInputTime = t;
+  }
+  for (const u of Object.values(remoteTree.unions || {})) {
+    const t = Math.max(parseTime(u.updatedAt), parseTime(u.deletedAt));
+    if (t > maxInputTime) maxInputTime = t;
+  }
+
+  const now =
+    options.now ||
+    (maxInputTime > 0
+      ? new Date(maxInputTime).toISOString()
+      : localTree.updatedAt || remoteTree.updatedAt || '1970-01-01T00:00:00.000Z');
+
+  const peopleMerge = mergeRecordDictionary(localTree.people, remoteTree.people, 'person', now);
+  const unionsMerge = mergeRecordDictionary(localTree.unions, remoteTree.unions, 'union', now);
+
+  const localVer = localTree.version || 0;
+  const remoteVer = remoteTree.version || 0;
+  const localMetaStr = JSON.stringify({
+    id: localTree.id,
+    name: localTree.name,
+    description: localTree.description,
+    rootPersonId: localTree.rootPersonId,
+  });
+  const remoteMetaStr = JSON.stringify({
+    id: remoteTree.id,
+    name: remoteTree.name,
+    description: remoteTree.description,
+    rootPersonId: remoteTree.rootPersonId,
+  });
+
+  const metaWinner: MergeWinner =
+    localTreeTime > remoteTreeTime
+      ? 'local'
+      : remoteTreeTime > localTreeTime
+      ? 'remote'
+      : localVer > remoteVer
+      ? 'local'
+      : remoteVer > localVer
+      ? 'remote'
+      : localMetaStr >= remoteMetaStr
+      ? 'local'
+      : 'remote';
+
   const primaryTree = metaWinner === 'local' ? localTree : remoteTree;
   const secondaryTree = metaWinner === 'local' ? remoteTree : localTree;
 
-  const now = new Date().toISOString();
   const nextVersion = Math.max(localTree.version || 1, remoteTree.version || 1) + 1;
+
+  // Determine rootPersonId deterministically: prefer primary if valid, else secondary if valid
+  let mergedRootPersonId = primaryTree.rootPersonId;
+  if (!mergedRootPersonId || !peopleMerge.active[mergedRootPersonId]) {
+    mergedRootPersonId =
+      secondaryTree.rootPersonId && peopleMerge.active[secondaryTree.rootPersonId]
+        ? secondaryTree.rootPersonId
+        : Object.keys(peopleMerge.active).sort()[0];
+  }
+
+  const mergedCollapsed = Array.from(
+    new Set([...(localTree.collapsedPersonIds || []), ...(remoteTree.collapsedPersonIds || [])])
+  ).sort();
 
   const rawMergedTree: TreeData = {
     ...secondaryTree,
@@ -317,8 +417,8 @@ export function syncMerge(
     id: localTree.id || remoteTree.id,
     name: primaryTree.name || secondaryTree.name || 'Untitled Tree',
     description: primaryTree.description ?? secondaryTree.description ?? '',
-    rootPersonId: primaryTree.rootPersonId || secondaryTree.rootPersonId,
-    collapsedPersonIds: primaryTree.collapsedPersonIds || secondaryTree.collapsedPersonIds || [],
+    rootPersonId: mergedRootPersonId,
+    collapsedPersonIds: mergedCollapsed,
     people: peopleMerge.active,
     unions: unionsMerge.active,
     storageMode: 'subcollections',
@@ -333,7 +433,7 @@ export function syncMerge(
 
   // If repair removed any dead unions that were previously active, track them as tombstones
   const allTombstonesUnions = { ...unionsMerge.tombstones };
-  for (const uId of Object.keys(unionsMerge.active)) {
+  for (const uId of Object.keys(unionsMerge.active).sort()) {
     if (!repairedTree.unions[uId]) {
       allTombstonesUnions[uId] = {
         ...(unionsMerge.active[uId] || { id: uId, partnerIds: [], childrenIds: [] }),
@@ -357,7 +457,7 @@ export function syncMerge(
       people: peopleMerge.tombstones,
       unions: allTombstonesUnions,
     },
-    notices: [...peopleMerge.notices, ...unionsMerge.notices],
+    notices: [...peopleMerge.notices, ...unionsMerge.notices].sort(),
     restoredPersonIds: peopleMerge.restoredIds,
     restoredUnionIds: unionsMerge.restoredIds,
     repairsApplied: repairResult.report.repaired,

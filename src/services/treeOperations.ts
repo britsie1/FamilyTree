@@ -45,6 +45,17 @@ export function sanitizeTree(tree: TreeData): TreeData {
     unions: { ...tree.unions },
   };
 
+  for (const [id, p] of Object.entries(nextTree.people)) {
+    nextTree.people[id] = { ...p, unionIds: [...(p.unionIds || [])] };
+  }
+  for (const [id, u] of Object.entries(nextTree.unions)) {
+    nextTree.unions[id] = {
+      ...u,
+      partnerIds: [...(u.partnerIds || [])],
+      childrenIds: [...(u.childrenIds || [])],
+    };
+  }
+
   // Step 0: Backward compatibility migration - extract legacy person.x, person.y, horizontalX, horizontalY into layoutOverrides
   const layoutOverrides: LayoutOverrides = { ...(tree.layoutOverrides || {}) };
   const horizontalOverrides: LayoutOverrides = { ...(tree.horizontalOverrides || {}) };
@@ -154,7 +165,12 @@ export function sanitizeTree(tree: TreeData): TreeData {
       const person = nextTree.people[partnerId];
       delete nextTree.unions[uId];
       if (person) {
-        person.unionIds = (person.unionIds || []).filter((id) => id !== uId);
+        const nextUnions = (person.unionIds || []).filter((id) => id !== uId);
+        if (nextUnions.length !== (person.unionIds || []).length) {
+          person.unionIds = nextUnions;
+          person.rev = (person.rev ?? 1) + 1;
+          person.updatedAt = nextTree.updatedAt || person.updatedAt || '1970-01-01T00:00:00.000Z';
+        }
       }
     } else if (u.partnerIds.length === 0) {
       // If union has 0 partners, check if any of its children actually point to this union as parentUnionId
@@ -165,9 +181,16 @@ export function sanitizeTree(tree: TreeData): TreeData {
       if (activeChildren.length === 0) {
         delete nextTree.unions[uId];
       } else {
+        const changed = activeChildren.length !== (u.childrenIds || []).length;
         nextTree.unions[uId] = {
           ...u,
           childrenIds: activeChildren,
+          ...(changed
+            ? {
+                rev: (u.rev ?? 1) + 1,
+                updatedAt: nextTree.updatedAt || u.updatedAt || '1970-01-01T00:00:00.000Z',
+              }
+            : {}),
         };
       }
     }
@@ -176,7 +199,8 @@ export function sanitizeTree(tree: TreeData): TreeData {
   // Step 3: Clean up broken references across people and unions
   for (const [pId, person] of Object.entries(nextTree.people)) {
     // Clean unionIds
-    const validUnionIds = (person.unionIds || []).filter((uId) => {
+    const prevUnions = person.unionIds || [];
+    const validUnionIds = prevUnions.filter((uId) => {
       const u = nextTree.unions[uId];
       return Boolean(u && u.partnerIds.includes(pId));
     });
@@ -190,11 +214,22 @@ export function sanitizeTree(tree: TreeData): TreeData {
         pu.childrenIds.push(pId);
       }
     }
+    const changed = validUnionIds.length !== prevUnions.length || validParentUnionId !== person.parentUnionId;
     nextTree.people[pId] = {
       ...person,
       unionIds: validUnionIds,
-      parentUnionId: validParentUnionId,
+      ...(changed
+        ? {
+            rev: (person.rev ?? 1) + 1,
+            updatedAt: nextTree.updatedAt || person.updatedAt || '1970-01-01T00:00:00.000Z',
+          }
+        : {}),
     };
+    if (validParentUnionId) {
+      nextTree.people[pId].parentUnionId = validParentUnionId;
+    } else {
+      delete nextTree.people[pId].parentUnionId;
+    }
     if (person.isDeceased === false) {
       delete nextTree.people[pId].deathDate;
       delete nextTree.people[pId].deathPlace;
@@ -204,10 +239,17 @@ export function sanitizeTree(tree: TreeData): TreeData {
   for (const [uId, u] of Object.entries(nextTree.unions)) {
     const validPartners = u.partnerIds.filter((pId) => Boolean(nextTree.people[pId]));
     const validChildren = u.childrenIds.filter((cId) => Boolean(nextTree.people[cId]));
+    const changed = validPartners.length !== u.partnerIds.length || validChildren.length !== u.childrenIds.length;
     nextTree.unions[uId] = {
       ...u,
       partnerIds: validPartners,
       childrenIds: validChildren,
+      ...(changed
+        ? {
+            rev: (u.rev ?? 1) + 1,
+            updatedAt: nextTree.updatedAt || u.updatedAt || '1970-01-01T00:00:00.000Z',
+          }
+        : {}),
     };
   }
 
@@ -286,9 +328,12 @@ export function addChildToPerson(
 
   // Attach child to union
   const targetUnion = nextTree.unions[targetUnionId];
+  const attachNow = nextTree.updatedAt || targetUnion.updatedAt || '1970-01-01T00:00:00.000Z';
   nextTree.unions[targetUnionId] = {
     ...targetUnion,
     childrenIds: [...(targetUnion.childrenIds || []), newChildId],
+    rev: (targetUnion.rev ?? 1) + 1,
+    updatedAt: attachNow,
   };
 
   nextTree.people[newChildId] = newChild;
@@ -568,10 +613,17 @@ export function deletePersonFromTree(tree: TreeData, personId: string): TreeData
     if (newPartners.length === 0 && newChildren.length === 0) {
       delete nextTree.unions[unionId];
     } else {
+      const changed = newPartners.length !== u.partnerIds.length || newChildren.length !== u.childrenIds.length;
       nextTree.unions[unionId] = {
         ...u,
         partnerIds: newPartners,
         childrenIds: newChildren,
+        ...(changed
+          ? {
+              rev: (u.rev ?? 1) + 1,
+              updatedAt: nextTree.updatedAt || u.updatedAt || '1970-01-01T00:00:00.000Z',
+            }
+          : {}),
       };
     }
   });

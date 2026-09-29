@@ -1,4 +1,4 @@
-import type { TreeData } from '../../types/tree';
+import type { TreeData, Person, Union } from '../../types/tree';
 import type { RepairReport, RepairChange } from './types';
 
 function parseDateParts(dateStr?: string | null): { year: number; month: number; day: number } | null {
@@ -22,6 +22,14 @@ function compareDates(aStr?: string, bStr?: string): number | null {
   return pA.day - pB.day;
 }
 
+function sortedPeople(people: Record<string, Person>): Person[] {
+  return Object.keys(people).sort().map((id) => people[id]);
+}
+
+function sortedUnions(unions: Record<string, Union>): Union[] {
+  return Object.keys(unions).sort().map((id) => unions[id]);
+}
+
 /**
  * Deterministically and safely repairs structural, referential, and chronological
  * anomalies in a TreeData model.
@@ -43,12 +51,14 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     unions: { ...tree.unions },
   };
 
-  // Clone individual records
-  for (const [id, p] of Object.entries(nextTree.people)) {
-    nextTree.people[id] = { ...p, unionIds: [...(p.unionIds || [])] };
+  // Clone individual records in sorted order
+  for (const pId of Object.keys(nextTree.people).sort()) {
+    const p = nextTree.people[pId];
+    nextTree.people[pId] = { ...p, unionIds: [...(p.unionIds || [])] };
   }
-  for (const [id, u] of Object.entries(nextTree.unions)) {
-    nextTree.unions[id] = {
+  for (const uId of Object.keys(nextTree.unions).sort()) {
+    const u = nextTree.unions[uId];
+    nextTree.unions[uId] = {
       ...u,
       partnerIds: [...(u.partnerIds || [])],
       childrenIds: [...(u.childrenIds || [])],
@@ -56,7 +66,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 1. Deduplicate IDs in arrays
-  for (const p of Object.values(nextTree.people)) {
+  for (const p of sortedPeople(nextTree.people)) {
     const uniqueUnions = Array.from(new Set(p.unionIds || []));
     if (uniqueUnions.length !== p.unionIds.length) {
       changes.push({
@@ -69,7 +79,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     }
   }
 
-  for (const u of Object.values(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
     const uniquePartners = Array.from(new Set(u.partnerIds || []));
     if (uniquePartners.length !== u.partnerIds.length) {
       changes.push({
@@ -94,7 +104,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 2. Prune dangling partner and child references from unions
-  for (const u of Object.values(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
     const validPartners = u.partnerIds.filter((pId) => Boolean(nextTree.people[pId]));
     if (validPartners.length !== u.partnerIds.length) {
       const removed = u.partnerIds.filter((pId) => !nextTree.people[pId]);
@@ -121,7 +131,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 3. Prune dangling union references from people
-  for (const p of Object.values(nextTree.people)) {
+  for (const p of sortedPeople(nextTree.people)) {
     if (p.parentUnionId && !nextTree.unions[p.parentUnionId]) {
       changes.push({
         type: 'CLEANED_PARENT_UNION',
@@ -146,7 +156,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 4. Resolve self-parenting (person listed as both partner and child of the same union)
-  for (const u of Object.values(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
     const selfParents = u.childrenIds.filter((cId) => u.partnerIds.includes(cId));
     for (const pId of selfParents) {
       changes.push({
@@ -164,7 +174,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
 
   // 5. Enforce bi-directional relational symmetry
   // 5a. Ensure partners list the union
-  for (const u of Object.values(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
     for (const pId of u.partnerIds) {
       const p = nextTree.people[pId];
       if (p && !p.unionIds.includes(u.id)) {
@@ -180,7 +190,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 5b. Ensure person unionIds partners include the person
-  for (const p of Object.values(nextTree.people)) {
+  for (const p of sortedPeople(nextTree.people)) {
     for (const uId of p.unionIds) {
       const u = nextTree.unions[uId];
       if (u && !u.partnerIds.includes(p.id)) {
@@ -196,7 +206,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 5c. Ensure union childrenIds match person parentUnionId
-  for (const u of Object.values(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
     for (const cId of [...u.childrenIds]) {
       const child = nextTree.people[cId];
       if (!child) continue;
@@ -222,7 +232,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 5d. Ensure person parentUnionId includes child in union.childrenIds
-  for (const p of Object.values(nextTree.people)) {
+  for (const p of sortedPeople(nextTree.people)) {
     if (p.parentUnionId) {
       const pu = nextTree.unions[p.parentUnionId];
       if (pu && !pu.childrenIds.includes(p.id)) {
@@ -283,14 +293,15 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     stack.pop();
   }
 
-  for (const personId of Object.keys(nextTree.people)) {
+  for (const personId of Object.keys(nextTree.people).sort()) {
     if (!visitedGlobal.has(personId)) {
       dfsBreakCycle(personId);
     }
   }
 
   // 7. Prune dead orphaned unions (0 partners and 0 children)
-  for (const [uId, u] of Object.entries(nextTree.unions)) {
+  for (const u of sortedUnions(nextTree.unions)) {
+    const uId = u.id;
     if ((!u.partnerIds || u.partnerIds.length === 0) && (!u.childrenIds || u.childrenIds.length === 0)) {
       changes.push({
         type: 'CLEANED_EMPTY_UNION',
@@ -303,7 +314,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   }
 
   // 8. Repair Invalid Dates (birth > death)
-  for (const p of Object.values(nextTree.people)) {
+  for (const p of sortedPeople(nextTree.people)) {
     if (p.birthDate && p.deathDate) {
       const cmp = compareDates(p.birthDate, p.deathDate);
       if (cmp !== null && cmp > 0) {
@@ -332,7 +343,7 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
 
   // 9. Root person repair
   if (nextTree.rootPersonId && !nextTree.people[nextTree.rootPersonId]) {
-    const fallbackId = Object.keys(nextTree.people)[0] || undefined;
+    const fallbackId = Object.keys(nextTree.people).sort()[0] || undefined;
     changes.push({
       type: 'REPAIRED_ROOT_PERSON',
       description: `Re-pointed invalid rootPersonId "${nextTree.rootPersonId}" to "${fallbackId || 'none'}"`,

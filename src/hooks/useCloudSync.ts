@@ -64,6 +64,9 @@ export function useCloudSync(treeId: string | null | undefined) {
   const lastBaseTreeRef = useRef<TreeData | null>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPreMergeSnapshotTimeRef = useRef<number>(0);
+  const lastDestructiveSnapshotTimeRef = useRef<number>(0);
+  const SNAPSHOT_THROTTLE_MS = 60_000; // Throttle automated snapshots to at most once per minute
 
   const markRemoteSynced = useCallback((treeData: TreeData) => {
     lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(treeData);
@@ -193,12 +196,16 @@ export function useCloudSync(treeId: string | null | undefined) {
 
         const hasPendingLocal = currentFingerprint !== lastSavedCloudFingerprintRef.current;
         if (hasPendingLocal && lastBaseTreeRef.current) {
-          // Automatic snapshot before merging risky concurrent cloud changes
-          createSnapshot(
-            currentLocalTree,
-            'pre-cloud-merge',
-            `Automatic backup before merging cloud changes into ${currentLocalTree.name || 'tree'}`
-          ).catch(console.warn);
+          // Automatic snapshot before merging risky concurrent cloud changes, throttled to prevent snapshot storms
+          const now = Date.now();
+          if (now - lastPreMergeSnapshotTimeRef.current >= SNAPSHOT_THROTTLE_MS) {
+            lastPreMergeSnapshotTimeRef.current = now;
+            createSnapshot(
+              currentLocalTree,
+              'pre-cloud-merge',
+              `Automatic backup before merging cloud changes into ${currentLocalTree.name || 'tree'}`
+            ).catch(console.warn);
+          }
 
           // Perform deterministic syncMerge with tombstone resolution and invariant repair
           const mergeResult = syncMerge(currentLocalTree, remoteTree);
@@ -216,14 +223,17 @@ export function useCloudSync(treeId: string | null | undefined) {
             console.info('Cloud sync notices:', mergeResult.notices);
           }
         } else {
-          // If remote change involves significant record alterations (e.g. >= 3 records delta), capture snapshot
+          // If remote change involves destructive shrinkage (>= 5 people deleted), capture safety snapshot
           const localCount = Object.keys(currentLocalTree.people || {}).length;
           const remoteCount = Object.keys(remoteTree.people || {}).length;
-          if (localCount > 0 && Math.abs(localCount - remoteCount) >= 3) {
+          const shrinkage = localCount - remoteCount;
+          const now = Date.now();
+          if (shrinkage >= 5 && now - lastDestructiveSnapshotTimeRef.current >= SNAPSHOT_THROTTLE_MS) {
+            lastDestructiveSnapshotTimeRef.current = now;
             createSnapshot(
               currentLocalTree,
               'pre-cloud-merge',
-              `Automatic backup before applying remote sync (${localCount} -> ${remoteCount} people)`
+              `Automatic backup before applying remote shrinkage (${localCount} -> ${remoteCount} people)`
             ).catch(console.warn);
           }
 

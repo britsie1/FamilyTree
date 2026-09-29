@@ -105,8 +105,8 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
 - **Decision**: Hand-rolled TypeScript validation in `src/services/schema/`.
 - **Justification**:
   1. Zero extra runtime dependencies (adheres strictly to repo constraints).
-  2. Avoids bundle bloat (~50 KB minified/gzipped for Zod).
-  3. TreeData schemas are clean Record maps (`Record<string, Person>`, `Record<string, Union>`). Hand-rolled validators provide exact error paths, structured violation reporting, and fast execution without overhead.
+  2. Avoids adding external library bundle overhead when clean TypeScript validators fully satisfy our requirements.
+  3. TreeData schemas are structured Record maps (`Record<string, Person>`, `Record<string, Union>`). Hand-rolled validators provide exact error paths, structured violation reporting, and fast execution without framework overhead.
   4. Keeps TypeScript types in `src/types/tree.ts` as the single source of truth.
 
 ---
@@ -214,5 +214,78 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
    - Integrated into `TopNavbar` and `TreeModals`.
    - Lists snapshots with color-coded reason badges, relative timestamps, record count diffs (+/- people and unions).
    - Allows instant snapshot restoration, standalone JSON backup download, deletion, and manual checkpoint creation.
+
+---
+
+### 11. Known Limitations
+
+1. **LWW Field-Level vs Document-Level Granularity**:
+   - While `patchCloudPerson` and `patchCloudUnion` send granular field updates to Firestore, `syncMerge` operates at the entity (person or union) level using `updatedAt` and `rev`.
+   - If two collaborators modify different fields of the same person offline concurrently (e.g. Collaborator A edits `birthPlace` while Collaborator B edits `notes`), the winning entity revision overwrites the entire record rather than performing a CRDT property-level merge.
+2. **Tombstone Storage Overhead Prior to Compaction**:
+   - Deleted entities persist as tombstone documents (`deleted: true`) for 30 days to guarantee offline collaborators do not accidentally resurrect them.
+   - For family trees undergoing large bulk deletions, subcollections will retain tombstone documents until the 30-day retention threshold expires and compaction is triggered.
+3. **Offline Mutation Queue Capacity**:
+   - `cloudSyncBridge` caches offline changes locally. Extremely long offline editing sessions spanning thousands of continuous operations are bounded by local browser memory and localStorage limits before re-establishing connectivity.
+4. **Cross-Tree Link Transitive Integrity**:
+   - `TreeLink` entities reference remote trees and person IDs across accounts. When a remote tree or person is deleted or moved, the source link remains until manually inspected or cleared by the user.
+
+---
+
+### 12. Open Questions
+
+1. **Real-Time Presence and Cursor Awareness**:
+   - Would active collaborators benefit from live presence markers (e.g. subtle card borders or avatar badges) indicating which person card another user is currently viewing or editing to prevent simultaneous LWW collisions?
+2. **Complex Family Models (Multi-Parent & Formal Adoption Schemas)**:
+   - The current data schema models primary descent through a single `parentUnionId`. Families with foster parents, multi-parent adoptions, or gestational surrogacy currently rely on descriptive notes or separate union records; should schema v2 introduce typed parental relationships (e.g. `biological`, `adoptive`, `foster`)?
+3. **Interactive Visual Conflict Resolution UI**:
+   - Currently, concurrent conflicts are resolved automatically and deterministically via LWW and invariant repair, logging notices. Would users benefit from an interactive visual diff modal allowing manual field-by-field selection when concurrent edits occur within a narrow time window?
+4. **Automated Server-Side Scheduled Compaction**:
+   - Client-side compaction is implemented via `compactCloudTombstones` and `compactTombstones`. Would an automated Firebase Cloud Function or Cloud Run scheduled cron job running nightly provide better storage hygiene without requiring client triggering?
+
+---
+
+### 13. Rollout and Deployment Steps
+
+1. **Step 1: Security Rules Deployment**:
+   - Deploy the hardened Firestore security rules to Firebase:
+     ```bash
+     firebase deploy --only firestore:rules
+     ```
+   - Verify that shape validators (`isValidPersonDoc`, `isValidUnionDoc`) and compaction delete permissions (`resource.data.deleted == true`) are enforced in the Firebase Emulator or Console.
+2. **Step 2: Subcollection Migration**:
+   - Legacy monolithic cloud trees are migrated lazily and idempotently upon first access by an authorized owner or editor via `migrateTreeToSubcollections(treeId)`.
+   - For zero-downtime batch migration across all legacy trees in production, run an administrative batch script invoking `migrateTreeToSubcollections` across all documents in `/trees`.
+3. **Step 3: Web Application Build & Deployment**:
+   - Execute the production build:
+     ```bash
+     npm run build
+     ```
+   - Deploy the generated `dist/` directory to the hosting environment (Firebase Hosting, Vercel, Netlify, or Cloudflare Pages).
+4. **Step 4: Local Storage and IndexedDB Migration**:
+   - On application launch, `loadCurrentTree()` automatically routes local trees through `processTreeIngress()`. Trees without a schema version are upgraded, repaired, and stamped with `schemaVersion: 1`.
+   - The snapshot subsystem automatically provisions `familytree_snapshots_db` in IndexedDB.
+5. **Step 5: Post-Deployment Smoke Verification**:
+   - Verify that creating, updating, and deleting people and unions persists granular subcollection documents in Firestore.
+   - Verify that offline edits queue and sync cleanly upon reconnect.
+   - Verify that Version History snapshots appear after major actions and can be restored cleanly.
+
+---
+
+### 14. Tombstone Compaction Policy & Implementation
+
+1. **Retention Period**:
+   - Default 30 days (`DEFAULT_TOMBSTONE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000`).
+   - Guarantees that collaborators who work offline or check the family tree once a month have their deletions and concurrent edits synchronized safely without resurrecting stale records.
+2. **Pure Referential Safety Guarantees**:
+   - `compactTombstones(activeTree, tombstones, maxAgeMs, now)` in `src/services/tombstoneCompactor.ts` guarantees that **no tombstone is ever purged if it is referenced in the active graph**:
+     - If a person tombstone is older than 30 days, but is still listed as a partner or child in an active union, it is **retained** and a safety violation notice is reported in `safetyViolationsPrevented`.
+     - If a union tombstone is older than 30 days, but is still referenced as `parentUnionId` or in `unionIds` by an active person, it is **retained**.
+3. **Execution Environments**:
+   - **Local Storage / In-Memory**: `compactTombstones` purges expired tombstones from local storage and memory caches.
+   - **Cloud Firestore**: `compactCloudTombstones(treeId, maxAgeMs)` loads subcollection documents, evaluates retention and active graph safety, and executes batch hard-deletes (`batch.delete()`) for all eligible expired tombstones.
+4. **Security Rule Permission Alignment**:
+   - Firestore security rules restrict hard deletes to tree owners, **except** during compaction where authorized editors are allowed to delete documents if and only if `resource.data.get('deleted', false) == true`.
+
 
 

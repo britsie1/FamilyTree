@@ -48,6 +48,8 @@ export function generateRandomTree(options: TreeGeneratorOptions = {}): TreeData
   const rootBirthYear = randomYear(1940, 1960);
   const rootLastName = pick(LAST_NAMES);
 
+  const initialTime = '2026-01-01T00:00:00.000Z';
+
   people[rootId] = {
     id: rootId,
     firstName: rootGender === 'male' ? pick(FIRST_NAMES_MALE) : pick(FIRST_NAMES_FEMALE),
@@ -76,6 +78,8 @@ export function generateRandomTree(options: TreeGeneratorOptions = {}): TreeData
           },
         ]
       : undefined,
+    rev: 1,
+    updatedAt: initialTime,
   };
 
   let personIdx = 1;
@@ -116,16 +120,23 @@ export function generateRandomTree(options: TreeGeneratorOptions = {}): TreeData
         birthDate: `${partnerBirthYear}-08-20`,
         unionIds: [unionId],
         generation: gen,
+        rev: 1,
+        updatedAt: initialTime,
       };
 
-      unions[unionId] = {
+      const newUnion: Union = {
         id: unionId,
         partnerIds: [anchorId, partnerId],
         childrenIds: [],
         type: unionType,
         marriageDate: `${marriageYear}-06-12`,
-        divorceDate: unionType === 'divorced' ? `${marriageYear + 10}-09-01` : undefined,
+        rev: 1,
+        updatedAt: initialTime,
       };
+      if (unionType === 'divorced') {
+        newUnion.divorceDate = `${marriageYear + 10}-09-01`;
+      }
+      unions[unionId] = newUnion;
 
       anchor.unionIds.push(unionId);
       generationalTiers[gen].push(partnerId);
@@ -149,6 +160,8 @@ export function generateRandomTree(options: TreeGeneratorOptions = {}): TreeData
           parentUnionId: uId,
           unionIds: [],
           generation: childGen,
+          rev: 1,
+          updatedAt: initialTime,
         };
 
         union.childrenIds.push(childId);
@@ -170,8 +183,8 @@ export function generateRandomTree(options: TreeGeneratorOptions = {}): TreeData
     unions,
     storageMode: 'subcollections',
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: initialTime,
+    updatedAt: initialTime,
   };
 
   // Run repair to guarantee reciprocal consistency and no dangling references

@@ -30,6 +30,11 @@ import type {
 import { generateId, isPresetTreeId } from './storage';
 import { threeWayMergeTree } from './treeMerge';
 import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
+import {
+  compactTombstones,
+  DEFAULT_TOMBSTONE_RETENTION_MS,
+  type TombstoneCompactionResult,
+} from './tombstoneCompactor';
 
 export const RECOMMENDED_FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
@@ -59,75 +64,99 @@ service cloud.firestore {
              request.auth.token.email.lower() in resource.data.sharedEmails;
     }
 
+    function canReadTree(treeId) {
+      return resource == null ||
+             get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
+             get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+             (isAuthenticated() && request.auth.token.email != null &&
+              request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+    }
+
+    function isTreeOwner(treeId) {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
+    }
+
+    function canEditTree(treeId) {
+      return isAuthenticated() && (
+        isTreeOwner(treeId) ||
+        (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
+         get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
+        (request.auth.token.email != null &&
+         request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+      );
+    }
+
+    function isValidPersonDoc(data, personId) {
+      return data.id == personId &&
+             data.id is string &&
+             data.firstName is string &&
+             data.lastName is string &&
+             (data.gender is string && data.gender in ['male', 'female', 'other', 'unknown', 'unspecified']) &&
+             data.unionIds is list &&
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('rev' in data) || data.rev is int || data.rev is number) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    function isValidUnionDoc(data, unionId) {
+      return data.id == unionId &&
+             data.id is string &&
+             data.partnerIds is list &&
+             data.childrenIds is list &&
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('rev' in data) || data.rev is int || data.rev is number) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
     // Rules for family tree documents
     match /trees/{treeId} {
-      // Anyone can read if document does not exist yet (to allow checking existence),
-      // or if tree is public, or if owner, or if invited email
       allow read: if resource == null || isPublic() || isOwner() || isInvitedCollaborator();
 
-      // Authenticated users can create new trees with themselves as owner
       allow create: if isAuthenticated() &&
                        request.resource.data.ownerId == request.auth.uid;
 
-      // Update allowed by owner, public editor, or invited collaborator
       allow update: if (
-                       // 1. Owner can update tree and settings
                        isOwner()
                     ) || (
-                       // 2. Public editor (including guest) can update tree data,
-                       // but cannot change ownership or general access settings
                        isPublicEditor() &&
                        request.resource.data.ownerId == resource.data.ownerId &&
                        request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false) &&
                        request.resource.data.get('publicRole', 'viewer') == resource.data.get('publicRole', 'viewer')
                     ) || (
-                       // 3. Invited collaborator can update tree data, but cannot change ownership
                        isInvitedCollaborator() &&
                        request.resource.data.ownerId == resource.data.ownerId &&
                        request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false)
                     );
 
-      // Delete allowed only by owner
       allow delete: if isOwner();
 
-      // Subcollection for individual people documents
+      // Subcollection for individual people documents with shape validation and compaction permissions
       match /people/{personId} {
-        allow read: if resource == null ||
-                       get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
-                       get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
-                       (isAuthenticated() && request.auth.token.email != null &&
-                        request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+        allow read: if canReadTree(treeId);
 
-        allow create, update: if isAuthenticated() && (
-          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
-          (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
-           get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
-          (request.auth.token.email != null &&
-           request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+        allow create, update: if canEditTree(treeId) &&
+                                 isValidPersonDoc(request.resource.data, personId);
+
+        // Delete allowed for owner (hard delete), or for authorized editor ONLY when deleting tombstones during compaction
+        allow delete: if isAuthenticated() && (
+          isTreeOwner(treeId) ||
+          (canEditTree(treeId) && resource.data.get('deleted', false) == true)
         );
-
-        allow delete: if isAuthenticated() &&
-          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
       }
 
-      // Subcollection for individual relationship/union documents
+      // Subcollection for individual relationship/union documents with shape validation and compaction permissions
       match /unions/{unionId} {
-        allow read: if resource == null ||
-                       get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
-                       get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
-                       (isAuthenticated() && request.auth.token.email != null &&
-                        request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+        allow read: if canReadTree(treeId);
 
-        allow create, update: if isAuthenticated() && (
-          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
-          (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
-           get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
-          (request.auth.token.email != null &&
-           request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+        allow create, update: if canEditTree(treeId) &&
+                                 isValidUnionDoc(request.resource.data, unionId);
+
+        // Delete allowed for owner (hard delete), or for authorized editor ONLY when deleting tombstones during compaction
+        allow delete: if isAuthenticated() && (
+          isTreeOwner(treeId) ||
+          (canEditTree(treeId) && resource.data.get('deleted', false) == true)
         );
-
-        allow delete: if isAuthenticated() &&
-          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
       }
     }
   }
@@ -474,8 +503,9 @@ export async function patchCloudPerson(
             // Concurrency check: check if the fields we are modifying collided
             const serverPerson = serverData.people?.[personId];
             if (serverPerson) {
+              const serverPersonMap = serverPerson as unknown as Record<string, unknown>;
               const collidingKeys = Object.keys(cleaned).filter(
-                (k) => (serverPerson as any)[k] !== undefined && (serverPerson as any)[k] !== cleaned[k]
+                (k) => serverPersonMap[k] !== undefined && serverPersonMap[k] !== cleaned[k]
               );
               if (collidingKeys.length > 0) {
                 throw new ConcurrencyConflictError(
@@ -592,8 +622,9 @@ export async function patchCloudUnion(
           if (serverVersion !== expectedVersion) {
             const serverUnion = serverData.unions?.[unionId];
             if (serverUnion) {
+              const serverUnionMap = serverUnion as unknown as Record<string, unknown>;
               const collidingKeys = Object.keys(cleaned).filter(
-                (k) => (serverUnion as any)[k] !== undefined && (serverUnion as any)[k] !== cleaned[k]
+                (k) => serverUnionMap[k] !== undefined && serverUnionMap[k] !== cleaned[k]
               );
               if (collidingKeys.length > 0) {
                 throw new ConcurrencyConflictError(
@@ -910,8 +941,8 @@ export async function migrateTreeToSubcollections(
           ...person,
           id: pId,
           deleted: false,
-          rev: (person as any).rev || 1,
-          updatedAt: (person as any).updatedAt || now,
+          rev: person.rev || 1,
+          updatedAt: person.updatedAt || now,
         }),
         { merge: true }
       );
@@ -931,8 +962,8 @@ export async function migrateTreeToSubcollections(
           ...union,
           id: uId,
           deleted: false,
-          rev: (union as any).rev || 1,
-          updatedAt: (union as any).updatedAt || now,
+          rev: union.rev || 1,
+          updatedAt: union.updatedAt || now,
         }),
         { merge: true }
       );
@@ -962,6 +993,131 @@ export async function migrateTreeToSubcollections(
 }
 
 /**
+ * Hard-deletes tombstones that have expired past maxAgeMs (default 30 days) and are safe
+ * to remove (no active records reference them), both in Firestore subcollections and monolithic storage.
+ */
+export async function compactCloudTombstones(
+  treeId: string,
+  maxAgeMs: number = DEFAULT_TOMBSTONE_RETENTION_MS
+): Promise<TombstoneCompactionResult> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) {
+    throw new Error('Firebase is not configured or tree ID is missing.');
+  }
+
+  const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+  const snap = await withTimeout(getDoc(rootDocRef), 7000, 'Loading cloud tree metadata timed out.');
+  if (!snap.exists()) {
+    throw new Error(`Tree ${treeId} does not exist in Cloud Firestore.`);
+  }
+
+  const rootData = snap.data() as CloudTreeData;
+  const isSubcollections = rootData.storageMode === 'subcollections';
+
+  const activeTree: TreeData = {
+    id: treeId,
+    name: rootData.name || '',
+    createdAt: rootData.createdAt || new Date().toISOString(),
+    updatedAt: rootData.updatedAt || new Date().toISOString(),
+    people: {},
+    unions: {},
+  };
+  const tombstones = {
+    people: {} as Record<string, Person>,
+    unions: {} as Record<string, Union>,
+  };
+
+  if (isSubcollections) {
+    const peopleSnap = await withTimeout(
+      getDocs(collection(db, TREES_COLLECTION, treeId, 'people')),
+      7000,
+      'Loading people subcollection for compaction timed out.'
+    );
+    peopleSnap.forEach((d) => {
+      const p = { ...(d.data() as Person), id: d.id };
+      if (p.deleted) {
+        tombstones.people[p.id] = p;
+      } else {
+        activeTree.people[p.id] = p;
+      }
+    });
+
+    const unionsSnap = await withTimeout(
+      getDocs(collection(db, TREES_COLLECTION, treeId, 'unions')),
+      7000,
+      'Loading unions subcollection for compaction timed out.'
+    );
+    unionsSnap.forEach((d) => {
+      const u = { ...(d.data() as Union), id: d.id };
+      if (u.deleted) {
+        tombstones.unions[u.id] = u;
+      } else {
+        activeTree.unions[u.id] = u;
+      }
+    });
+
+    const result = compactTombstones(activeTree, tombstones, maxAgeMs);
+
+    const purgedPeopleIds = Object.keys(result.purgedPeople);
+    const purgedUnionIds = Object.keys(result.purgedUnions);
+    const batchSize = 400;
+
+    for (let i = 0; i < purgedPeopleIds.length; i += batchSize) {
+      const chunk = purgedPeopleIds.slice(i, i + batchSize);
+      const batch = writeBatch(db);
+      for (const pId of chunk) {
+        batch.delete(doc(db, TREES_COLLECTION, treeId, 'people', pId));
+      }
+      await withTimeout(batch.commit(), 7000, 'Committing people compaction batch timed out.');
+    }
+
+    for (let i = 0; i < purgedUnionIds.length; i += batchSize) {
+      const chunk = purgedUnionIds.slice(i, i + batchSize);
+      const batch = writeBatch(db);
+      for (const uId of chunk) {
+        batch.delete(doc(db, TREES_COLLECTION, treeId, 'unions', uId));
+      }
+      await withTimeout(batch.commit(), 7000, 'Committing union compaction batch timed out.');
+    }
+
+    return result;
+  } else {
+    // Monolithic storage
+    for (const [id, p] of Object.entries(rootData.people || {})) {
+      if (p.deleted) {
+        tombstones.people[id] = { ...p, id };
+      } else {
+        activeTree.people[id] = { ...p, id };
+      }
+    }
+    for (const [id, u] of Object.entries(rootData.unions || {})) {
+      if (u.deleted) {
+        tombstones.unions[id] = { ...u, id };
+      } else {
+        activeTree.unions[id] = { ...u, id };
+      }
+    }
+
+    const result = compactTombstones(activeTree, tombstones, maxAgeMs);
+    const purgedPeopleIds = Object.keys(result.purgedPeople);
+    const purgedUnionIds = Object.keys(result.purgedUnions);
+
+    if (purgedPeopleIds.length > 0 || purgedUnionIds.length > 0) {
+      const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+      for (const pId of purgedPeopleIds) {
+        updates[`people.${pId}`] = deleteField();
+      }
+      for (const uId of purgedUnionIds) {
+        updates[`unions.${uId}`] = deleteField();
+      }
+      await withTimeout(updateDoc(rootDocRef, updates), 7000, 'Updating monolithic tree compaction timed out.');
+    }
+
+    return result;
+  }
+}
+
+/**
  * Saves or updates a tree in Firestore with metadata preservation.
  */
 export async function saveTreeToCloud(
@@ -978,7 +1134,7 @@ export async function saveTreeToCloud(
   const ingress = processTreeIngress(tree);
   const sanitized = ingress.tree;
   sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
-  const treeAny = tree as any;
+  const treeMeta = tree as Partial<CloudTreeMetadata>;
 
   // Auto-heal preset ID collisions: Presets must not be saved under global static IDs
   if (isPresetTreeId(sanitized.id)) {
@@ -989,7 +1145,7 @@ export async function saveTreeToCloud(
 
   // If this local tree has an ownerId from another user (e.g. from an import or copy),
   // fork a new tree ID so it doesn't try to overwrite another user's document
-  if (!existingMetadata?.ownerId && treeAny.ownerId && treeAny.ownerId !== user.uid) {
+  if (!existingMetadata?.ownerId && treeMeta.ownerId && treeMeta.ownerId !== user.uid) {
     const forkedId = generateId('tree');
     sanitized.id = forkedId;
     tree.id = forkedId;
@@ -1001,17 +1157,17 @@ export async function saveTreeToCloud(
   // Preserve existing metadata if not explicitly provided
   const metadata: CloudTreeMetadata = {
     ownerId: resolvedOwnerId,
-    ownerEmail: existingMetadata?.ownerEmail || (treeAny.ownerEmail && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerEmail : normalizeEmail(user.email || '')),
-    ownerDisplayName: existingMetadata?.ownerDisplayName || (treeAny.ownerDisplayName && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerDisplayName : (user.displayName || 'Anonymous')),
-    ownerPhotoURL: existingMetadata?.ownerPhotoURL || (treeAny.ownerPhotoURL && resolvedOwnerId === treeAny.ownerId ? treeAny.ownerPhotoURL : (user.photoURL || '')),
-    isPublic: existingMetadata?.isPublic ?? treeAny.isPublic ?? false,
-    publicRole: existingMetadata?.publicRole || treeAny.publicRole || 'viewer',
-    sharedWith: existingMetadata?.sharedWith || treeAny.sharedWith || {},
-    sharedEmails: existingMetadata?.sharedEmails || treeAny.sharedEmails || [],
-    googleDriveConfig: existingMetadata?.googleDriveConfig || treeAny.googleDriveConfig || undefined,
-    version: existingMetadata?.version || treeAny.version || 1,
+    ownerEmail: existingMetadata?.ownerEmail || (treeMeta.ownerEmail && resolvedOwnerId === treeMeta.ownerId ? treeMeta.ownerEmail : normalizeEmail(user.email || '')),
+    ownerDisplayName: existingMetadata?.ownerDisplayName || (treeMeta.ownerDisplayName && resolvedOwnerId === treeMeta.ownerId ? treeMeta.ownerDisplayName : (user.displayName || 'Anonymous')),
+    ownerPhotoURL: existingMetadata?.ownerPhotoURL || (treeMeta.ownerPhotoURL && resolvedOwnerId === treeMeta.ownerId ? treeMeta.ownerPhotoURL : (user.photoURL || '')),
+    isPublic: existingMetadata?.isPublic ?? treeMeta.isPublic ?? false,
+    publicRole: existingMetadata?.publicRole || treeMeta.publicRole || 'viewer',
+    sharedWith: existingMetadata?.sharedWith || treeMeta.sharedWith || {},
+    sharedEmails: existingMetadata?.sharedEmails || treeMeta.sharedEmails || [],
+    googleDriveConfig: existingMetadata?.googleDriveConfig || treeMeta.googleDriveConfig || undefined,
+    version: existingMetadata?.version || treeMeta.version || 1,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    storageMode: existingMetadata?.storageMode || treeAny.storageMode || 'monolithic',
+    storageMode: existingMetadata?.storageMode || treeMeta.storageMode || 'monolithic',
   };
 
   const cloudTree: CloudTreeData = {
