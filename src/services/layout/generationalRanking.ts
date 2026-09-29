@@ -318,8 +318,12 @@ export function calculateGenerations(tree: TreeData): Record<string, number> {
 }
 
 /**
- * Core ranking (Phases 1, 1b and 2). When `useExplicit` is false the persisted
- * `person.generation` values are ignored and every rank starts from 0 (natural ranking).
+ * Core ranking. When `useExplicit` is false the persisted `person.generation` values are
+ * ignored and every rank starts from 0 (natural ranking).
+ *
+ * The forward (Phase 1/1b) and pull-down (Phase 2) passes are repeated until nothing moves:
+ * pulling a parent down next to their children can leave that parent's siblings (and their
+ * descendants) a row too high, so the sibling and parent/child rules must be re-applied.
  */
 function rankGenerations(
   tree: TreeData,
@@ -336,6 +340,24 @@ function rankGenerations(
     const explicit = tree.people[id]?.generation;
     generations[id] = useExplicit && explicit !== undefined ? explicit : 0;
   });
+
+  const maxPasses = peopleIds.length + 5;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const before = peopleIds.map((id) => generations[id]);
+    runRankingPasses(tree, generations, interGenCouples);
+    if (peopleIds.every((id, i) => generations[id] === before[i])) break;
+  }
+
+  return generations;
+}
+
+/** One round of Phase 1 (forward), Phase 1b (inter-generational couples) and Phase 2 (pull-down). */
+function runRankingPasses(
+  tree: TreeData,
+  generations: Record<string, number>,
+  interGenCouples: InterGenerationalCouple[]
+): void {
+  const peopleIds = Object.keys(tree.people).sort();
 
   const sortedUnions = Object.values(tree.unions).sort((a, b) => a.id.localeCompare(b.id));
   const sortedPeople = Object.values(tree.people).sort((a, b) => a.id.localeCompare(b.id));
@@ -520,8 +542,6 @@ function rankGenerations(
       }
     }
   }
-
-  return generations;
 }
 
 /**
