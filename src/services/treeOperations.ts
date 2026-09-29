@@ -513,6 +513,13 @@ export function addParentToPerson(
   }
 
   // Otherwise, create a new parent and union
+  if (person.parentUnionId && nextTree.unions[person.parentUnionId]) {
+    const oldU = nextTree.unions[person.parentUnionId];
+    nextTree.unions[person.parentUnionId] = {
+      ...oldU,
+      childrenIds: oldU.childrenIds.filter((cId) => cId !== personId),
+    };
+  }
   parentUnionId = generateId('u_parents');
   const newParent: Person = createEmptyPerson({
     id: newParentId,
@@ -803,6 +810,14 @@ export function linkExistingChild(
     }
   }
 
+  if (child.parentUnionId && child.parentUnionId !== targetUnionId && nextTree.unions[child.parentUnionId]) {
+    const oldU = nextTree.unions[child.parentUnionId];
+    nextTree.unions[child.parentUnionId] = {
+      ...oldU,
+      childrenIds: oldU.childrenIds.filter((id) => id !== childPersonId),
+    };
+  }
+
   nextTree.people[childPersonId] = {
     ...nextTree.people[childPersonId],
     parentUnionId: targetUnionId,
@@ -911,6 +926,14 @@ export function linkExistingParent(
     if (!targetUnion.childrenIds.includes(childPersonId)) {
       targetUnion.childrenIds.push(childPersonId);
     }
+  }
+
+  if (child.parentUnionId && child.parentUnionId !== targetUnionId && nextTree.unions[child.parentUnionId]) {
+    const oldU = nextTree.unions[child.parentUnionId];
+    nextTree.unions[child.parentUnionId] = {
+      ...oldU,
+      childrenIds: oldU.childrenIds.filter((id) => id !== childPersonId),
+    };
   }
 
   nextTree.people[childPersonId] = {
