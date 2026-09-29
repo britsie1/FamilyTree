@@ -42,6 +42,12 @@ export interface Person {
   linkedTrees?: TreeLink[];
   // Attached Google Drive documents & records
   documents?: PersonDocument[];
+  // Per-record synchronization and tombstone metadata
+  updatedAt?: string;
+  updatedBy?: string;
+  rev?: number;
+  deleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface PersonDocument {
@@ -84,6 +90,12 @@ export interface Union {
   // Position override if manually dragged or calculated
   x?: number;
   y?: number;
+  // Per-record synchronization and tombstone metadata
+  updatedAt?: string;
+  updatedBy?: string;
+  rev?: number;
+  deleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface TreeData {

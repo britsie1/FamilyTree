@@ -109,6 +109,26 @@ service cloud.firestore {
         allow delete: if isAuthenticated() &&
           get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
       }
+
+      // Subcollection for individual relationship/union documents
+      match /unions/{unionId} {
+        allow read: if resource == null ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
+                       get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+                       (isAuthenticated() && request.auth.token.email != null &&
+                        request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+
+        allow create, update: if isAuthenticated() && (
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
+          (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
+           get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
+          (request.auth.token.email != null &&
+           request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
+        );
+
+        allow delete: if isAuthenticated() &&
+          get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
+      }
     }
   }
 }`;
@@ -514,16 +534,50 @@ export async function patchCloudUnion(
   treeId: string,
   unionId: string,
   updates: Partial<Union>,
-  options?: { baseVersion?: number }
+  options?: { baseVersion?: number; isSubcollection?: boolean; currentUserId?: string }
 ): Promise<{ version: number }> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
     throw new Error('Firebase is not configured or tree ID is missing.');
   }
 
-  const docRef = doc(db, TREES_COLLECTION, treeId);
   const now = new Date().toISOString();
   const cleaned = cleanForFirestore(updates) as Record<string, any>;
+
+  // If subcollection storage is enabled
+  if (options?.isSubcollection) {
+    const unionDocRef = doc(db, TREES_COLLECTION, treeId, 'unions', unionId);
+    try {
+      await withTimeout(
+        setDoc(
+          unionDocRef,
+          cleanForFirestore({
+            ...cleaned,
+            id: unionId,
+            deleted: false,
+            updatedAt: now,
+            updatedBy: options?.currentUserId,
+          }),
+          { merge: true }
+        ),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+      await withTimeout(
+        updateDoc(rootDocRef, { updatedAt: now }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return { version: (options.baseVersion || 1) + 1 };
+    } catch (err: any) {
+      console.error(`Failed to patch subcollection union ${unionId}:`, err);
+      throw new Error(formatFirestoreError(err));
+    }
+  }
+
+  // Monolithic storage
+  const docRef = doc(db, TREES_COLLECTION, treeId);
 
   try {
     if (options?.baseVersion !== undefined) {
@@ -591,12 +645,12 @@ export async function patchCloudUnion(
 }
 
 /**
- * Deletes a single person from Firestore (either from subcollection or monolithic document).
+ * Soft-deletes a single person in Firestore using tombstones.
  */
 export async function deleteCloudPerson(
   treeId: string,
   personId: string,
-  options?: { isSubcollection?: boolean }
+  options?: { isSubcollection?: boolean; currentUserId?: string }
 ): Promise<void> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -612,7 +666,17 @@ export async function deleteCloudPerson(
     const personDocRef = doc(db, TREES_COLLECTION, treeId, 'people', personId);
     try {
       await withTimeout(
-        deleteDoc(personDocRef),
+        setDoc(
+          personDocRef,
+          cleanForFirestore({
+            id: personId,
+            deleted: true,
+            deletedAt: now,
+            updatedAt: now,
+            updatedBy: options?.currentUserId,
+          }),
+          { merge: true }
+        ),
         7000,
         'Connection to Cloud Firestore timed out.'
       );
@@ -629,14 +693,20 @@ export async function deleteCloudPerson(
     }
   }
 
-  // Monolithic storage
+  // Monolithic storage: write tombstone in map
   const docRef = doc(db, TREES_COLLECTION, treeId);
   try {
     await withTimeout(
-      updateDoc(docRef, {
-        [`people.${personId}`]: deleteField(),
-        updatedAt: now,
-      }),
+      updateDoc(
+        docRef,
+        cleanForFirestore({
+          [`people.${personId}.deleted`]: true,
+          [`people.${personId}.deletedAt`]: now,
+          [`people.${personId}.updatedAt`]: now,
+          [`people.${personId}.updatedBy`]: options?.currentUserId,
+          updatedAt: now,
+        })
+      ),
       7000,
       'Connection to Cloud Firestore timed out.'
     );
@@ -647,11 +717,12 @@ export async function deleteCloudPerson(
 }
 
 /**
- * Deletes a single union from Firestore.
+ * Soft-deletes a single union in Firestore using tombstones.
  */
 export async function deleteCloudUnion(
   treeId: string,
-  unionId: string
+  unionId: string,
+  options?: { isSubcollection?: boolean; currentUserId?: string }
 ): Promise<void> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -661,14 +732,53 @@ export async function deleteCloudUnion(
     throw new Error('Union ID is missing.');
   }
 
-  const docRef = doc(db, TREES_COLLECTION, treeId);
   const now = new Date().toISOString();
+
+  if (options?.isSubcollection) {
+    const unionDocRef = doc(db, TREES_COLLECTION, treeId, 'unions', unionId);
+    try {
+      await withTimeout(
+        setDoc(
+          unionDocRef,
+          cleanForFirestore({
+            id: unionId,
+            deleted: true,
+            deletedAt: now,
+            updatedAt: now,
+            updatedBy: options?.currentUserId,
+          }),
+          { merge: true }
+        ),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      const rootDocRef = doc(db, TREES_COLLECTION, treeId);
+      await withTimeout(
+        updateDoc(rootDocRef, { updatedAt: now }),
+        7000,
+        'Connection to Cloud Firestore timed out.'
+      );
+      return;
+    } catch (err: any) {
+      console.error(`Failed to delete subcollection union ${unionId}:`, err);
+      throw new Error(formatFirestoreError(err));
+    }
+  }
+
+  // Monolithic storage: write tombstone in map
+  const docRef = doc(db, TREES_COLLECTION, treeId);
   try {
     await withTimeout(
-      updateDoc(docRef, {
-        [`unions.${unionId}`]: deleteField(),
-        updatedAt: now,
-      }),
+      updateDoc(
+        docRef,
+        cleanForFirestore({
+          [`unions.${unionId}.deleted`]: true,
+          [`unions.${unionId}.deletedAt`]: now,
+          [`unions.${unionId}.updatedAt`]: now,
+          [`unions.${unionId}.updatedBy`]: options?.currentUserId,
+          updatedAt: now,
+        })
+      ),
       7000,
       'Connection to Cloud Firestore timed out.'
     );
@@ -679,12 +789,12 @@ export async function deleteCloudUnion(
 }
 
 /**
- * Deletes multiple people from Firestore (either from subcollection in batches or monolithic document).
+ * Soft-deletes multiple people from Firestore using tombstones.
  */
 export async function deleteCloudPeople(
   treeId: string,
   personIds: string[],
-  options?: { isSubcollection?: boolean }
+  options?: { isSubcollection?: boolean; currentUserId?: string }
 ): Promise<void> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -702,7 +812,17 @@ export async function deleteCloudPeople(
         const batch = writeBatch(db);
         for (const pId of chunk) {
           const pDocRef = doc(db, TREES_COLLECTION, treeId, 'people', pId);
-          batch.delete(pDocRef);
+          batch.set(
+            pDocRef,
+            cleanForFirestore({
+              id: pId,
+              deleted: true,
+              deletedAt: now,
+              updatedAt: now,
+              updatedBy: options?.currentUserId,
+            }),
+            { merge: true }
+          );
         }
         await withTimeout(batch.commit(), 7000, 'Failed to commit people deletion batch.');
       }
@@ -723,11 +843,13 @@ export async function deleteCloudPeople(
   const docRef = doc(db, TREES_COLLECTION, treeId);
   const updates: Record<string, any> = { updatedAt: now };
   for (const pId of personIds) {
-    updates[`people.${pId}`] = deleteField();
+    updates[`people.${pId}.deleted`] = true;
+    updates[`people.${pId}.deletedAt`] = now;
+    updates[`people.${pId}.updatedAt`] = now;
   }
   try {
     await withTimeout(
-      updateDoc(docRef, updates),
+      updateDoc(docRef, cleanForFirestore(updates)),
       7000,
       'Connection to Cloud Firestore timed out.'
     );
@@ -738,12 +860,14 @@ export async function deleteCloudPeople(
 }
 
 /**
- * Migrates a monolithic family tree to Firestore subcollections (trees/{treeId}/people/{personId}).
- * Strips the large people map from the root document to guarantee it never breaches the 1 MB limit.
+ * Migrates a monolithic family tree to Firestore subcollections:
+ * - trees/{treeId}/people/{personId}
+ * - trees/{treeId}/unions/{unionId}
+ * Strips the large people and unions maps from the root document to guarantee it never breaches the 1 MB limit.
  */
 export async function migrateTreeToSubcollections(
   treeId: string
-): Promise<{ migratedPeopleCount: number }> {
+): Promise<{ migratedPeopleCount: number; migratedUnionsCount: number }> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
     throw new Error('Firebase is not configured or tree ID is missing.');
@@ -762,39 +886,79 @@ export async function migrateTreeToSubcollections(
 
   const data = snap.data() as CloudTreeData;
   const people = data.people || {};
+  const unions = data.unions || {};
   const peopleEntries = Object.entries(people);
+  const unionsEntries = Object.entries(unions);
 
-  if (peopleEntries.length === 0) {
-    return { migratedPeopleCount: 0 };
+  // If already in subcollections mode and root people & unions maps are empty, nothing to do
+  if (data.storageMode === 'subcollections' && peopleEntries.length === 0 && unionsEntries.length === 0) {
+    return { migratedPeopleCount: 0, migratedUnionsCount: 0 };
   }
 
-  // Write in chunks of up to 400 (Firestore limit is 500 ops per batch)
+  const now = new Date().toISOString();
   const batchSize = 400;
+
+  // Batch-write people subcollection
   for (let i = 0; i < peopleEntries.length; i += batchSize) {
     const chunk = peopleEntries.slice(i, i + batchSize);
     const batch = writeBatch(db);
     for (const [pId, person] of chunk) {
       const pDocRef = doc(db, TREES_COLLECTION, treeId, 'people', pId);
-      batch.set(pDocRef, cleanForFirestore(person));
+      batch.set(
+        pDocRef,
+        cleanForFirestore({
+          ...person,
+          id: pId,
+          deleted: false,
+          rev: (person as any).rev || 1,
+          updatedAt: (person as any).updatedAt || now,
+        }),
+        { merge: true }
+      );
     }
     await withTimeout(batch.commit(), 7000, 'Failed to commit people subcollection batch.');
   }
 
-  // Update root tree document: clear monolithic people map, set storageMode, and bump version
-  const now = new Date().toISOString();
+  // Batch-write unions subcollection
+  for (let i = 0; i < unionsEntries.length; i += batchSize) {
+    const chunk = unionsEntries.slice(i, i + batchSize);
+    const batch = writeBatch(db);
+    for (const [uId, union] of chunk) {
+      const uDocRef = doc(db, TREES_COLLECTION, treeId, 'unions', uId);
+      batch.set(
+        uDocRef,
+        cleanForFirestore({
+          ...union,
+          id: uId,
+          deleted: false,
+          rev: (union as any).rev || 1,
+          updatedAt: (union as any).updatedAt || now,
+        }),
+        { merge: true }
+      );
+    }
+    await withTimeout(batch.commit(), 7000, 'Failed to commit unions subcollection batch.');
+  }
+
+  // Update root tree document: clear monolithic people and unions maps, set storageMode, and bump version
   const nextVersion = (data.version || 1) + 1;
   await withTimeout(
     updateDoc(docRef, {
       storageMode: 'subcollections',
       people: {},
+      unions: {},
       version: nextVersion,
       updatedAt: now,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
     }),
     7000,
     'Failed to update root tree storageMode.'
   );
 
-  return { migratedPeopleCount: peopleEntries.length };
+  return {
+    migratedPeopleCount: peopleEntries.length,
+    migratedUnionsCount: unionsEntries.length,
+  };
 }
 
 /**
@@ -896,6 +1060,8 @@ export async function saveTreeToCloud(
 
 /**
  * Loads a tree document from Firestore by its ID.
+ * When in subcollections mode, loads and merges people and unions subcollections,
+ * filtering out tombstones.
  */
 export async function getCloudTree(treeId: string): Promise<CloudTreeData | null> {
   const db = getFirebaseDb();
@@ -911,6 +1077,8 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
     if (snap.exists()) {
       const data = snap.data() as CloudTreeData;
       let people = data.people || {};
+      let unions = data.unions || {};
+
       if (data.storageMode === 'subcollections') {
         try {
           const peopleSnap = await withTimeout(
@@ -922,14 +1090,49 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
             people = {};
             peopleSnap.forEach((pDoc) => {
               const pData = pDoc.data() as Person;
-              people[pDoc.id] = { ...pData, id: pDoc.id };
+              if (!pData.deleted) {
+                people[pDoc.id] = { ...pData, id: pDoc.id };
+              }
             });
           }
         } catch (subErr) {
           console.warn(`Could not load people subcollection for tree ${treeId}:`, subErr);
         }
+
+        try {
+          const unionsSnap = await withTimeout(
+            getDocs(collection(db, TREES_COLLECTION, treeId, 'unions')),
+            7000,
+            'Loading subcollection unions timed out.'
+          );
+          if (!unionsSnap.empty) {
+            unions = {};
+            unionsSnap.forEach((uDoc) => {
+              const uData = uDoc.data() as Union;
+              if (!uData.deleted) {
+                unions[uDoc.id] = { ...uData, id: uDoc.id };
+              }
+            });
+          }
+        } catch (subErr) {
+          console.warn(`Could not load unions subcollection for tree ${treeId}:`, subErr);
+        }
+      } else {
+        // Monolithic: prune any tombstones
+        const activePeople: Record<string, Person> = {};
+        for (const [id, p] of Object.entries(people)) {
+          if (!p.deleted) activePeople[id] = p;
+        }
+        people = activePeople;
+
+        const activeUnions: Record<string, Union> = {};
+        for (const [id, u] of Object.entries(unions)) {
+          if (!u.deleted) activeUnions[id] = u;
+        }
+        unions = activeUnions;
       }
-      const ingress = processTreeIngress({ ...data, people }, { preserveRawOnError: true });
+
+      const ingress = processTreeIngress({ ...data, people, unions }, { preserveRawOnError: true });
       return {
         ...ingress.tree,
         version: data.version || 1,
@@ -955,6 +1158,8 @@ export async function getCloudTree(treeId: string): Promise<CloudTreeData | null
 
 /**
  * Subscribes to real-time changes of a cloud tree.
+ * When in subcollections mode, also listens to /people and /unions subcollections,
+ * pruning tombstones and keeping invariants repaired.
  */
 export function subscribeToCloudTree(
   treeId: string,
@@ -964,41 +1169,121 @@ export function subscribeToCloudTree(
   const db = getFirebaseDb();
   if (!db || !treeId) return null;
 
+  let rootData: CloudTreeData | null = null;
+  let peopleMap: Record<string, Person> = {};
+  let unionsMap: Record<string, Union> = {};
+  let unsubscribePeople: Unsubscribe | null = null;
+  let unsubscribeUnions: Unsubscribe | null = null;
+  let isSubcollections = false;
+
+  const emit = () => {
+    if (!rootData) {
+      onUpdate(null);
+      return;
+    }
+
+    const combined: TreeData = {
+      ...rootData,
+      people: isSubcollections ? peopleMap : (rootData.people || {}),
+      unions: isSubcollections ? unionsMap : (rootData.unions || {}),
+    };
+
+    // Prune tombstones if in subcollections
+    if (isSubcollections) {
+      const activePeople: Record<string, Person> = {};
+      for (const [id, p] of Object.entries(combined.people || {})) {
+        if (!p.deleted) activePeople[id] = p;
+      }
+      const activeUnions: Record<string, Union> = {};
+      for (const [id, u] of Object.entries(combined.unions || {})) {
+        if (!u.deleted) activeUnions[id] = u;
+      }
+      combined.people = activePeople;
+      combined.unions = activeUnions;
+    }
+
+    const ingress = processTreeIngress(combined, { preserveRawOnError: true });
+    const parsed: CloudTreeData = {
+      ...ingress.tree,
+      version: rootData.version || 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      storageMode: rootData.storageMode || 'monolithic',
+      ownerId: rootData.ownerId,
+      ownerEmail: rootData.ownerEmail,
+      ownerDisplayName: rootData.ownerDisplayName,
+      ownerPhotoURL: rootData.ownerPhotoURL,
+      isPublic: rootData.isPublic ?? false,
+      publicRole: rootData.publicRole || 'viewer',
+      sharedWith: rootData.sharedWith || {},
+      sharedEmails: rootData.sharedEmails || [],
+      googleDriveConfig: rootData.googleDriveConfig,
+    };
+    onUpdate(parsed);
+  };
+
+  const setupSubcollectionListeners = () => {
+    if (unsubscribePeople || unsubscribeUnions) return;
+    const peopleColRef = collection(db, TREES_COLLECTION, treeId, 'people');
+    unsubscribePeople = onSnapshot(
+      peopleColRef,
+      (snapshot) => {
+        if (snapshot.metadata.hasPendingWrites) return;
+        snapshot.docChanges().forEach((change) => {
+          const p = change.doc.data() as Person;
+          peopleMap[change.doc.id] = { ...p, id: change.doc.id };
+        });
+        emit();
+      },
+      (err) => {
+        console.warn(`Realtime people subcollection subscription warning for tree ${treeId}:`, err);
+      }
+    );
+
+    const unionsColRef = collection(db, TREES_COLLECTION, treeId, 'unions');
+    unsubscribeUnions = onSnapshot(
+      unionsColRef,
+      (snapshot) => {
+        if (snapshot.metadata.hasPendingWrites) return;
+        snapshot.docChanges().forEach((change) => {
+          const u = change.doc.data() as Union;
+          unionsMap[change.doc.id] = { ...u, id: change.doc.id };
+        });
+        emit();
+      },
+      (err) => {
+        console.warn(`Realtime unions subcollection subscription warning for tree ${treeId}:`, err);
+      }
+    );
+  };
+
   const docRef = doc(db, TREES_COLLECTION, treeId);
-  return onSnapshot(
+  const unsubscribeRoot = onSnapshot(
     docRef,
     (snap) => {
-      // Ignore local writes that have not been acknowledged by the server
-      if (snap.metadata.hasPendingWrites) {
+      if (snap.metadata.hasPendingWrites) return;
+      if (!snap.exists()) {
+        rootData = null;
+        onUpdate(null);
         return;
       }
-      if (snap.exists()) {
-        const data = snap.data() as CloudTreeData;
-        const ingress = processTreeIngress(data, { preserveRawOnError: true });
-        const parsed: CloudTreeData = {
-          ...ingress.tree,
-          version: data.version || 1,
-          schemaVersion: CURRENT_SCHEMA_VERSION,
-          ownerId: data.ownerId,
-          ownerEmail: data.ownerEmail,
-          ownerDisplayName: data.ownerDisplayName,
-          ownerPhotoURL: data.ownerPhotoURL,
-          isPublic: data.isPublic ?? false,
-          publicRole: data.publicRole || 'viewer',
-          sharedWith: data.sharedWith || {},
-          sharedEmails: data.sharedEmails || [],
-          googleDriveConfig: data.googleDriveConfig,
-        };
-        onUpdate(parsed);
-      } else {
-        onUpdate(null);
+      rootData = snap.data() as CloudTreeData;
+      if (rootData.storageMode === 'subcollections') {
+        isSubcollections = true;
+        setupSubcollectionListeners();
       }
+      emit();
     },
     (err) => {
       console.error(`Realtime subscription error for tree ${treeId}:`, err);
       onError(err);
     }
   );
+
+  return () => {
+    if (unsubscribeRoot) unsubscribeRoot();
+    if (unsubscribePeople) unsubscribePeople();
+    if (unsubscribeUnions) unsubscribeUnions();
+  };
 }
 
 /**

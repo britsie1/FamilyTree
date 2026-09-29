@@ -6,13 +6,14 @@ import {
   updateCloudTreeData,
   subscribeToCloudTree,
   resolveUserPermission,
+  migrateTreeToSubcollections,
 } from '../services/firestoreService';
 import { useAuth } from './useAuth';
 import { useTreeStore } from '../stores/useTreeStore';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
 import { cloudSyncBridge } from '../services/cloudSyncBridge';
-import { threeWayMergeTree } from '../services/treeMerge';
+import { syncMerge } from '../services/syncMerge';
 
 /**
  * Produces a stable structural fingerprint of a tree for equality checking,
@@ -121,6 +122,13 @@ export function useCloudSync(treeId: string | null | undefined) {
           selectPerson(initialId);
           clearFocus();
 
+          // Lazy idempotent migration of legacy monolithic trees to per-record subcollections
+          if (cloudTree.storageMode !== 'subcollections' && (perm === 'owner' || perm === 'editor')) {
+            migrateTreeToSubcollections(cloudTree.id).catch((migErr) => {
+              console.warn('Lazy migration to subcollections warning:', migErr);
+            });
+          }
+
           if (!user && perm === 'editor') {
             signInAnonymouslyUser().catch((anonErr) => {
               console.warn('Background anonymous auth skipped:', anonErr);
@@ -183,23 +191,16 @@ export function useCloudSync(treeId: string | null | undefined) {
 
         const hasPendingLocal = currentFingerprint !== lastSavedCloudFingerprintRef.current;
         if (hasPendingLocal && lastBaseTreeRef.current) {
-          // Perform 3-way merge to integrate remote changes without clobbering local edits
-          const mergeResult = threeWayMergeTree(
-            lastBaseTreeRef.current,
-            currentLocalTree,
-            remoteTree
-          );
-          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(mergeResult.merged);
+          // Perform deterministic syncMerge with tombstone resolution and invariant repair
+          const mergeResult = syncMerge(currentLocalTree, remoteTree);
+          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(mergeResult.tree);
           lastBaseTreeRef.current = remoteTree;
           cloudSyncBridge.setBaseVersion(remoteTree.version);
           isRemoteSyncRef.current = true;
-          setTree(mergeResult.merged, false);
+          setTree(mergeResult.tree, false);
 
-          if (mergeResult.hasConflict) {
-            setCloudSyncStatus(
-              'error',
-              `Sync conflict: remote changes collided on ${mergeResult.conflicts.length} fields.`
-            );
+          if (mergeResult.notices.length > 0) {
+            console.info('Cloud sync notices:', mergeResult.notices);
           }
         } else {
           isRemoteSyncRef.current = true;
@@ -242,21 +243,29 @@ export function useCloudSync(treeId: string | null | undefined) {
         return;
       }
 
-      // Check if there are ONLY granular patches being handled by cloudSyncBridge
+      // Queue granular per-record diffs for people and unions
+      cloudSyncBridge.queueBatchDiff(
+        tree.id,
+        lastBaseTreeRef.current,
+        tree,
+        {
+          isSubcollection: tree.storageMode === 'subcollections',
+        }
+      );
+
+      // Check if root document metadata changed (name, description, rootPersonId, collapsedPersonIds, etc.)
       const base = lastBaseTreeRef.current;
-      const isStructural =
+      const isMetaChanged =
         !base ||
         base.name !== tree.name ||
         (base.description || '') !== (tree.description || '') ||
         base.rootPersonId !== tree.rootPersonId ||
-        Object.keys(base.people || {}).length !== Object.keys(tree.people || {}).length ||
-        Object.keys(base.unions || {}).length !== Object.keys(tree.unions || {}).length ||
         JSON.stringify(base.collapsedPersonIds || []) !== JSON.stringify(tree.collapsedPersonIds || []) ||
         JSON.stringify(base.googleDriveConfig || null) !== JSON.stringify(tree.googleDriveConfig || null);
 
-      if (!isStructural && cloudSyncBridge.hasPendingPatches()) {
-        // Granular updates are active and debouncing targeted field writes.
-        // Do not trigger whole-tree document rewrite!
+      if (!isMetaChanged) {
+        // Record changes are handled granularly via cloudSyncBridge; no need to touch root document
+        lastBaseTreeRef.current = tree;
         return;
       }
 
@@ -269,14 +278,8 @@ export function useCloudSync(treeId: string | null | undefined) {
       autoSaveTimerRef.current = setTimeout(async () => {
         lastSavedCloudFingerprintRef.current = currentFingerprint;
         try {
-          const deletedPersonIds =
-            tree.storageMode === 'subcollections' && base?.people
-              ? Object.keys(base.people).filter((id) => !tree.people[id])
-              : undefined;
-
           const res = await updateCloudTreeData(tree, {
             baseVersion: cloudSyncBridge.getBaseVersion(),
-            deletedPersonIds,
           });
           if (res?.version) {
             cloudSyncBridge.setBaseVersion(res.version);

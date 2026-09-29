@@ -1,4 +1,4 @@
-import type { Person, Union } from '../types/tree';
+import type { Person, Union, TreeData } from '../types/tree';
 import {
   patchCloudPerson,
   patchCloudUnion,
@@ -28,6 +28,7 @@ interface PendingUnionPatch {
   baseVersion?: number;
   attempts: number;
   timer: ReturnType<typeof setTimeout> | null;
+  isSubcollection?: boolean;
 }
 
 const DEBOUNCE_DELAY_MS = 500;
@@ -141,7 +142,7 @@ export class CloudSyncBridge {
     treeId: string,
     unionId: string,
     updates: Partial<Union>,
-    options?: { baseVersion?: number }
+    options?: { baseVersion?: number; isSubcollection?: boolean }
   ) {
     if (!treeId || !unionId) return;
 
@@ -158,6 +159,7 @@ export class CloudSyncBridge {
     };
 
     const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
+    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
 
     useCollabStore.getState().setCloudSyncStatus('saving');
 
@@ -173,6 +175,7 @@ export class CloudSyncBridge {
       baseVersion: resolvedVersion,
       attempts: existing?.attempts || 0,
       timer,
+      isSubcollection,
     });
   }
 
@@ -219,7 +222,7 @@ export class CloudSyncBridge {
   public queueUnionDelete(
     treeId: string,
     unionId: string,
-    options?: { baseVersion?: number }
+    options?: { baseVersion?: number; isSubcollection?: boolean }
   ) {
     if (!treeId || !unionId) return;
 
@@ -231,6 +234,7 @@ export class CloudSyncBridge {
     }
 
     const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
+    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
 
     useCollabStore.getState().setCloudSyncStatus('saving');
 
@@ -245,7 +249,58 @@ export class CloudSyncBridge {
       baseVersion: resolvedVersion,
       attempts: existing?.attempts || 0,
       timer,
+      isSubcollection,
     });
+  }
+
+  /**
+   * Compares a base tree with current tree state and queues all modified, added,
+   * and deleted person and union records as granular patches/tombstones.
+   */
+  public queueBatchDiff(
+    treeId: string,
+    baseTree: TreeData | null,
+    currentTree: TreeData,
+    options?: { baseVersion?: number; isSubcollection?: boolean }
+  ): void {
+    if (!treeId) return;
+    const isSub = options?.isSubcollection ?? (currentTree.storageMode === 'subcollections');
+    const opts = { baseVersion: options?.baseVersion ?? this.baseVersion, isSubcollection: isSub };
+
+    const basePeople = baseTree?.people || {};
+    const currentPeople = currentTree.people || {};
+    const baseUnions = baseTree?.unions || {};
+    const currentUnions = currentTree.unions || {};
+
+    // People added or modified
+    for (const [pId, person] of Object.entries(currentPeople)) {
+      const baseP = basePeople[pId];
+      if (!baseP || JSON.stringify(baseP) !== JSON.stringify(person)) {
+        this.queuePersonPatch(treeId, pId, person as Partial<Person>, opts);
+      }
+    }
+
+    // People deleted
+    for (const pId of Object.keys(basePeople)) {
+      if (!currentPeople[pId]) {
+        this.queuePersonDelete(treeId, pId, opts);
+      }
+    }
+
+    // Unions added or modified
+    for (const [uId, union] of Object.entries(currentUnions)) {
+      const baseU = baseUnions[uId];
+      if (!baseU || JSON.stringify(baseU) !== JSON.stringify(union)) {
+        this.queueUnionPatch(treeId, uId, union as Partial<Union>, opts);
+      }
+    }
+
+    // Unions deleted
+    for (const uId of Object.keys(baseUnions)) {
+      if (!currentUnions[uId]) {
+        this.queueUnionDelete(treeId, uId, opts);
+      }
+    }
   }
 
   /**
@@ -325,7 +380,10 @@ export class CloudSyncBridge {
       if (item.isDelete) {
         await deleteCloudUnion(
           item.treeId,
-          item.unionId
+          item.unionId,
+          {
+            isSubcollection: item.isSubcollection,
+          }
         );
       } else {
         const result = await patchCloudUnion(
@@ -334,6 +392,7 @@ export class CloudSyncBridge {
           item.updates || {},
           {
             baseVersion: item.baseVersion,
+            isSubcollection: item.isSubcollection,
           }
         );
 

@@ -129,22 +129,38 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
 ### 8. Phase 2 Architecture (Per-Record Sync with Tombstones)
 
 1. **Firestore Data Model**:
-   - Store records in subcollections:
-     - `/trees/{treeId}/people/{personId}`
-     - `/trees/{treeId}/unions/{unionId}`
-     - Root document `/trees/{treeId}` holds metadata (`name`, `description`, `rootPersonId`, `updatedAt`, `schemaVersion`).
-   - Each record contains:
-     - `updatedAt`: ISO string (or ServerTimestamp)
-     - `updatedBy`: UID
-     - `rev`: incrementing revision number
-     - `deleted?: boolean`: tombstone flag
-     - `deletedAt?: string`: tombstone timestamp
-2. **Conflict & Tombstone Resolution**:
-   - Deterministic pure merge: Last-Writer-Wins (LWW) using `updatedAt` / `rev`.
-   - Delete vs Edit rule: A delete wins unless the edit has a newer timestamp than the tombstone. If an edit is newer, the record is restored and flagged for notification.
-   - Post-merge invariant enforcement: Run `checkInvariants()` and apply deterministic cascade/repair so no dangling edges can exist.
+   - Store individual records in dedicated subcollections:
+     - `/trees/{treeId}/people/{personId}`: Individual person document.
+     - `/trees/{treeId}/unions/{unionId}`: Individual relationship/union document.
+     - Root document `/trees/{treeId}`: Metadata (`name`, `description`, `rootPersonId`, `collapsedPersonIds`, `googleDriveConfig`, `ownerId`, `isPublic`, `publicRole`, `sharedWith`, `sharedEmails`, `storageMode: 'subcollections'`, `schemaVersion: 1`, `updatedAt`, `version`).
+   - Each person and union record contains sync metadata:
+     - `updatedAt`: ISO 8601 timestamp string
+     - `updatedBy`: UID of user who authored the change
+     - `rev`: monotonic incrementing revision number
+     - `deleted?: boolean`: tombstone flag (`true` when deleted)
+     - `deletedAt?: string`: ISO 8601 deletion timestamp
+2. **Conflict & Tombstone Resolution (`src/services/syncMerge.ts`)**:
+   - Pure, deterministic merge function: `syncMerge(localTree, remoteTree, options)`.
+   - **Active vs Active Resolution**: Last-Writer-Wins (LWW) using `updatedAt`. If timestamps are equal or missing, higher `rev` wins. Deterministic tie-breaker for identical timestamps/revisions.
+   - **Tombstone vs Tombstone**: Stays deleted, retains latest deletion timestamp.
+   - **Delete vs Edit Rule**:
+     - A delete wins unless the edit has an `updatedAt` timestamp strictly newer than the tombstone's `deletedAt`.
+     - If the edit timestamp is strictly newer (`edit.updatedAt > tombstone.deletedAt`), the record is **resurrected** (restored from tombstone). The `deleted` flag is cleared, prior attributes are retained and updated, and an informational notice is logged in `SyncMergeResult`.
+     - If `tombstone.deletedAt >= edit.updatedAt`, the delete wins. The record remains deleted.
+   - **Post-Merge Invariant Enforcement**:
+     - Deleted records are pruned from the active memory graph (`TreeData.people` and `TreeData.unions`) into a separate `tombstones` record map.
+     - Relational repair (`repair(tree)`) automatically cascades to clean dangling references (pruning deleted partners and children from unions, clearing `parentUnionId` on orphaned children, and safely dropping empty unions as tombstones).
+     - `checkInvariants(repairedTree)` confirms 0 invariant violations on the merged result.
 3. **Lazy Idempotent Migration**:
-   - On first open of a legacy monolithic tree by an authorized client, batch-write people and unions to subcollections and mark root doc `storageMode: 'subcollections'`.
-   - Keep fallback read from root document if subcollection is empty.
-4. **Compaction Policy**:
+   - On first open of a legacy monolithic cloud tree by an authorized client, `migrateTreeToSubcollections(treeId)`:
+     1. Batch-writes all existing `people` to `/trees/{treeId}/people/{personId}` with `deleted: false`, `rev: 1`, and `updatedAt`.
+     2. Batch-writes all existing `unions` to `/trees/{treeId}/unions/{unionId}` with `deleted: false`, `rev: 1`, and `updatedAt`.
+     3. Updates the root document with `storageMode: 'subcollections'`, `people: {}`, `unions: {}`, and bumped `version`.
+   - Idempotent: safe to run multiple times without duplicating or overwriting newer subcollection data.
+4. **Offline Queueing and Loop Suppression**:
+   - `cloudSyncBridge` queues per-record patches and tombstone deletions during network outages.
+   - Upon reconnect (`online` event), pending queue is flushed with exponential retry backoff.
+   - Real-time listeners suppress local echo updates by checking `snapshot.metadata.hasPendingWrites` and content fingerprints.
+5. **Compaction Policy**:
    - Retain tombstones for 30 days before purge.
+

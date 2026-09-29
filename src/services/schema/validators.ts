@@ -129,6 +129,22 @@ export function validatePerson(raw: unknown): ValidationResult<Person> {
     }
   }
 
+  if (raw.updatedAt !== undefined && !isString(raw.updatedAt)) {
+    errors.push('Person.updatedAt must be a string');
+  }
+  if (raw.updatedBy !== undefined && !isString(raw.updatedBy)) {
+    errors.push('Person.updatedBy must be a string');
+  }
+  if (raw.rev !== undefined && typeof raw.rev !== 'number') {
+    errors.push('Person.rev must be a number');
+  }
+  if (raw.deleted !== undefined && typeof raw.deleted !== 'boolean') {
+    errors.push('Person.deleted must be a boolean');
+  }
+  if (raw.deletedAt !== undefined && !isString(raw.deletedAt)) {
+    errors.push('Person.deletedAt must be a string');
+  }
+
   return {
     success: errors.length === 0,
     data: errors.length === 0 ? (raw as Person) : undefined,
@@ -159,6 +175,21 @@ export function validateUnion(raw: unknown): ValidationResult<Union> {
   }
   if (raw.divorceDate !== undefined && !isString(raw.divorceDate)) {
     errors.push('Union.divorceDate must be a string');
+  }
+  if (raw.updatedAt !== undefined && !isString(raw.updatedAt)) {
+    errors.push('Union.updatedAt must be a string');
+  }
+  if (raw.updatedBy !== undefined && !isString(raw.updatedBy)) {
+    errors.push('Union.updatedBy must be a string');
+  }
+  if (raw.rev !== undefined && typeof raw.rev !== 'number') {
+    errors.push('Union.rev must be a number');
+  }
+  if (raw.deleted !== undefined && typeof raw.deleted !== 'boolean') {
+    errors.push('Union.deleted must be a boolean');
+  }
+  if (raw.deletedAt !== undefined && !isString(raw.deletedAt)) {
+    errors.push('Union.deletedAt must be a string');
   }
 
   return {
