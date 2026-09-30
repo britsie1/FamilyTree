@@ -467,9 +467,9 @@ export function exportGedcom(tree: TreeData): string {
 
   // 1. Header
   lines.push('0 HEAD');
-  lines.push('1 SOUR FamilyTree');
+  lines.push('1 SOUR MyFamTree');
   lines.push('2 VERS 1.0');
-  lines.push('2 NAME FamilyTree Visual Pedigree Builder');
+  lines.push('2 NAME MyFamTree');
   lines.push('1 DEST ANY');
   lines.push(`1 DATE ${new Date().toISOString().split('T')[0].replace(/-/g, ' ')}`);
   lines.push('1 GEDC');

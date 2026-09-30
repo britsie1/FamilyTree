@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateTreeSvgString } from '../src/services/treeExportService.ts';
-import { createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { computeLayout } from '../src/services/layoutEngine.ts';
 
 describe('treeExportService', () => {

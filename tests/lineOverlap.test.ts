@@ -1,11 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { computeLayout } from '../src/services/layoutEngine.ts';
-import {
-  createDoubleInLawPreset,
-  createThreeGenSampleTree,
-  createDivorceBlendedPreset,
-} from '../src/services/storage.ts';
+import { createDoubleInLawPreset, createThreeGenSampleTree, createDivorceBlendedPreset } from './fixtures/exampleTrees.ts';
 import { userExportedTree } from './layoutEngine.test.ts';
 import type { TreeData, LayoutEdge } from '../src/types/tree.ts';
 

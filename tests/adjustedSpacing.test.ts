@@ -5,9 +5,7 @@ import {
   CARD_WIDTH,
   HORIZONTAL_SPACING,
 } from '../src/services/layoutEngine.ts';
-import {
-  createDivorceBlendedPreset,
-} from '../src/services/storage.ts';
+import { createDivorceBlendedPreset } from './fixtures/exampleTrees.ts';
 import { clearManualPositions } from '../src/services/treeOperations.ts';
 import { userExportedTree } from './layoutEngine.test.ts';
 import type { TreeData } from '../src/types/tree.ts';

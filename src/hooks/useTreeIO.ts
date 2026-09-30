@@ -7,10 +7,6 @@ import {
   exportTreeToJsonFile,
   importTreeFromJsonString,
   sanitizeFilename,
-  createDoubleInLawPreset,
-  createDivorceBlendedPreset,
-  createThreeGenSampleTree,
-  createBlankTree,
 } from '../services/storage';
 import { parseGedcom, exportGedcomToFile } from '../services/gedcomService';
 import { exportTreeAsSvg, exportTreeAsFullImage } from '../services/treeExportService';
@@ -49,27 +45,6 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
     onClearUrl();
     confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
   }, [makeCopyAction, setIsCloudTree, setUserPermission, setAccessDeniedMessage, onClearUrl]);
-
-  const handleSelectPreset = useCallback((presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => {
-    // Capture snapshot of current tree before switching presets if it contains data
-    if (tree && Object.keys(tree.people || {}).length > 0) {
-      createSnapshot(
-        tree,
-        presetKey === 'blank' ? 'pre-tree-clear' : 'pre-preset-switch',
-        `Automatic backup before switching to ${presetKey} template`
-      ).catch(console.warn);
-    }
-
-    let nextTree: TreeData;
-    if (presetKey === 'double_in_law') nextTree = createDoubleInLawPreset();
-    else if (presetKey === 'divorce') nextTree = createDivorceBlendedPreset();
-    else if (presetKey === 'royal') nextTree = createThreeGenSampleTree();
-    else nextTree = createBlankTree();
-
-    nextTree.id = `tree_${presetKey}_${Date.now().toString(36)}`;
-    saveCurrentTree(nextTree);
-    onSwitchTree(nextTree, false);
-  }, [tree, onSwitchTree]);
 
   const handleImportFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -159,7 +134,6 @@ export function useTreeIO({ containerRef, layout, onSwitchTree, onClearUrl }: Us
 
   return {
     handleMakeCopy,
-    handleSelectPreset,
     handleImportFile,
     handleExportImage,
     handleExportFullImage,

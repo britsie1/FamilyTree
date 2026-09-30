@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { parseGedcom, exportGedcom, normalizeGedcomDate } from '../src/services/gedcomService.ts';
-import { createDoubleInLawPreset, createThreeGenSampleTree, createDivorceBlendedPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset, createThreeGenSampleTree, createDivorceBlendedPreset } from './fixtures/exampleTrees.ts';
 
 describe('GEDCOM Service', () => {
   describe('normalizeGedcomDate', () => {

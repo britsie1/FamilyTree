@@ -6,7 +6,7 @@ test('offline edits and deletions survive page reload and replay into a second w
   // Load the modules before going offline; no service worker is required.
   await page.evaluate(async () => {
     const bridgePath = '/src/services/cloudSyncBridge.ts';
-    const storagePath = '/src/services/storage.ts';
+    const storagePath = '/tests/fixtures/exampleTrees.ts';
     const { CloudSyncBridge } = await import(/* @vite-ignore */ bridgePath);
     const { createDoubleInLawPreset } = await import(/* @vite-ignore */ storagePath);
     const base = createDoubleInLawPreset();

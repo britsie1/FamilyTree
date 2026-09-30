@@ -5,7 +5,7 @@ import { useCanvasStore } from '../src/stores/useCanvasStore.ts';
 import { useTemporalStore } from '../src/stores/useTemporalStore.ts';
 import { useCollabStore } from '../src/stores/useCollabStore.ts';
 import { cloudSyncBridge } from '../src/services/cloudSyncBridge.ts';
-import { createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 
 // In-memory mock for localStorage in node test environment
 class MemoryStorage implements Storage {

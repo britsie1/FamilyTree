@@ -9,7 +9,7 @@ import {
   loadCurrentTree,
   STORAGE_KEY,
 } from '../src/services/storage.ts';
-import { createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 
 // In-memory mock for localStorage in node test environment
 class MemoryStorage implements Storage {
@@ -67,6 +67,24 @@ describe('Multi-Tree Storage and Migration', () => {
     assert.ok(loaded2);
     assert.strictEqual(loaded1.name, 'Tree One');
     assert.strictEqual(loaded2.name, 'Tree Two');
+  });
+
+  it('starts a fresh workspace with one placeholder person and no example genealogy', () => {
+    const tree = loadCurrentTree();
+    assert.strictEqual(tree.name, 'My Family Tree');
+    assert.strictEqual(Object.keys(tree.people).length, 1);
+    assert.strictEqual(Object.keys(tree.unions).length, 0);
+    assert.ok(tree.rootPersonId);
+    assert.strictEqual(tree.people[tree.rootPersonId!].firstName, 'New');
+    assert.strictEqual(loadCurrentTree().id, tree.id);
+  });
+
+  it('creates a blank tree rather than a demo when the last tree is deleted', () => {
+    const original = createAndSaveNewTree('Last tree');
+    const result = deleteStoredTree(original.id);
+    assert.notStrictEqual(result.newActiveTree.id, original.id);
+    assert.strictEqual(Object.keys(result.newActiveTree.people).length, 1);
+    assert.strictEqual(Object.keys(result.newActiveTree.unions).length, 0);
   });
 
   it('supports duplicating an existing tree', () => {

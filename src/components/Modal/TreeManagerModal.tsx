@@ -7,9 +7,6 @@ import {
   duplicateTree,
   createAndSaveNewTree,
   saveCurrentTree,
-  createDoubleInLawPreset,
-  createDivorceBlendedPreset,
-  createThreeGenSampleTree,
   type TreeSummary,
 } from '../../services/storage';
 import { useAuth } from '../../hooks/useAuth';
@@ -235,19 +232,6 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
       }
     }
     setEditingId(null);
-  };
-
-  const handleLoadPreset = (presetKey: 'double_in_law' | 'divorce' | 'royal') => {
-    let preset: TreeData;
-    if (presetKey === 'double_in_law') preset = createDoubleInLawPreset();
-    else if (presetKey === 'divorce') preset = createDivorceBlendedPreset();
-    else preset = createThreeGenSampleTree();
-
-    preset.id = `tree_${presetKey}_${Date.now().toString(36)}`;
-    saveCurrentTree(preset);
-    refreshLocalList();
-    onSwitchTree(preset, false);
-    onClose();
   };
 
   return (
@@ -673,7 +657,7 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
           )}
         </div>
 
-        {/* Footer with New Tree & Presets */}
+        {/* Create a new blank tree */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/50 flex flex-col sm:flex-row items-center justify-between gap-2.5">
           <button
             onClick={handleCreateNewLocal}
@@ -683,27 +667,6 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
             <span>Create New Local Tree</span>
           </button>
 
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Add Sample:</span>
-            <button
-              onClick={() => handleLoadPreset('double_in_law')}
-              className="px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
-            >
-              Double In-Law
-            </button>
-            <button
-              onClick={() => handleLoadPreset('divorce')}
-              className="px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
-            >
-              Blended
-            </button>
-            <button
-              onClick={() => handleLoadPreset('royal')}
-              className="px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
-            >
-              Royal
-            </button>
-          </div>
         </div>
       </div>
     </div>

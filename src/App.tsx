@@ -125,8 +125,8 @@ function FamilyTreeMain() {
     useCollabStore.getState().setIsCloudTree(resolvedIsCloud);
     useCollabStore.getState().setUserPermission(resolvedIsCloud ? resolveUserPermission(newTree as any, user) : 'owner');
     updateTreeUrl(newTree.id, resolvedIsCloud);
-    const targetPerson = (focusPerson && newTree.people[focusPerson]) ? focusPerson : (newTree.rootPersonId || Object.keys(newTree.people)[0] || null);
-    useCanvasStore.getState().selectPerson((typeof window !== 'undefined' && window.innerWidth >= 768) ? targetPerson : null);
+    const targetPerson = (focusPerson && newTree.people[focusPerson]) ? focusPerson : null;
+    useCanvasStore.getState().selectPerson(targetPerson);
     useCanvasStore.getState().setSelectedUnionId(null);
     useCanvasStore.getState().clearFocus();
     setContextMenu(null);
@@ -240,7 +240,6 @@ function FamilyTreeMain() {
   const { handleQuickLink, handleQuickSpawnRelative } = useQuickConnect();
   const {
     handleMakeCopy,
-    handleSelectPreset,
     handleImportFile,
     handleExportImage,
     handleExportJson,
@@ -264,7 +263,6 @@ function FamilyTreeMain() {
       <TopNavbar
         tree={tree}
         onUpdateTreeName={useTreeStore.getState().updateTreeName}
-        onSelectPreset={handleSelectPreset}
         onOpenTreeManager={useModalStore.getState().openTreeManager}
         onOpenShareModal={useModalStore.getState().openShareModal}
         isReadOnly={isReadOnly}
@@ -376,7 +374,7 @@ function FamilyTreeMain() {
       </main>
 
       <TreeModals
-        onSwitchTree={handleSwitchTree} onSelectPreset={handleSelectPreset}
+        onSwitchTree={handleSwitchTree}
         onCreateTreeFromSelection={handleCreateTreeFromSelection} onLinkTrees={handleLinkTrees}
       />
 

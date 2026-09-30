@@ -227,6 +227,7 @@ export interface TreeStoreState {
 
   // High-level mutations
   updateTreeName: (name: string) => void;
+  updateTreeDetails: (details: { name: string; description: string }) => void;
   updatePerson: (personId: string, updates: Partial<Person>) => void;
   toggleCollapse: (personId: string) => void;
   updatePersonPosition: (
@@ -575,6 +576,12 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     updateTreeName: (name: string) => {
       get().setTree((prev) => ({ ...prev, name }));
+    },
+    updateTreeDetails: (details) => {
+      if (useCollabStore.getState().userPermission === 'viewer') return;
+      const name = details.name.trim();
+      if (!name) return;
+      get().setTree((prev) => ({ ...prev, name, description: details.description.trim() }));
     },
 
     updatePerson: (personId: string, updates: Partial<Person>) => {

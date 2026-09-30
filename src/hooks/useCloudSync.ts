@@ -73,7 +73,7 @@ export function useCloudSync(treeId: string | null | undefined) {
         collab.setIsCloudTree(true);
         collab.setCloudSyncStatus(cloudSyncBridge.hasPendingPatches(treeId) ? 'saving' : 'synced');
         const canvas = useCanvasStore.getState();
-        canvas.selectPerson(recovered.rootPersonId || Object.keys(recovered.people)[0] || null);
+        canvas.clearSelection();
         canvas.clearFocus();
         if (!user && permission === 'editor') await signInAnonymouslyUser();
         if (!mounted || generation !== loadGeneration) return;

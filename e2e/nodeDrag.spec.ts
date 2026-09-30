@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { createDoubleInLawPreset } from '../tests/fixtures/exampleTrees';
+import { STORAGE_KEY } from '../src/services/storage';
 
 test.describe('Node dragging', () => {
   test.beforeEach(async ({ page, isMobile }) => {
     test.skip(isMobile, 'Mouse interactions are desktop-specific');
+    await page.addInitScript(({ key, tree }) => localStorage.setItem(key, JSON.stringify(tree)), { key: STORAGE_KEY, tree: createDoubleInLawPreset() });
     await page.goto('/');
     await expect(page.getByTestId('person-card').first()).toBeVisible();
   });

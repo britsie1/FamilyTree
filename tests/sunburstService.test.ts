@@ -14,7 +14,7 @@ import {
   formatLifespanWithAge,
   getPersonMaidenNameLabel,
 } from '../src/services/displayUtils.ts';
-import { createThreeGenSampleTree } from '../src/services/storage.ts';
+import { createThreeGenSampleTree } from './fixtures/exampleTrees.ts';
 
 describe('sunburstService', () => {
   describe('getLevelDescription', () => {

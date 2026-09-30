@@ -27,7 +27,6 @@ export interface TreeModalsProps {
     isCloud?: boolean,
     focusPersonId?: string | null
   ) => void;
-  onSelectPreset: (presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => void;
   onCreateTreeFromSelection: (options: CreateTreeOptions) => void;
   onLinkTrees: (
     targetTreeId: string,
@@ -40,7 +39,6 @@ export interface TreeModalsProps {
 
 export const TreeModals: React.FC<TreeModalsProps> = ({
   onSwitchTree,
-  onSelectPreset,
   onCreateTreeFromSelection,
   onLinkTrees,
   onTreeUpdatedInShare,
@@ -190,14 +188,10 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
         onTreeUpdated={handleTreeUpdatedInShare}
       />
 
-      {/* Edge Case Preset Showcase Modal */}
+      {/* Genealogy guide */}
       <EdgeCaseModal
         isOpen={isEdgeCaseModalOpen}
         onClose={closeEdgeCaseModal}
-        onLoadDemo={() => {
-          closeEdgeCaseModal();
-          onSelectPreset('double_in_law');
-        }}
       />
 
       {/* Add / Link Relationship Modal */}

@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { computePersonDisplayInfo, getPersonDisplayInfo } from '../src/services/displayUtils.ts';
 import { arePersonCardPropsEqual } from '../src/components/Canvas/personCardMemo.ts';
 import { computeVerticalLayout, computeHorizontalLayout } from '../src/services/layoutEngine.ts';
-import { createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import type { Person, LayoutNode } from '../src/types/tree.ts';
 import type { PersonCardProps } from '../src/components/Canvas/PersonCard.tsx';
 

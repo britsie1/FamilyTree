@@ -3,6 +3,8 @@ import type { LayoutStyle, LayoutOverrides } from '../types/tree';
 
 export interface CanvasStoreState {
   // Viewport
+  navigationMode: boolean;
+  setNavigationMode: (enabled: boolean) => void;
   zoom: number;
   pan: { x: number; y: number };
   setZoom: (zoomOrUpdater: number | ((prev: number) => number)) => void;
@@ -83,6 +85,8 @@ export interface CanvasStoreState {
 
 export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   // Viewport
+  navigationMode: false,
+  setNavigationMode: (navigationMode) => set({ navigationMode }),
   zoom: 0.9,
   pan: { x: 400, y: 150 },
   isMiniMapOpen: typeof window !== 'undefined' ? window.innerWidth >= 768 : true,

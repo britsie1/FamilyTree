@@ -4,7 +4,8 @@ import { CloudSyncBridge, type SyncTransport } from '../src/services/cloudSyncBr
 import { readSyncOutbox, SYNC_OUTBOX_PREFIX, applyPendingOperations } from '../src/services/syncOutbox';
 import { useCollabStore } from '../src/stores/useCollabStore';
 import { useNotificationStore } from '../src/stores/useNotificationStore';
-import { createDoubleInLawPreset, saveCurrentTree, loadTreeById } from '../src/services/storage';
+import { saveCurrentTree, loadTreeById } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { cleanForFirestore } from '../src/services/firestoreService';
 import { deleteField } from 'firebase/firestore';
 

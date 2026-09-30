@@ -1,10 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import {
-  createThreeGenSampleTree,
-  createDoubleInLawPreset,
-  importTreeFromJsonString,
-} from '../src/services/storage.ts';
+import { importTreeFromJsonString } from '../src/services/storage.ts';
+import { createThreeGenSampleTree, createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import {
   splitBranchToNewTree,
   addTreeLink,

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { computeLayoutAsync } from '../src/services/layoutClient.ts';
 import { computeLayout } from '../src/services/layoutEngine.ts';
 import type { LayoutNode, TreeData } from '../src/types/tree.ts';

@@ -90,6 +90,24 @@
 }
 
 /* Smooth zoom animation when fitting to screen */
+/* Explicit two-tone cursors stay visible on both light and dark canvas content. */
+[data-testid="tree-canvas"] {
+  cursor: url('/cursors/grab.svg') 16 16, grab;
+}
+[data-testid="tree-canvas"] [data-person-id] {
+  cursor: url('/cursors/pointer.svg') 5 3, pointer;
+}
+[data-testid="tree-canvas"][data-navigation-mode="true"] .canvas-plane * {
+  pointer-events: none !important;
+}
+[data-testid="tree-canvas"][data-panning="true"],
+[data-testid="tree-canvas"] [data-person-id]:active {
+  cursor: url('/cursors/grabbing.svg') 16 16, grabbing;
+}
+[data-testid="tree-canvas"].cursor-crosshair {
+  cursor: crosshair;
+}
+
 .smooth-transition {
   transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
 }

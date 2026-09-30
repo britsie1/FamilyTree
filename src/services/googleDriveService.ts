@@ -155,7 +155,7 @@ export async function createTreeFolder(
   accessToken: string,
   managerInfo?: { email?: string; name?: string }
 ): Promise<GoogleDriveConfig> {
-  const folderName = `FamilyTree - ${treeName || 'Documents'}`;
+  const folderName = `MyFamTree - ${treeName || 'Documents'}`;
 
   const response = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
     method: 'POST',

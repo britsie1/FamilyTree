@@ -14,7 +14,8 @@ import {
   addParentToPerson,
   clearManualPositions,
 } from '../src/services/treeOperations.ts';
-import { createDoubleInLawPreset, createThreeGenSampleTree, createDivorceBlendedPreset, createBlankTree } from '../src/services/storage.ts';
+import { createBlankTree } from '../src/services/storage.ts';
+import { createDoubleInLawPreset, createThreeGenSampleTree, createDivorceBlendedPreset } from './fixtures/exampleTrees.ts';
 import type { TreeData } from '../src/types/tree.ts';
 
 export const userExportedTree: TreeData = {

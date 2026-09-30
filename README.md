@@ -1,4 +1,4 @@
-# FamilyTree — Visual Pedigree & Family Tree Builder
+# MyFamTree — Your Family, Connected
 
 A fast, interactive, web-based family tree builder designed specifically to address complex genealogical edge cases—such as **two brothers marrying two sisters (double in-laws)**, intermarriages, and pedigree collapse—without line tangles or rigid hierarchy restrictions.
 
@@ -33,7 +33,7 @@ Built with **React**, **TypeScript**, **Vite**, and **Tailwind CSS**. Fully stat
    - **Export JSON**: Download your entire tree as a portable JSON file.
    - **Import JSON**: Restore or switch between trees anytime.
    - **Export Image (PNG)**: Snapshot your tree into a high-resolution image for printing or sharing.
-   - **Preset Templates**: Includes the "Double In-Law Marriage" edge-case demo, a 3-generation royal family, and blank templates.
+    - **Tree Details**: Edit each tree's name and description from the menu. New workspaces start with a blank tree.
 
 5. **Infinite Canvas**:
    - Smooth pan & zoom (mouse wheel zoom centered on cursor, canvas dragging, and zoom controls).

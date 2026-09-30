@@ -11,7 +11,8 @@ import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useModalStore } from '../../stores/useModalStore';
-import { Search, X } from 'lucide-react';
+import { Search, X, Hand, MousePointer2 } from 'lucide-react';
+import { usePanMomentum } from '../../hooks/usePanMomentum';
 import { createDragSession, snapDrag, getDragPositions, type DragSession } from './nodeDrag';
 import {
   calculatePinchTransform,
@@ -101,6 +102,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 }) => {
   // Read directly from useCanvasStore
   const storeZoom = useCanvasStore((s) => s.zoom);
+  const navigationMode = useCanvasStore((s) => s.navigationMode);
+  const setNavigationMode = useCanvasStore((s) => s.setNavigationMode);
   const storePan = useCanvasStore((s) => s.pan);
   const storeSetZoom = useCanvasStore((s) => s.setZoom);
   const storeSetPan = useCanvasStore((s) => s.setPan);
@@ -140,6 +143,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   const pan = propPan !== undefined ? propPan : storePan;
   const setZoom = propSetZoom || storeSetZoom;
   const setPan = propSetPan || storeSetPan;
+  const { begin: beginPanMomentum, track: trackPanMomentum, release: releasePanMomentum, stop: stopPanMomentum } = usePanMomentum(setPan);
+  useEffect(() => { stopPanMomentum(); }, [tree.id, zoom, navigationMode, stopPanMomentum]);
   const layoutStyle = propLayoutStyle || storeLayoutStyle;
   const selectedPersonId = propSelectedPersonId !== undefined ? propSelectedPersonId : storeSelectedPersonId;
   const selectedPersonIds = propSelectedPersonIds || storeSelectedPersonIds;
@@ -506,12 +511,13 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         target === container || Boolean(target?.classList?.contains('canvas-background'));
       const cardEl = target?.closest('[data-person-id]') as HTMLElement | null;
       const isActionButton = Boolean(target?.closest('button'));
+      if (target?.closest('button, input, select, textarea, a') && !cardEl) return;
 
       if (e.touches.length === 1) {
         const t1 = e.touches[0];
 
         // If single touch starts on a person card (and not an action button on it), initiate card dragging (Bug 4.2)
-        if (cardEl && !isActionButton) {
+        if (cardEl && !isActionButton && !navigationMode) {
           const personId = cardEl.getAttribute('data-person-id');
           const node = personId ? layoutRef.current.nodes[personId] : null;
           if (node && personId) {
@@ -534,6 +540,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         }
 
         touchState.mode = 'pan';
+        beginPanMomentum(t1.clientX, t1.clientY);
         touchState.cardPersonId = null;
         touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
         touchState.startPan = { ...panRef.current };
@@ -542,6 +549,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         touchState.startedOnBackground = isBackground;
         setIsPanning(true);
       } else if (e.touches.length >= 2) {
+        stopPanMomentum();
         // If transitioning from card drag to 2-finger pinch zoom, cancel card drag
         if (touchState.mode === 'dragCard') {
           setDraggingPersonId(null);
@@ -590,6 +598,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         if (hasMovedCardRef.current) setDragOffset({ x: dx, y: dy });
       } else if (e.touches.length === 1 && touchState.mode === 'pan') {
         const t1 = e.touches[0];
+        trackPanMomentum(t1.clientX, t1.clientY);
         const dx = t1.clientX - touchState.startTouch1.clientX;
         const dy = t1.clientY - touchState.startTouch1.clientY;
 
@@ -645,6 +654,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           touchState.mode = 'pan';
           touchState.startTouch1 = { clientX: t1.clientX, clientY: t1.clientY };
           touchState.startPan = { ...panRef.current };
+          beginPanMomentum(t1.clientX, t1.clientY);
           return;
         }
       }
@@ -682,6 +692,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         if (!touchState.hasMoved && touchState.startedOnBackground) {
           onSelectPerson(null);
         }
+        if (touchState.mode === 'pan' && touchState.hasMoved) releasePanMomentum();
 
         if (touchState.hasMoved) {
           // Keep suppressing phantom clicks for next 120ms
@@ -700,6 +711,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     };
 
     const handleTouchCancel = () => {
+      stopPanMomentum();
       if (touchState.mode === 'dragCard') {
         setDraggingPersonId(null);
         setDragOffset(null);
@@ -737,7 +749,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       container.removeEventListener('gestureend', preventSafariGesture);
       if (suppressClickTimer) clearTimeout(suppressClickTimer);
     };
-  }, [canvasContainerRef, setZoom, setPan, onSelectPerson, beginDrag, setDragOffset]);
+  }, [canvasContainerRef, setZoom, setPan, onSelectPerson, beginDrag, setDragOffset, navigationMode, beginPanMomentum, trackPanMomentum, releasePanMomentum, stopPanMomentum]);
 
   // Mouse Down on Canvas (Start Panning or Marquee Selection)
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -748,7 +760,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
     // Only pan or marquee if clicking on empty background
     if (e.target === canvasContainerRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
-      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      if (!navigationMode && (e.shiftKey || e.ctrlKey || e.metaKey)) {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         setIsMarqueeSelecting(true);
         setMarqueeBox({
@@ -758,6 +770,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           currentY: e.clientY - rect.top,
         });
       } else {
+        beginPanMomentum(e.clientX, e.clientY);
         setIsPanning(true);
         panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
         panStartMousePosRef.current = { clientX: e.clientX, clientY: e.clientY };
@@ -822,6 +835,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
   // Touch Start on a Card (Start Dragging Node on Touchscreen) - referentially stable callback (Bug 4.2)
   const handleCardTouchStart = useCallback((e: React.TouchEvent, personId: string) => {
+    if (useCanvasStore.getState().navigationMode) return;
     if (e.touches.length !== 1) return;
     const target = e.target as HTMLElement | null;
     if (target?.closest('button')) return;
@@ -967,6 +981,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           );
         }
       } else if (isPanning) {
+        trackPanMomentum(e.clientX, e.clientY);
         if (Math.hypot(e.clientX - panStartMousePosRef.current.clientX, e.clientY - panStartMousePosRef.current.clientY) > 4) {
           hasMovedPanRef.current = true;
         }
@@ -1075,6 +1090,11 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         if (!hasMovedPanRef.current) {
           onSelectPerson(null);
         }
+        if (hasMovedPanRef.current) {
+          suppressClickRef.current = true;
+          setTimeout(() => { suppressClickRef.current = false; }, 150);
+          releasePanMomentum();
+        }
         setIsPanning(false);
       }
       if (draggingPersonIdRef.current) {
@@ -1100,10 +1120,14 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, draggingPersonId, zoom, setPan, setDragOffset, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson, onQuickSpawnRelative]);
+  }, [isPanning, draggingPersonId, zoom, setPan, setDragOffset, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson, onQuickSpawnRelative, trackPanMomentum, releasePanMomentum]);
 
   useEffect(() => {
     const cancel = () => {
+      stopPanMomentum();
+      setIsPanning(false);
+      setIsMarqueeSelecting(false);
+      setMarqueeBox(null);
       setDragOffset(null);
       setDraggingPersonId(null);
       hasMovedCardRef.current = false;
@@ -1116,20 +1140,31 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       window.removeEventListener('blur', cancel);
       if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
     };
-  }, [setDragOffset]);
+  }, [setDragOffset, stopPanMomentum]);
 
   return (
     <div
       ref={canvasContainerRef}
+      data-testid="tree-canvas"
+      data-navigation-mode={navigationMode}
+      data-panning={isPanning}
       onMouseDown={handleMouseDown}
       onContextMenu={(e) => {
         e.preventDefault();
-        onCanvasContextMenu?.(e);
+        if (!navigationMode) onCanvasContextMenu?.(e);
       }}
       className={`relative w-full h-full overflow-hidden bg-slate-50 dark:bg-slate-950 canvas-background touch-none select-none overscroll-none ${
         isPanning ? 'cursor-grabbing' : isMarqueeSelecting ? 'cursor-crosshair' : 'cursor-grab'
       }`}
     >
+      <div className="absolute top-4 left-4 z-40 flex gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1 shadow-sm" role="group" aria-label="Canvas interaction mode">
+        <button type="button" aria-pressed={!navigationMode} onClick={() => setNavigationMode(false)} title="Edit: select and move people" className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium cursor-pointer ${!navigationMode ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>
+          <MousePointer2 className="w-4 h-4" /> Edit
+        </button>
+        <button type="button" aria-pressed={navigationMode} onClick={() => setNavigationMode(true)} title="Navigate: drag anywhere to pan without moving people" className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium cursor-pointer ${navigationMode ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>
+          <Hand className="w-4 h-4" /> Navigate
+        </button>
+      </div>
       {/* Visual Marquee Box */}
       {isMarqueeSelecting && marqueeBox && (
         <div

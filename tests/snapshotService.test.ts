@@ -18,7 +18,7 @@ import {
   processTreeIngress,
   registerIngressRepairListener,
 } from '../src/services/schema';
-import { createDoubleInLawPreset } from '../src/services/storage';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 
 describe('Phase 4: Automatic Local Snapshots and Restore Option', () => {
   beforeEach(() => {

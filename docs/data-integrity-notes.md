@@ -1,4 +1,4 @@
-# FamilyTree Data Integrity & Synchronization Architecture
+# MyFamTree Data Integrity & Synchronization Architecture
 
 ## Phase 0: Investigation & Data Integrity Audit Findings
 
@@ -201,7 +201,7 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
    - **Tier 3 (Expiry)**: Snapshots older than 14 days beyond the 20th are pruned automatically upon new snapshot creation.
 3. **Trigger Boundaries**:
    - **Pre-Import**: Captured in `useTreeIO.ts` before importing `.ged` or `.json` files.
-   - **Pre-Preset Switch & Clear**: Captured before applying preset templates or blanking trees.
+   - **Legacy Preset Snapshots**: Existing pre-preset snapshots remain readable; example presets are no longer offered in the app.
    - **Pre-Tree Deletion**: Captured in `TreeManagerModal.tsx` before removing trees from storage.
    - **Pre-Cloud Merge**: Captured in `useCloudSync.ts` before executing 3-way/syncMerge against remote updates.
    - **Periodic Editing Auto-Save**: Throttled 5-minute debounced checkpoint in `usePeriodicSnapshot.ts` while user actively modifies tree data.

@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { sanitizeTree, clearManualPositions } from '../src/services/treeOperations.ts';
-import { importTreeFromJsonString, createDoubleInLawPreset } from '../src/services/storage.ts';
+import { importTreeFromJsonString } from '../src/services/storage.ts';
+import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { computeLayout } from '../src/services/layoutEngine.ts';
 import type { TreeData } from '../src/types/tree.ts';
 

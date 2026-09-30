@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { createThreeGenSampleTree, createDoubleInLawPreset } from '../src/services/storage.ts';
+import { createThreeGenSampleTree, createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { createTreeFromPeople } from '../src/services/treeOperations.ts';
 import { computeLayout } from '../src/services/layoutEngine.ts';
 

@@ -4,7 +4,6 @@ import type { TreeData, UserPermission } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  GitBranch,
   Download,
   Upload,
   Image as ImageIcon,
@@ -40,11 +39,12 @@ import { useModalStore } from '../../stores/useModalStore';
 import { useCollabStore } from '../../stores/useCollabStore';
 import { cloudSyncBridge } from '../../services/cloudSyncBridge';
 import { auditTreeHealth } from '../../services/treeHealthAndStatsService';
+import { MoreMenu, type MoreMenuAction } from './MoreMenu';
+import { TreeDetailsModal } from '../Modal/TreeDetailsModal';
 
 interface TopNavbarProps {
   tree: TreeData;
   onUpdateTreeName: (name: string) => void;
-  onSelectPreset: (presetKey: 'double_in_law' | 'divorce' | 'royal' | 'blank') => void;
   onOpenTreeManager?: () => void;
   onOpenShareModal?: () => void;
   isReadOnly?: boolean;
@@ -71,7 +71,6 @@ interface TopNavbarProps {
 export const TopNavbar: React.FC<TopNavbarProps> = ({
   tree,
   onUpdateTreeName,
-  onSelectPreset,
   onOpenTreeManager,
   onOpenShareModal,
   isReadOnly = false,
@@ -102,10 +101,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const [titleInput, setTitleInput] = useState(tree.name);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isTreeDetailsOpen, setIsTreeDetailsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle mobile menu close on Escape key and lock body scroll
@@ -162,9 +161,26 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const peopleCount = Object.keys(tree.people).length;
   const unionCount = Object.keys(tree.unions).length;
   const health = React.useMemo(() => auditTreeHealth(tree), [tree]);
+  const moreActions: MoreMenuAction[] = [
+    { label: 'Tree details', section: 'Tree', icon: <FileText className="w-4 h-4" />, onClick: () => setIsTreeDetailsOpen(true) },
+    ...(onOpenTreeManager ? [{ label: 'Switch & Manage Trees', section: 'Tree', icon: <FolderOpen className="w-4 h-4" />, onClick: onOpenTreeManager }] : []),
+    { label: 'Tree Health & Statistics', section: 'Tree', icon: <Activity className="w-4 h-4" />, onClick: () => useModalStore.getState().openStatisticsModal() },
+    { label: 'Version History & Backups', section: 'Tree', icon: <History className="w-4 h-4" />, onClick: () => useModalStore.getState().openVersionHistoryModal() },
+    { label: 'Import File (.ged / .json)', section: 'Import & Export', icon: <Upload className="w-4 h-4" />, onClick: () => fileInputRef.current?.click() },
+    { label: 'Export GEDCOM (.ged)', section: 'Import & Export', icon: <FileText className="w-4 h-4" />, onClick: onExportGedcom },
+    { label: 'Export JSON (.json)', section: 'Import & Export', icon: <Download className="w-4 h-4" />, onClick: onExportJson },
+    ...(onExportSvg ? [{ label: 'Export Vector SVG (.svg)', section: 'Import & Export', icon: <Sparkles className="w-4 h-4" />, onClick: onExportSvg }] : []),
+    ...(onExportFullImage ? [{ label: 'Export Full Tree (.png)', section: 'Import & Export', icon: <ImageIcon className="w-4 h-4" />, onClick: onExportFullImage }] : []),
+    { label: 'Export Current View (.png)', section: 'Import & Export', icon: <ImageIcon className="w-4 h-4" />, onClick: onExportImage },
+    { label: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode', section: 'Preferences & Help', icon: isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />, onClick: toggleTheme },
+    { label: 'Keyboard shortcuts', section: 'Preferences & Help', icon: <Keyboard className="w-4 h-4" />, onClick: () => useModalStore.getState().openKeyboardShortcuts() },
+    { label: 'Edge Cases & Guide', section: 'Preferences & Help', icon: <HelpCircle className="w-4 h-4" />, onClick: onOpenEdgeCaseModal },
+  ];
 
   return (
     <header className="h-14 sm:h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-40 relative select-none gap-1 sm:gap-2 text-slate-900 dark:text-slate-100">
+      <input ref={fileInputRef} type="file" accept=".json,.ged" onChange={handleFileChange} className="hidden" aria-label="Import tree file" />
+      {isTreeDetailsOpen && <TreeDetailsModal key={tree.id} tree={tree} isReadOnly={isReadOnly} onClose={() => setIsTreeDetailsOpen(false)} />}
       {/* Mobile Full-Width Search Overlay */}
       {isMobileSearchOpen && (
         <div className="absolute inset-0 bg-white dark:bg-slate-900 z-50 px-3 flex items-center gap-2 animate-in fade-in duration-150 border-b border-slate-200 dark:border-slate-800">
@@ -245,9 +261,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       )}
 
       {/* Left: Brand & Tree Name */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
         <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-100 dark:shadow-indigo-950 flex-shrink-0">
-          <GitBranch className="w-4 h-4 sm:w-5 sm:h-5" />
+          <img src="/myfamtree.svg" alt="MyFamTree" className="w-full h-full" />
         </div>
 
         <div className="min-w-0">
@@ -276,7 +292,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               title={isReadOnly ? 'View only tree' : 'Click to rename tree'}
             >
               <span className="truncate max-w-[85px] xs:max-w-[130px] sm:max-w-[180px] md:max-w-xs">{tree.name || 'Untitled Tree'}</span>
-              <span className="text-[10px] sm:text-[11px] font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+              <span className="hidden lg:inline text-[10px] sm:text-[11px] font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
                 {peopleCount} {peopleCount === 1 ? 'person' : 'people'}
               </span>
               {isReadOnly && (
@@ -303,7 +319,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           )}
 
           <p className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 hidden md:flex items-center gap-1.5 leading-none mt-1">
-            <span>{unionCount} {unionCount === 1 ? 'family union' : 'family unions'}</span>
+            <span className="font-semibold text-indigo-600 dark:text-indigo-400">MyFamTree</span>
+            <span className="hidden xl:inline">· {unionCount} {unionCount === 1 ? 'family union' : 'family unions'}</span>
             <span>•</span>
             {isCloudTree ? (
               <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
@@ -346,32 +363,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           </p>
         </div>
 
-        {onOpenTreeManager && (
-          <button
-            onClick={onOpenTreeManager}
-            className="hidden sm:flex items-center gap-1 sm:gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 hover:border-indigo-300 dark:hover:border-slate-600 hover:text-indigo-700 dark:hover:text-indigo-300 text-slate-700 dark:text-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-            title="Manage Family Trees (Switch, create, duplicate, or delete)"
-          >
-            <FolderOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-            <span className="hidden sm:inline">Trees</span>
-          </button>
-        )}
-
-        <button
-          onClick={() => useModalStore.getState().openStatisticsModal()}
-          className="hidden sm:flex items-center gap-1 sm:gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 hover:border-indigo-300 dark:hover:border-slate-600 hover:text-indigo-700 dark:hover:text-indigo-300 text-slate-700 dark:text-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-          title={`Tree Health: ${health.score}% (${health.errorCount} errors, ${health.warningCount} warnings). Click to view statistics and health audit.`}
-        >
-          <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-          <span className="hidden md:inline">Stats</span>
-          {health.errorCount > 0 ? (
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-          ) : health.warningCount > 0 ? (
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-          ) : (
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          )}
-        </button>
       </div>
 
       {/* Mobile-Only Header Action Buttons (< sm) */}
@@ -431,26 +422,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         </button>
       </div>
 
-      {/* Center: Search & Preset templates */}
+      {/* Center: Search */}
       <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
-        {/* Preset Selector */}
-        <div className="relative hidden xl:flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-          <FolderOpen className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 ml-1.5" />
-          <select
-            onChange={(e) => onSelectPreset(e.target.value as any)}
-            defaultValue=""
-            className="bg-transparent border-none text-slate-700 dark:text-slate-200 text-xs font-medium focus:outline-none cursor-pointer py-1 pr-2"
-          >
-            <option value="" disabled className="dark:bg-slate-900 dark:text-slate-300">
-              Load Preset Example...
-            </option>
-            <option value="double_in_law" className="dark:bg-slate-900 dark:text-slate-300">⚡ Double In-Law (Brothers & Sisters)</option>
-            <option value="divorce" className="dark:bg-slate-900 dark:text-slate-300">💔 Divorce & Remarriage (Blended Family)</option>
-            <option value="royal" className="dark:bg-slate-900 dark:text-slate-300">👑 Multi-Generational Royal Family</option>
-            <option value="blank" className="dark:bg-slate-900 dark:text-slate-300">✨ Blank Tree (Start from scratch)</option>
-          </select>
-        </div>
-
         {/* Search Bar */}
         <div className="relative">
           <div className="flex items-center bg-slate-100/90 dark:bg-slate-800/90 rounded-xl px-2 sm:px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 focus-within:border-indigo-500 focus-within:bg-white dark:focus-within:bg-slate-850 transition-all w-24 xs:w-32 sm:w-40 md:w-48 focus-within:w-40 xs:focus-within:w-48">
@@ -547,7 +520,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               title="Create your own editable copy of this tree"
             >
               <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Make a Copy</span>
+              <span className="hidden lg:inline">Make a Copy</span>
             </button>
           )
         ) : (
@@ -557,158 +530,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             title="Add new family member"
           >
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Add Person</span>
+            <span className="hidden lg:inline">Add Person</span>
           </button>
         )}
 
-        {/* Import JSON or GEDCOM */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          title="Import family tree (.ged GEDCOM or .json file)"
-          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
-        >
-          <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,.ged"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        {/* Export Dropdown Menu */}
-        <div className="relative">
-          <button
-            onClick={() => setIsExportOpen((prev) => !prev)}
-            title="Export tree (GEDCOM, JSON, or Image)"
-            className="flex items-center gap-0.5 sm:gap-1 p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 text-xs font-medium cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400" />
-          </button>
-
-          {isExportOpen && (
-            <div className="absolute top-full right-0 mt-1.5 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-1 z-50 animate-in fade-in duration-100">
-              {onExportSvg && (
-                <button
-                  onClick={() => {
-                    setIsExportOpen(false);
-                    onExportSvg();
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">Export Vector SVG (.svg)</p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Infinite vector clarity, print ready</p>
-                  </div>
-                </button>
-              )}
-              {onExportFullImage && (
-                <button
-                  onClick={() => {
-                    setIsExportOpen(false);
-                    onExportFullImage();
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
-                >
-                  <ImageIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">Export Full Tree (.png)</p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Unclipped high-res full pedigree</p>
-                  </div>
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setIsExportOpen(false);
-                  onExportImage();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
-              >
-                <ImageIcon className="w-4 h-4 text-teal-600 dark:text-teal-400 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">Export Screen View (.png)</p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">Current canvas viewport snapshot</p>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setIsExportOpen(false);
-                  onExportGedcom();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer border-t border-slate-100 dark:border-slate-800"
-              >
-                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">Export GEDCOM (.ged)</p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">Ancestry, Gramps, MyHeritage</p>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setIsExportOpen(false);
-                  onExportJson();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-700 dark:hover:text-indigo-300 rounded-lg text-left transition-colors cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">Export JSON (.json)</p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">Layout & manual coordinates</p>
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Version History & Snapshots button */}
-        <button
-          onClick={() => useModalStore.getState().openVersionHistoryModal()}
-          title="Version History & Snapshots (automatic backups & restore)"
-          aria-label="Version History"
-          className="hidden sm:flex p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
-        >
-          <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 dark:text-indigo-400" />
-        </button>
-
-        {/* Keyboard Shortcuts button */}
-        <button
-          onClick={() => useModalStore.getState().openKeyboardShortcuts()}
-          title="Keyboard shortcuts & hotkeys (?)"
-          aria-label="Keyboard shortcuts"
-          className="hidden md:flex p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
-        >
-          <Keyboard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </button>
-
-        {/* Edge Case & Help info modal */}
-        <button
-          onClick={onOpenEdgeCaseModal}
-          title="How edge cases (like double in-law marriages) and bridge hops are handled"
-          className="hidden md:flex p-1.5 sm:p-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-xl transition-colors border border-indigo-100 dark:border-slate-700 cursor-pointer"
-        >
-          <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </button>
-
-        {/* Dark / Light Mode Toggle Button */}
-        <button
-          onClick={toggleTheme}
-          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
-        >
-          {isDark ? (
-            <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
-          ) : (
-            <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
-          )}
-        </button>
-
-        <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden xs:block" />
-
         {/* Google Drive-style Share Button */}
+        <MoreMenu actions={moreActions} />
         {onOpenShareModal && (
           <button
             onClick={onOpenShareModal}
@@ -716,7 +543,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             className="flex items-center gap-1 sm:gap-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-2.5 sm:px-3.5 py-1.5 rounded-xl font-semibold text-xs shadow-xs hover:shadow transition-all cursor-pointer"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Share</span>
+            <span className="hidden lg:inline">Share</span>
           </button>
         )}
 
@@ -823,7 +650,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span className="hidden sm:inline">Sign In</span>
+            <span className="hidden lg:inline">Sign In</span>
           </button>
         )}
       </div>
@@ -844,7 +671,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 <div className="w-full flex items-center justify-between">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 flex-shrink-0">
-                      <GitBranch className="w-4 h-4" />
+                      <img src="/myfamtree.svg" alt="MyFamTree" className="w-full h-full" />
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
@@ -869,6 +696,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-5 pt-3 flex flex-col gap-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
                 {/* Tree Management & Undo/Redo */}
                 <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => { setIsMobileMenuOpen(false); setIsTreeDetailsOpen(true); }} className="col-span-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold cursor-pointer">
+                    <FileText className="w-4 h-4" /> Tree details
+                  </button>
                   {onOpenTreeManager && (
                     <button
                       onClick={() => {
@@ -1016,51 +846,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                   )}
                 </div>
 
-                {/* Presets & Templates */}
-                <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                    Preset Examples
-                  </h4>
-                  <div className="grid grid-cols-2 gap-1.5 text-xs">
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onSelectPreset('double_in_law');
-                      }}
-                      className="p-2 text-left bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium active:bg-indigo-100 dark:active:bg-slate-700"
-                    >
-                      ⚡ Double In-Law
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onSelectPreset('divorce');
-                      }}
-                      className="p-2 text-left bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium active:bg-indigo-100 dark:active:bg-slate-700"
-                    >
-                      💔 Blended Family
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onSelectPreset('royal');
-                      }}
-                      className="p-2 text-left bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium active:bg-indigo-100 dark:active:bg-slate-700"
-                    >
-                      👑 Royal Lineage
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onSelectPreset('blank');
-                      }}
-                      className="p-2 text-left bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium active:bg-indigo-100 dark:active:bg-slate-700"
-                    >
-                      ✨ Blank Tree
-                    </button>
-                  </div>
-                </div>
-
                 {/* Version History & Snapshots */}
                 <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
                   <button
@@ -1126,6 +911,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
                 {/* Help / Guide */}
                 <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <button onClick={() => { setIsMobileMenuOpen(false); useModalStore.getState().openKeyboardShortcuts(); }} className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-medium cursor-pointer">
+                    <Keyboard className="w-4 h-4" /> Keyboard shortcuts
+                  </button>
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);

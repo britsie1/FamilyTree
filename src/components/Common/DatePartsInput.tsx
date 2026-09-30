@@ -91,8 +91,13 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
   const handleDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2);
     setDay(raw);
+  };
+
+  const handleDayBlur = () => {
+    const normalizedDay = day ? String(Math.min(Math.max(parseInt(day, 10) || 1, 1), maxDays)).padStart(2, '0') : '';
+    setDay(normalizedDay);
     if (year && year.length === 4) {
-      commitDate(year, month, raw);
+      commitDate(year, month, normalizedDay);
     }
   };
 
@@ -113,6 +118,7 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
           <input
             type="text"
             inputMode="numeric"
+            autoComplete="off"
             pattern="[0-9]*"
             placeholder={yearPlaceholder}
             value={year}
@@ -145,12 +151,15 @@ export const DatePartsInput: React.FC<DatePartsInputProps> = ({
         {/* Day Input */}
         <div className="col-span-3">
           <input
-            type="number"
-            min={1}
-            max={maxDays}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={2}
             placeholder="Day"
             value={day}
             onChange={handleDayChange}
+            onBlur={handleDayBlur}
             disabled={disabled}
             className="w-full px-1.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/50 font-mono text-center"
             title={`Day 1-${maxDays} (Optional)`}

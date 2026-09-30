@@ -5,7 +5,7 @@ import {
   getDescendantPersonIds,
   getBranchPersonIds,
 } from '../src/services/layoutEngine.ts';
-import { createThreeGenSampleTree } from '../src/services/storage.ts';
+import { createThreeGenSampleTree } from './fixtures/exampleTrees.ts';
 
 describe('Branch Collapsing and Focus Mode', () => {
   it('correctly collects all descendants of an ancestor', () => {

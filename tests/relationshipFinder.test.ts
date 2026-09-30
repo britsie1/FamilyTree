@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDoubleInLawPreset, createDivorceBlendedPreset } from '../src/services/storage.ts';
+import { createDoubleInLawPreset, createDivorceBlendedPreset } from './fixtures/exampleTrees.ts';
 import { findRelationship } from '../src/services/relationshipFinder.ts';
 import type { TreeData } from '../src/types/tree.ts';
 

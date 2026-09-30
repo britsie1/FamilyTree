@@ -4,13 +4,11 @@ import { X, GitMerge, Sparkles, CheckCircle2 } from 'lucide-react';
 interface EdgeCaseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoadDemo: () => void;
 }
 
 export const EdgeCaseModal: React.FC<EdgeCaseModalProps> = ({
   isOpen,
   onClose,
-  onLoadDemo,
 }) => {
   if (!isOpen) return null;
 
@@ -104,15 +102,6 @@ export const EdgeCaseModal: React.FC<EdgeCaseModalProps> = ({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/50">
-          <button
-            onClick={() => {
-              onLoadDemo();
-              onClose();
-            }}
-            className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline cursor-pointer"
-          >
-            Load Double In-Law Demo Tree
-          </button>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
