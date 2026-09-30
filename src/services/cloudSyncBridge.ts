@@ -1,461 +1,312 @@
 import type { Person, Union, TreeData } from '../types/tree';
 import {
-  patchCloudPerson,
-  patchCloudUnion,
-  deleteCloudPerson,
-  deleteCloudUnion,
-  formatFirestoreError,
-  ConcurrencyConflictError,
+  patchCloudPerson, patchCloudUnion, deleteCloudPerson, deleteCloudUnion,
+  patchCloudTreeMetadata, formatFirestoreError, ConcurrencyConflictError,
 } from './firestoreService';
 import { useCollabStore } from '../stores/useCollabStore';
-
-interface PendingPersonPatch {
-  treeId: string;
-  personId: string;
-  updates?: Partial<Person>;
-  isDelete?: boolean;
-  baseVersion?: number;
-  attempts: number;
-  timer: ReturnType<typeof setTimeout> | null;
-  isSubcollection?: boolean;
-}
-
-interface PendingUnionPatch {
-  treeId: string;
-  unionId: string;
-  updates?: Partial<Union>;
-  isDelete?: boolean;
-  baseVersion?: number;
-  attempts: number;
-  timer: ReturnType<typeof setTimeout> | null;
-  isSubcollection?: boolean;
-}
+import {
+  browserStorage, readSyncOutbox, writeSyncOutbox, changedFields,
+  applyPendingOperations, TREE_METADATA_FIELDS, type SyncOperation,
+} from './syncOutbox';
+import { reportLocalSave } from './saveStatus';
 
 const DEBOUNCE_DELAY_MS = 500;
 const MAX_RETRY_ATTEMPTS = 5;
+type PatchOptions = { baseVersion?: number; isSubcollection?: boolean };
+
+export interface SyncTransport {
+  person: typeof patchCloudPerson;
+  union: typeof patchCloudUnion;
+  deletePerson: typeof deleteCloudPerson;
+  deleteUnion: typeof deleteCloudUnion;
+  metadata: typeof patchCloudTreeMetadata;
+}
+const defaultTransport: SyncTransport = {
+  person: patchCloudPerson, union: patchCloudUnion,
+  deletePerson: deleteCloudPerson, deleteUnion: deleteCloudUnion,
+  metadata: patchCloudTreeMetadata,
+};
 
 export class CloudSyncBridge {
-  private pendingPersonPatches = new Map<string, PendingPersonPatch>();
-  private pendingUnionPatches = new Map<string, PendingUnionPatch>();
-  private baseVersion: number | undefined = undefined;
-  private isInitialized = false;
+  private pending = new Map<string, SyncOperation>();
+  private trees = new Map<string, TreeData>();
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private attempts = new Map<string, number>();
+  private versions = new Map<string, number | undefined>();
+  private activeTreeId: string | undefined;
+  private baseVersion: number | undefined;
+  private sending: Promise<void> = Promise.resolve();
+  private disposed = false;
+  private storageProvider: () => Storage | null;
+  private transport: SyncTransport;
+  private onOnline = () => { void this.flushAll(); };
+  private onOffline = () => {
+    useCollabStore.getState().setCloudSyncStatus('offline', 'Saved on this device; waiting for a connection.');
+  };
 
-  constructor() {
-    this.setupNetworkListeners();
+  constructor(
+    storageProvider: () => Storage | null = browserStorage,
+    transport: SyncTransport = defaultTransport,
+  ) {
+    this.storageProvider = storageProvider;
+    this.transport = transport;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.onOnline);
+      window.addEventListener('offline', this.onOffline);
+    }
   }
 
-  private setupNetworkListeners() {
-    if (this.isInitialized || typeof window === 'undefined') return;
-    this.isInitialized = true;
-
-    window.addEventListener('online', () => {
-      if (this.hasPendingPatches()) {
-        useCollabStore.getState().setCloudSyncStatus('saving');
-        this.flushAll().catch((err) => {
-          console.error('Failed to flush patches after reconnecting:', err);
-        });
-      } else {
-        useCollabStore.getState().setCloudSyncStatus('synced');
-      }
-    });
-
-    window.addEventListener('offline', () => {
-      useCollabStore.getState().setCloudSyncStatus('offline', 'Network is offline.');
-    });
+  /** Stop timers/listeners without discarding durable work. */
+  public dispose() {
+    this.disposed = true;
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onOnline);
+      window.removeEventListener('offline', this.onOffline);
+    }
   }
 
-  public setBaseVersion(version: number | undefined) {
+  public setActiveTree(treeId: string | undefined) { this.activeTreeId = treeId; }
+  public setBaseVersion(version: number | undefined, treeId = this.activeTreeId) {
     this.baseVersion = version;
+    if (treeId) this.versions.set(treeId, version);
+  }
+  public getBaseVersion(): number | undefined { return this.baseVersion; }
+  public hasPendingPatches(treeId?: string): boolean { return this.getPendingCount(treeId) > 0; }
+  public getPendingCount(treeId?: string): number {
+    return [...this.pending.values()].filter((op) => !treeId || op.treeId === treeId).length;
   }
 
-  public getBaseVersion(): number | undefined {
-    return this.baseVersion;
+  private persist(treeId: string): boolean {
+    try {
+      const saved = writeSyncOutbox({
+        schemaVersion: 1, treeId, tree: this.trees.get(treeId),
+        operations: [...this.pending.values()].filter((op) => op.treeId === treeId),
+      }, this.storageProvider());
+      // Node tests without browser storage intentionally run in memory.
+      if (!saved && typeof window === 'undefined') return true;
+      return reportLocalSave(saved);
+    } catch (err) {
+      return reportLocalSave(false, err);
+    }
   }
 
-  public hasPendingPatches(): boolean {
-    return this.pendingPersonPatches.size > 0 || this.pendingUnionPatches.size > 0;
+  /** Restore only; transmission waits until auth and tree permissions have loaded. */
+  public restore(treeId: string): void {
+    const outbox = readSyncOutbox(treeId, this.storageProvider());
+    if (!outbox) return;
+    if (outbox.tree) this.trees.set(treeId, outbox.tree);
+    for (const op of outbox.operations) {
+      if (!this.pending.has(op.key)) this.pending.set(op.key, op);
+    }
   }
 
-  public getPendingCount(): number {
-    return this.pendingPersonPatches.size + this.pendingUnionPatches.size;
+  public reconcile(remote: TreeData): TreeData {
+    this.restore(remote.id);
+    const local = this.trees.get(remote.id);
+    const source = structuredClone(remote);
+    // A remote tombstone may have removed the record payload. Keep the durable
+    // working copy when replaying a local edit/undo that deliberately restores it.
+    for (const op of this.pending.values()) {
+      if (op.treeId !== remote.id || op.isDelete || op.kind === 'metadata') continue;
+      if (op.kind === 'person' && !source.people[op.recordId] && local?.people[op.recordId]) {
+        source.people[op.recordId] = structuredClone(local.people[op.recordId]);
+      }
+      if (op.kind === 'union' && !source.unions[op.recordId] && local?.unions[op.recordId]) {
+        source.unions[op.recordId] = structuredClone(local.unions[op.recordId]);
+      }
+    }
+    for (const op of this.pending.values()) {
+      if (op.treeId === remote.id) op.isSubcollection = remote.storageMode === 'subcollections';
+    }
+    const merged = applyPendingOperations(source, [...this.pending.values()]);
+    this.trees.set(remote.id, merged);
+    this.setBaseVersion(remote.version, remote.id);
+    if (!this.persist(remote.id)) {
+      throw new Error('Could not durably reconcile cloud data. Keep this tab open and export a backup.');
+    }
+    return merged;
   }
 
+  /** Explicit destructive reset; never used when switching trees or going offline. */
   public clear() {
-    for (const patch of this.pendingPersonPatches.values()) {
-      if (patch.timer) clearTimeout(patch.timer);
-    }
-    for (const patch of this.pendingUnionPatches.values()) {
-      if (patch.timer) clearTimeout(patch.timer);
-    }
-    this.pendingPersonPatches.clear();
-    this.pendingUnionPatches.clear();
+    const ids = new Set([...this.pending.values()].map((op) => op.treeId));
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    this.pending.clear();
+    this.attempts.clear();
+    for (const id of ids) this.persist(id);
   }
 
-  /**
-   * Queues a granular person update with debouncing and field coalescing.
-   */
-  public queuePersonPatch(
-    treeId: string,
-    personId: string,
-    updates: Partial<Person>,
-    options?: { baseVersion?: number; isSubcollection?: boolean }
+  private schedule(treeId: string, delay = DEBOUNCE_DELAY_MS) {
+    const timer = this.timers.get(treeId);
+    if (timer) clearTimeout(timer);
+    if (this.disposed) return;
+    this.timers.set(treeId, setTimeout(() => {
+      this.timers.delete(treeId);
+      void this.flushAll(treeId);
+    }, delay));
+  }
+
+  private enqueue(
+    treeId: string, kind: SyncOperation['kind'], recordId: string,
+    updates: Record<string, unknown>, removedFields: string[], isDelete: boolean,
+    options?: PatchOptions,
   ) {
-    if (!treeId || !personId) return;
-
-    const key = `${treeId}:person:${personId}`;
-    const existing = this.pendingPersonPatches.get(key);
-
-    if (existing?.timer) {
-      clearTimeout(existing.timer);
-    }
-
-    const mergedUpdates: Partial<Person> = {
-      ...(existing?.updates || {}),
-      ...updates,
-    };
-
-    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
-    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
-
-    useCollabStore.getState().setCloudSyncStatus('saving');
-
-    const timer = setTimeout(async () => {
-      await this.sendPersonPatch(key);
-    }, DEBOUNCE_DELAY_MS);
-
-    this.pendingPersonPatches.set(key, {
-      treeId,
-      personId,
-      updates: mergedUpdates,
-      isDelete: false,
-      baseVersion: resolvedVersion,
-      attempts: existing?.attempts || 0,
-      timer,
-      isSubcollection,
+    const key = `${treeId}:${kind}:${recordId}`;
+    const existing = this.pending.get(key);
+    const combined = isDelete ? {} : { ...(existing?.updates || {}), ...updates };
+    const removed = new Set(isDelete ? [] : existing?.removedFields || []);
+    for (const field of removedFields) { delete combined[field]; removed.add(field); }
+    for (const field of Object.keys(updates)) removed.delete(field);
+    this.pending.set(key, {
+      key, treeId, kind, recordId, updates: combined, removedFields: [...removed], isDelete,
+      isSubcollection: options?.isSubcollection ?? existing?.isSubcollection ?? false,
+      baseVersion: options?.baseVersion ?? this.versions.get(treeId) ?? this.baseVersion,
+      timestamp: new Date().toISOString(),
     });
+    this.attempts.delete(key);
   }
 
-  /**
-   * Queues a granular union update with debouncing and field coalescing.
-   */
-  public queueUnionPatch(
-    treeId: string,
-    unionId: string,
-    updates: Partial<Union>,
-    options?: { baseVersion?: number; isSubcollection?: boolean }
-  ) {
-    if (!treeId || !unionId) return;
-
-    const key = `${treeId}:union:${unionId}`;
-    const existing = this.pendingUnionPatches.get(key);
-
-    if (existing?.timer) {
-      clearTimeout(existing.timer);
-    }
-
-    const mergedUpdates: Partial<Union> = {
-      ...(existing?.updates || {}),
-      ...updates,
-    };
-
-    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
-    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
-
+  private queue(treeId: string, kind: 'person' | 'union', id: string, updates: object, isDelete: boolean, options?: PatchOptions) {
+    if (!treeId || !id) return;
+    const fields = changedFields({}, updates);
+    fields.removedFields.push(...Object.keys(updates).filter((k) => (updates as Record<string, unknown>)[k] === undefined));
+    this.enqueue(treeId, kind, id, fields.updates, fields.removedFields, isDelete, options);
+    this.persist(treeId);
     useCollabStore.getState().setCloudSyncStatus('saving');
-
-    const timer = setTimeout(async () => {
-      await this.sendUnionPatch(key);
-    }, DEBOUNCE_DELAY_MS);
-
-    this.pendingUnionPatches.set(key, {
-      treeId,
-      unionId,
-      updates: mergedUpdates,
-      isDelete: false,
-      baseVersion: resolvedVersion,
-      attempts: existing?.attempts || 0,
-      timer,
-      isSubcollection,
-    });
+    this.schedule(treeId);
   }
 
-  /**
-   * Queues a granular person deletion with debouncing.
-   */
-  public queuePersonDelete(
-    treeId: string,
-    personId: string,
-    options?: { baseVersion?: number; isSubcollection?: boolean }
-  ) {
-    if (!treeId || !personId) return;
-
-    const key = `${treeId}:person:${personId}`;
-    const existing = this.pendingPersonPatches.get(key);
-
-    if (existing?.timer) {
-      clearTimeout(existing.timer);
-    }
-
-    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
-    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
-
-    useCollabStore.getState().setCloudSyncStatus('saving');
-
-    const timer = setTimeout(async () => {
-      await this.sendPersonPatch(key);
-    }, DEBOUNCE_DELAY_MS);
-
-    this.pendingPersonPatches.set(key, {
-      treeId,
-      personId,
-      isDelete: true,
-      baseVersion: resolvedVersion,
-      attempts: existing?.attempts || 0,
-      timer,
-      isSubcollection,
-    });
+  public queuePersonPatch(treeId: string, id: string, updates: Partial<Person>, options?: PatchOptions) {
+    this.queue(treeId, 'person', id, updates, false, options);
+  }
+  public queueUnionPatch(treeId: string, id: string, updates: Partial<Union>, options?: PatchOptions) {
+    this.queue(treeId, 'union', id, updates, false, options);
+  }
+  public queuePersonDelete(treeId: string, id: string, options?: PatchOptions) {
+    this.queue(treeId, 'person', id, {}, true, options);
+  }
+  public queueUnionDelete(treeId: string, id: string, options?: PatchOptions) {
+    this.queue(treeId, 'union', id, {}, true, options);
   }
 
-  /**
-   * Queues a granular union deletion with debouncing.
-   */
-  public queueUnionDelete(
-    treeId: string,
-    unionId: string,
-    options?: { baseVersion?: number; isSubcollection?: boolean }
-  ) {
-    if (!treeId || !unionId) return;
-
-    const key = `${treeId}:union:${unionId}`;
-    const existing = this.pendingUnionPatches.get(key);
-
-    if (existing?.timer) {
-      clearTimeout(existing.timer);
-    }
-
-    const resolvedVersion = options?.baseVersion ?? existing?.baseVersion ?? this.baseVersion;
-    const isSubcollection = options?.isSubcollection ?? existing?.isSubcollection ?? false;
-
-    useCollabStore.getState().setCloudSyncStatus('saving');
-
-    const timer = setTimeout(async () => {
-      await this.sendUnionPatch(key);
-    }, DEBOUNCE_DELAY_MS);
-
-    this.pendingUnionPatches.set(key, {
-      treeId,
-      unionId,
-      isDelete: true,
-      baseVersion: resolvedVersion,
-      attempts: existing?.attempts || 0,
-      timer,
-      isSubcollection,
-    });
-  }
-
-  /**
-   * Compares a base tree with current tree state and queues all modified, added,
-   * and deleted person and union records as granular patches/tombstones.
-   */
-  public queueBatchDiff(
-    treeId: string,
-    baseTree: TreeData | null,
-    currentTree: TreeData,
-    options?: { baseVersion?: number; isSubcollection?: boolean }
-  ): void {
-    if (!treeId) return;
-    const isSub = options?.isSubcollection ?? (currentTree.storageMode === 'subcollections');
-    const opts = { baseVersion: options?.baseVersion ?? this.baseVersion, isSubcollection: isSub };
-
-    const basePeople = baseTree?.people || {};
-    const currentPeople = currentTree.people || {};
-    const baseUnions = baseTree?.unions || {};
-    const currentUnions = currentTree.unions || {};
-
-    // People added or modified
-    for (const [pId, person] of Object.entries(currentPeople)) {
-      const baseP = basePeople[pId];
-      if (!baseP || JSON.stringify(baseP) !== JSON.stringify(person)) {
-        this.queuePersonPatch(treeId, pId, person as Partial<Person>, opts);
-      }
-    }
-
-    // People deleted
-    for (const pId of Object.keys(basePeople)) {
-      if (!currentPeople[pId]) {
-        this.queuePersonDelete(treeId, pId, opts);
-      }
-    }
-
-    // Unions added or modified
-    for (const [uId, union] of Object.entries(currentUnions)) {
-      const baseU = baseUnions[uId];
-      if (!baseU || JSON.stringify(baseU) !== JSON.stringify(union)) {
-        this.queueUnionPatch(treeId, uId, union as Partial<Union>, opts);
-      }
-    }
-
-    // Unions deleted
-    for (const uId of Object.keys(baseUnions)) {
-      if (!currentUnions[uId]) {
-        this.queueUnionDelete(treeId, uId, opts);
-      }
-    }
-  }
-
-  /**
-   * Sends the pending person patch or deletion to Firestore with error recovery and exponential retry.
-   */
-  public async sendPersonPatch(key: string): Promise<boolean> {
-    const item = this.pendingPersonPatches.get(key);
-    if (!item) return true;
-
-    try {
-      if (item.isDelete) {
-        await deleteCloudPerson(
-          item.treeId,
-          item.personId,
-          {
-            isSubcollection: item.isSubcollection,
+  /** Atomically persist every mutation, including relationships, undo/redo and metadata. */
+  public queueBatchDiff(treeId: string, base: TreeData | null, current: TreeData, options?: PatchOptions): boolean {
+    if (!treeId || current.id !== treeId || (base && base.id !== treeId)) return false;
+    const opts = { ...options, isSubcollection: options?.isSubcollection ?? current.storageMode === 'subcollections' };
+    for (const kind of ['person', 'union'] as const) {
+      const before = (kind === 'person' ? base?.people : base?.unions) || {};
+      const after = kind === 'person' ? current.people : current.unions;
+      for (const id of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        if (!after[id]) this.enqueue(treeId, kind, id, {}, [], true, opts);
+        else {
+          const fields = changedFields(before[id] || {}, after[id]);
+          if (Object.keys(fields.updates).length || fields.removedFields.length) {
+            this.enqueue(treeId, kind, id, { ...fields.updates, deleted: false }, fields.removedFields, false, opts);
           }
-        );
-      } else {
-        const result = await patchCloudPerson(
-          item.treeId,
-          item.personId,
-          item.updates || {},
-          {
-            baseVersion: item.baseVersion,
-            isSubcollection: item.isSubcollection,
-          }
-        );
-
-        if (result?.version) {
-          this.baseVersion = result.version;
         }
       }
+    }
+    const beforeMeta: Record<string, unknown> = {};
+    const afterMeta: Record<string, unknown> = {};
+    for (const field of TREE_METADATA_FIELDS) {
+      beforeMeta[field] = base?.[field]; afterMeta[field] = current[field];
+    }
+    const meta = changedFields(beforeMeta, afterMeta);
+    if (Object.keys(meta.updates).length || meta.removedFields.length) {
+      this.enqueue(treeId, 'metadata', 'root', meta.updates, meta.removedFields, false, opts);
+    }
+    this.trees.set(treeId, structuredClone(current));
+    const saved = this.persist(treeId);
+    if (this.hasPendingPatches(treeId)) {
+      useCollabStore.getState().setCloudSyncStatus('saving');
+      this.schedule(treeId);
+    }
+    return saved;
+  }
 
-      this.pendingPersonPatches.delete(key);
-
-      if (!this.hasPendingPatches()) {
-        useCollabStore.getState().setCloudSyncStatus('synced');
+  private async transmit(op: SyncOperation): Promise<boolean> {
+    if (this.pending.get(op.key) !== op) return true;
+    const collab = useCollabStore.getState();
+    if (typeof window !== 'undefined' && !this.activeTreeId) return false;
+    if (this.activeTreeId && (op.treeId !== this.activeTreeId || collab.cloudLoading ||
+        !collab.isCloudTree || !['owner', 'editor'].includes(collab.userPermission))) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.onOffline(); return false;
+    }
+    if (!this.persist(op.treeId)) return false;
+    try {
+      const options = {
+        isSubcollection: op.isSubcollection,
+        baseVersion: this.versions.get(op.treeId) ?? op.baseVersion,
+        removedFields: op.removedFields, timestamp: op.timestamp,
+      };
+      let result: { version: number } | void;
+      if (op.kind === 'metadata') result = await this.transport.metadata(op.treeId, op.updates, op.removedFields);
+      else if (op.kind === 'person') result = op.isDelete
+        ? await this.transport.deletePerson(op.treeId, op.recordId, options)
+        : await this.transport.person(op.treeId, op.recordId, op.updates, options);
+      else result = op.isDelete
+        ? await this.transport.deleteUnion(op.treeId, op.recordId, options)
+        : await this.transport.union(op.treeId, op.recordId, op.updates, options);
+      if (result?.version) this.setBaseVersion(result.version, op.treeId);
+      // An ACK for an older request must never erase a newer edit.
+      if (this.pending.get(op.key) === op) {
+        this.pending.delete(op.key);
+        if (!this.persist(op.treeId)) { this.pending.set(op.key, op); return false; }
       }
+      this.attempts.delete(op.key);
       return true;
-    } catch (err: any) {
-      item.attempts += 1;
-      const formatted = formatFirestoreError(err);
-      console.error(`Granular person ${item.isDelete ? 'deletion' : 'patch'} failed (attempt ${item.attempts}):`, err);
-
-      const isOffline =
-        (typeof navigator !== 'undefined' && !navigator.onLine) ||
-        formatted.includes('offline') ||
-        err?.code === 'unavailable';
-
-      if (isOffline) {
-        useCollabStore.getState().setCloudSyncStatus('offline', formatted);
-      } else {
-        useCollabStore.getState().setCloudSyncStatus('error', formatted);
+    } catch (err) {
+      const attempts = (this.attempts.get(op.key) || 0) + 1;
+      this.attempts.set(op.key, attempts);
+      const message = formatFirestoreError(err);
+      useCollabStore.getState().setCloudSyncStatus(message.toLowerCase().includes('offline') ? 'offline' : 'error', message);
+      if (attempts < MAX_RETRY_ATTEMPTS && !(err instanceof ConcurrencyConflictError)) {
+        this.schedule(op.treeId, Math.min(1000 * 2 ** (attempts - 1), 15000));
       }
-
-      // Schedule retry with exponential backoff if below max attempts
-      if (item.attempts < MAX_RETRY_ATTEMPTS && !(err instanceof ConcurrencyConflictError)) {
-        const backoffMs = Math.min(1000 * 2 ** (item.attempts - 1), 15000);
-        item.timer = setTimeout(() => {
-          this.sendPersonPatch(key);
-        }, backoffMs);
-      }
-
       return false;
     }
   }
 
-  /**
-   * Sends the pending union patch or deletion to Firestore with error recovery and exponential retry.
-   */
-  public async sendUnionPatch(key: string): Promise<boolean> {
-    const item = this.pendingUnionPatches.get(key);
-    if (!item) return true;
-
-    try {
-      if (item.isDelete) {
-        await deleteCloudUnion(
-          item.treeId,
-          item.unionId,
-          {
-            isSubcollection: item.isSubcollection,
-          }
-        );
-      } else {
-        const result = await patchCloudUnion(
-          item.treeId,
-          item.unionId,
-          item.updates || {},
-          {
-            baseVersion: item.baseVersion,
-            isSubcollection: item.isSubcollection,
-          }
-        );
-
-        if (result?.version) {
-          this.baseVersion = result.version;
-        }
-      }
-
-      this.pendingUnionPatches.delete(key);
-
-      if (!this.hasPendingPatches()) {
-        useCollabStore.getState().setCloudSyncStatus('synced');
-      }
-      return true;
-    } catch (err: any) {
-      item.attempts += 1;
-      const formatted = formatFirestoreError(err);
-      console.error(`Granular union ${item.isDelete ? 'deletion' : 'patch'} failed (attempt ${item.attempts}):`, err);
-
-      const isOffline =
-        (typeof navigator !== 'undefined' && !navigator.onLine) ||
-        formatted.includes('offline') ||
-        err?.code === 'unavailable';
-
-      if (isOffline) {
-        useCollabStore.getState().setCloudSyncStatus('offline', formatted);
-      } else {
-        useCollabStore.getState().setCloudSyncStatus('error', formatted);
-      }
-
-      if (item.attempts < MAX_RETRY_ATTEMPTS && !(err instanceof ConcurrencyConflictError)) {
-        const backoffMs = Math.min(1000 * 2 ** (item.attempts - 1), 15000);
-        item.timer = setTimeout(() => {
-          this.sendUnionPatch(key);
-        }, backoffMs);
-      }
-
-      return false;
-    }
+  public async sendPersonPatch(key: string): Promise<boolean> { return this.sendKey(key); }
+  public async sendUnionPatch(key: string): Promise<boolean> { return this.sendKey(key); }
+  private async sendKey(key: string): Promise<boolean> {
+    let success = true;
+    this.sending = this.sending.then(async () => {
+      const op = this.pending.get(key);
+      if (op) success = await this.transmit(op);
+      this.updateStatus();
+    });
+    await this.sending;
+    return success;
   }
 
-  /**
-   * Flushes all currently pending granular patches immediately.
-   */
-  public async flushAll(): Promise<void> {
-    const personKeys = Array.from(this.pendingPersonPatches.keys());
-    const unionKeys = Array.from(this.pendingUnionPatches.keys());
+  private updateStatus() {
+    const collab = useCollabStore.getState();
+    if (!this.hasPendingPatches(this.activeTreeId) && !collab.localSaveError) collab.setCloudSyncStatus('synced');
+    else if (this.hasPendingPatches(this.activeTreeId) && collab.cloudSyncStatus === 'synced') collab.setCloudSyncStatus('saving');
+  }
 
-    for (const key of personKeys) {
-      const item = this.pendingPersonPatches.get(key);
-      if (item?.timer) clearTimeout(item.timer);
-    }
-    for (const key of unionKeys) {
-      const item = this.pendingUnionPatches.get(key);
-      if (item?.timer) clearTimeout(item.timer);
-    }
-
-    const promises = [
-      ...personKeys.map((k) => this.sendPersonPatch(k)),
-      ...unionKeys.map((k) => this.sendUnionPatch(k)),
-    ];
-
-    await Promise.all(promises);
+  public async flushAll(treeId = this.activeTreeId): Promise<void> {
+    if (this.disposed) return;
+    this.sending = this.sending.then(async () => {
+      const ids = treeId ? [treeId] : [...this.timers.keys()];
+      for (const id of ids) {
+        const timer = this.timers.get(id);
+        if (timer) clearTimeout(timer);
+        this.timers.delete(id);
+      }
+      for (const op of [...this.pending.values()]) {
+        if (!treeId || op.treeId === treeId) {
+          if (!await this.transmit(op)) break;
+        }
+      }
+      this.updateStatus();
+    });
+    await this.sending;
   }
 }
 

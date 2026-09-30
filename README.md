@@ -84,6 +84,32 @@ npx firebase deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
 
 Deploying to Netlify alone does not update Firestore security rules.
 
+### Offline saving and recovery
+
+Cloud edits are saved synchronously to a per-tree **durable sync outbox** in
+`localStorage`. One atomic write stores both the working tree and its pending
+person, relationship, deletion, and metadata operations. Reloading a cloud tree
+replays those pending fields onto the latest cloud data before displaying it;
+unrelated edits from collaborators are retained. Pending writes are removed only
+after server acknowledgment, and uploads are serialized. Field removals and
+deletion timestamps survive reloads and retries. Undo/redo also enters the outbox.
+
+The save indicator distinguishes **Saved on this device**, **Offline**, and
+**Saved to cloud**. Browser storage failures produce a persistent warning: keep
+the tab open and export a JSON backup before closing it. Cloud sync errors retain
+pending work; signed-in users can click the sync error indicator to retry.
+Reconnection reloads cloud permissions before replaying recovered work. Viewer
+or revoked access never uploads pending changes.
+
+The outbox uses the existing browser storage without additional dependencies.
+Browser quotas still apply, and clearing site data removes local trees and pending
+edits; JSON exports remain important backups. Simultaneous offline editing in
+multiple tabs of the **same browser profile** is not coordinated; use one editing
+tab per tree. Concurrent edits to the same field use pending local intent on
+replay; this is not a conflict-resolution UI or a CRDT. Browser regression tests
+exercise real storage and reload with a simulated cloud transport, not production
+Firebase.
+
 ---
 
 ## Deploying to Netlify

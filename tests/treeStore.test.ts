@@ -354,7 +354,8 @@ describe('Centralized Zustand Stores', () => {
 
       useTreeStore.getState().deleteUnion(unionId);
       assert.strictEqual(cloudSyncBridge.hasPendingPatches(), true);
-      assert.strictEqual(cloudSyncBridge.getPendingCount(), 1);
+      // Deleting a union must also durably synchronize the cleaned person references.
+      assert.ok(cloudSyncBridge.getPendingCount() > 1);
       cloudSyncBridge.clear();
       useCollabStore.getState().resetCollab();
     });

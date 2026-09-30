@@ -6,6 +6,8 @@ export interface CollabStoreState {
   userPermission: UserPermission;
   cloudSyncStatus: 'synced' | 'saving' | 'error' | 'offline';
   cloudSyncError: string | null;
+  localSaveError: string | null;
+  setLocalSaveError: (error: string | null) => void;
   cloudLoading: boolean;
   accessDeniedMessage: string | null;
   isShareModalOpen: boolean;
@@ -27,6 +29,8 @@ export const useCollabStore = create<CollabStoreState>((set) => ({
   userPermission: 'owner',
   cloudSyncStatus: 'synced',
   cloudSyncError: null,
+  localSaveError: null,
+  setLocalSaveError: (localSaveError) => set({ localSaveError }),
   cloudLoading: false,
   accessDeniedMessage: null,
   isShareModalOpen: false,

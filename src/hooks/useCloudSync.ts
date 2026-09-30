@@ -1,340 +1,153 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { TreeData } from '../types/tree';
-import { loadTreeById, saveCurrentTree } from '../services/storage';
+import { loadTreeById } from '../services/storage';
 import {
-  getCloudTree,
-  updateCloudTreeData,
-  subscribeToCloudTree,
-  resolveUserPermission,
-  migrateTreeToSubcollections,
+  getCloudTree, subscribeToCloudTree, resolveUserPermission, migrateTreeToSubcollections,
 } from '../services/firestoreService';
 import { useAuth } from './useAuth';
 import { useTreeStore } from '../stores/useTreeStore';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import { useCollabStore } from '../stores/useCollabStore';
 import { cloudSyncBridge } from '../services/cloudSyncBridge';
-import { syncMerge } from '../services/syncMerge';
 import { createSnapshot } from '../services/snapshotService';
-import { notifyRepairsApplied } from '../stores/useNotificationStore';
+import { reportLocalSave } from '../services/saveStatus';
 
-/**
- * Produces a stable structural fingerprint of a tree for equality checking,
- * ignoring timestamps and key ordering.
- */
 export function getTreeContentFingerprint(tree: TreeData): string {
-  const sortedP: Record<string, any> = {};
-  for (const k of Object.keys(tree.people || {}).sort()) {
-    sortedP[k] = tree.people[k];
-  }
-  const sortedU: Record<string, any> = {};
-  for (const k of Object.keys(tree.unions || {}).sort()) {
-    sortedU[k] = tree.unions[k];
-  }
+  const sorted = (records: object) => Object.fromEntries(Object.entries(records).sort(([a], [b]) => a.localeCompare(b)));
   return JSON.stringify({
-    id: tree.id,
-    name: tree.name,
-    description: tree.description,
-    rootPersonId: tree.rootPersonId,
-    collapsedPersonIds: tree.collapsedPersonIds,
-    googleDriveConfig: tree.googleDriveConfig,
-    people: sortedP,
-    unions: sortedU,
+    id: tree.id, name: tree.name, description: tree.description,
+    rootPersonId: tree.rootPersonId, collapsedPersonIds: tree.collapsedPersonIds,
+    googleDriveConfig: tree.googleDriveConfig, layoutOverrides: tree.layoutOverrides,
+    horizontalOverrides: tree.horizontalOverrides,
+    people: sorted(tree.people), unions: sorted(tree.unions),
   });
 }
 
 export function useCloudSync(treeId: string | null | undefined) {
   const { user, signInAnonymouslyUser } = useAuth();
-
   const tree = useTreeStore((s) => s.tree);
-  const setTree = useTreeStore((s) => s.setTree);
-  const resetHistory = useTreeStore((s) => s.resetHistory);
-
-  const selectPerson = useCanvasStore((s) => s.selectPerson);
-  const clearFocus = useCanvasStore((s) => s.clearFocus);
-
   const isCloudTree = useCollabStore((s) => s.isCloudTree);
   const userPermission = useCollabStore((s) => s.userPermission);
-  const setIsCloudTree = useCollabStore((s) => s.setIsCloudTree);
-  const setUserPermission = useCollabStore((s) => s.setUserPermission);
-  const setCloudSyncStatus = useCollabStore((s) => s.setCloudSyncStatus);
-  const setCloudLoading = useCollabStore((s) => s.setCloudLoading);
-  const setAccessDeniedMessage = useCollabStore((s) => s.setAccessDeniedMessage);
+  const lastSnapshotTime = useRef(0);
 
-  const lastSavedCloudFingerprintRef = useRef<string | null>(null);
-  const lastBaseTreeRef = useRef<TreeData | null>(null);
-  const isRemoteSyncRef = useRef<boolean>(false);
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastPreMergeSnapshotTimeRef = useRef<number>(0);
-  const lastDestructiveSnapshotTimeRef = useRef<number>(0);
-  const SNAPSHOT_THROTTLE_MS = 60_000; // Throttle automated snapshots to at most once per minute
-
-  const markRemoteSynced = useCallback((treeData: TreeData) => {
-    lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(treeData);
-    lastBaseTreeRef.current = treeData;
-    cloudSyncBridge.setBaseVersion(treeData.version);
-    isRemoteSyncRef.current = true;
+  const markRemoteSynced = useCallback((remote: TreeData) => {
+    cloudSyncBridge.setActiveTree(remote.id);
+    const reconciled = cloudSyncBridge.reconcile(remote);
+    return reconciled;
   }, []);
 
-  // 1. Initial Cloud Tree Load from treeId
   useEffect(() => {
+    let mounted = true;
+    let loadGeneration = 0;
+    const collab = useCollabStore.getState();
+    cloudSyncBridge.setActiveTree(treeId || undefined);
     if (!treeId) {
-      setIsCloudTree(false);
-      setUserPermission('owner');
-      setAccessDeniedMessage(null);
-      setCloudSyncStatus('synced');
+      collab.setIsCloudTree(false);
+      collab.setUserPermission('owner');
+      collab.setAccessDeniedMessage(null);
+      collab.setCloudLoading(false);
       return;
     }
+    collab.setCloudLoading(true);
+    collab.setAccessDeniedMessage(null);
 
-    let isMounted = true;
-    setCloudLoading(true);
-    setAccessDeniedMessage(null);
-
-    getCloudTree(treeId)
-      .then((cloudTree) => {
-        if (!isMounted) return;
-        if (!cloudTree) {
-          const local = loadTreeById(treeId);
-          if (local) {
-            resetHistory(local);
-            setIsCloudTree(false);
-            setUserPermission('owner');
-            setAccessDeniedMessage(null);
-            setCloudSyncStatus('synced');
-            return;
-          }
-          setAccessDeniedMessage('The requested family tree could not be found or does not exist.');
+    const load = async () => {
+      const generation = ++loadGeneration;
+      try {
+        cloudSyncBridge.restore(treeId);
+        const remote = await getCloudTree(treeId);
+        if (!mounted || generation !== loadGeneration) return;
+        if (!remote) throw new Error('The requested cloud tree was not found.');
+        const permission = resolveUserPermission(remote, user);
+        collab.setUserPermission(permission);
+        if (permission === 'none') {
+          collab.setIsCloudTree(false);
+          collab.setAccessDeniedMessage(user
+            ? 'You do not have permission to view this tree. Ask the owner to share it with your email.'
+            : 'This tree is private. Sign in with Google to check if you have access.');
           return;
         }
-
-        const perm = resolveUserPermission(cloudTree, user);
-        if (perm === 'none') {
-          if (!user) {
-            setAccessDeniedMessage('This tree is private. Sign in with Google to check if you have access.');
-          } else {
-            setAccessDeniedMessage('You do not have permission to view this tree. Ask the owner to share it with your email.');
-          }
-        } else {
-          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(cloudTree);
-          lastBaseTreeRef.current = cloudTree;
-          cloudSyncBridge.setBaseVersion(cloudTree.version);
-          isRemoteSyncRef.current = true;
-          resetHistory(cloudTree);
-          setIsCloudTree(true);
-          setUserPermission(perm);
-          setCloudSyncStatus('synced');
-          setAccessDeniedMessage(null);
-          const initialId = cloudTree.rootPersonId || Object.keys(cloudTree.people)[0] || null;
-          selectPerson(initialId);
-          clearFocus();
-
-          // Lazy idempotent migration of legacy monolithic trees to per-record subcollections
-          if (cloudTree.storageMode !== 'subcollections' && (perm === 'owner' || perm === 'editor')) {
-            migrateTreeToSubcollections(cloudTree.id).catch((migErr) => {
-              console.warn('Lazy migration to subcollections warning:', migErr);
-            });
-          }
-
-          if (!user && perm === 'editor') {
-            signInAnonymouslyUser().catch((anonErr) => {
-              console.warn('Background anonymous auth skipped:', anonErr);
-            });
+        // Viewer access never uploads recovered edits; keep them durably for export/recovery.
+        const recovered = permission === 'viewer' ? remote : cloudSyncBridge.reconcile(remote);
+        useTreeStore.getState().resetHistory(recovered);
+        collab.setIsCloudTree(true);
+        collab.setCloudSyncStatus(cloudSyncBridge.hasPendingPatches(treeId) ? 'saving' : 'synced');
+        const canvas = useCanvasStore.getState();
+        canvas.selectPerson(recovered.rootPersonId || Object.keys(recovered.people)[0] || null);
+        canvas.clearFocus();
+        if (!user && permission === 'editor') await signInAnonymouslyUser();
+        if (!mounted || generation !== loadGeneration) return;
+        if (remote.storageMode !== 'subcollections' && ['owner', 'editor'].includes(permission)) {
+          // Do not migrate a tree while outstanding writes still target the old mode.
+          if (!cloudSyncBridge.hasPendingPatches(treeId)) {
+            void migrateTreeToSubcollections(treeId).catch(console.warn);
           }
         }
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        console.error('Failed to fetch cloud tree:', err);
+      } catch (err) {
+        if (!mounted || generation !== loadGeneration) return;
+        // Permission failures must not turn a cached viewer into an owner.
         const local = loadTreeById(treeId);
-        if (local) {
-          resetHistory(local);
-          setIsCloudTree(false);
-          setUserPermission('owner');
-          setAccessDeniedMessage(null);
-          return;
-        }
-        setAccessDeniedMessage('Could not load tree from cloud: ' + (err.message || 'Unknown error'));
-      })
-      .finally(() => {
-        if (isMounted) setCloudLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    treeId,
-    user,
-    resetHistory,
-    selectPerson,
-    clearFocus,
-    setIsCloudTree,
-    setUserPermission,
-    setAccessDeniedMessage,
-    setCloudSyncStatus,
-    setCloudLoading,
-    signInAnonymouslyUser,
-  ]);
-
-  // 2. Real-time Firestore Listener
-  useEffect(() => {
-    if (!isCloudTree || !tree.id || userPermission === 'none') return;
-
-    const unsubscribe = subscribeToCloudTree(
-      tree.id,
-      (remoteTree) => {
-        if (!remoteTree) return;
-        const currentLocalTree = useTreeStore.getState().tree;
-        const remoteFingerprint = getTreeContentFingerprint(remoteTree);
-        const currentFingerprint = getTreeContentFingerprint(currentLocalTree);
-
-        if (
-          remoteFingerprint === currentFingerprint ||
-          remoteFingerprint === lastSavedCloudFingerprintRef.current
-        ) {
-          return;
-        }
-
-        const hasPendingLocal = currentFingerprint !== lastSavedCloudFingerprintRef.current;
-        if (hasPendingLocal && lastBaseTreeRef.current) {
-          // Automatic snapshot before merging risky concurrent cloud changes, throttled to prevent snapshot storms
-          const now = Date.now();
-          if (now - lastPreMergeSnapshotTimeRef.current >= SNAPSHOT_THROTTLE_MS) {
-            lastPreMergeSnapshotTimeRef.current = now;
-            createSnapshot(
-              currentLocalTree,
-              'pre-cloud-merge',
-              `Automatic backup before merging cloud changes into ${currentLocalTree.name || 'tree'}`
-            ).catch(console.warn);
-          }
-
-          // Perform deterministic syncMerge with tombstone resolution and invariant repair
-          const mergeResult = syncMerge(currentLocalTree, remoteTree);
-          lastSavedCloudFingerprintRef.current = getTreeContentFingerprint(mergeResult.tree);
-          lastBaseTreeRef.current = remoteTree;
-          cloudSyncBridge.setBaseVersion(remoteTree.version);
-          isRemoteSyncRef.current = true;
-          setTree(mergeResult.tree, false);
-
-          if (mergeResult.repairsApplied) {
-            notifyRepairsApplied(1, 'Repaired data consistency during cloud synchronization merge.');
-          }
-
-          if (mergeResult.notices.length > 0) {
-            console.info('Cloud sync notices:', mergeResult.notices);
-          }
+        const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+        if (local && offline) {
+          const cachedPermission = resolveUserPermission(local as Parameters<typeof resolveUserPermission>[0], user);
+          useTreeStore.getState().resetHistory(local);
+          collab.setIsCloudTree(true);
+          collab.setUserPermission(cachedPermission);
+          collab.setCloudSyncStatus('offline', 'Saved on this device; waiting for a connection.');
+          if (cachedPermission === 'none') collab.setAccessDeniedMessage('Sign in to access this cached private tree.');
         } else {
-          // If remote change involves destructive shrinkage (>= 5 people deleted), capture safety snapshot
-          const localCount = Object.keys(currentLocalTree.people || {}).length;
-          const remoteCount = Object.keys(remoteTree.people || {}).length;
-          const shrinkage = localCount - remoteCount;
-          const now = Date.now();
-          if (shrinkage >= 5 && now - lastDestructiveSnapshotTimeRef.current >= SNAPSHOT_THROTTLE_MS) {
-            lastDestructiveSnapshotTimeRef.current = now;
-            createSnapshot(
-              currentLocalTree,
-              'pre-cloud-merge',
-              `Automatic backup before applying remote shrinkage (${localCount} -> ${remoteCount} people)`
-            ).catch(console.warn);
+          collab.setUserPermission('none');
+          collab.setCloudSyncStatus('error', err instanceof Error ? err.message : String(err));
+          collab.setAccessDeniedMessage('Could not load the cloud tree. Your pending edits remain saved on this device.');
+        }
+      } finally {
+        if (mounted && generation === loadGeneration) {
+          collab.setCloudLoading(false);
+          const latest = useCollabStore.getState();
+          if (latest.isCloudTree && ['owner', 'editor'].includes(latest.userPermission)) {
+            void cloudSyncBridge.flushAll(treeId);
           }
-
-          isRemoteSyncRef.current = true;
-          lastSavedCloudFingerprintRef.current = remoteFingerprint;
-          lastBaseTreeRef.current = remoteTree;
-          cloudSyncBridge.setBaseVersion(remoteTree.version);
-          setTree(remoteTree, false);
         }
-
-        const newPerm = resolveUserPermission(remoteTree, user);
-        if (newPerm !== userPermission) {
-          setUserPermission(newPerm);
-        }
-      },
-      (err) => {
-        console.error('Real-time sync error:', err);
-        setCloudSyncStatus('error', err.message || 'Real-time sync error');
       }
-    );
-
-    return () => {
-      if (unsubscribe) unsubscribe();
     };
-  }, [isCloudTree, tree.id, userPermission, user, setTree, setUserPermission, setCloudSyncStatus]);
+    void load();
+    const reconnect = () => { collab.setCloudLoading(true); void load(); };
+    window.addEventListener('online', reconnect);
+    return () => { mounted = false; window.removeEventListener('online', reconnect); };
+  }, [treeId, user, signInAnonymouslyUser]);
 
-  // 3. Debounced Auto-save to Local Storage and Cloud
   useEffect(() => {
-    if (userPermission === 'viewer') return;
-
-    saveCurrentTree(tree);
-
-    if (isCloudTree && (userPermission === 'owner' || userPermission === 'editor')) {
-      if (isRemoteSyncRef.current) {
-        isRemoteSyncRef.current = false;
+    if (!isCloudTree || !treeId || tree.id !== treeId || userPermission === 'none') return;
+    const unsubscribe = subscribeToCloudTree(treeId, (remote) => {
+      if (!remote || useTreeStore.getState().tree.id !== treeId) return;
+      const collab = useCollabStore.getState();
+      if (collab.cloudLoading) return;
+      const permission = resolveUserPermission(remote, user);
+      collab.setUserPermission(permission);
+      if (permission === 'none') {
+        collab.setAccessDeniedMessage('Your access to this tree has been revoked. Pending edits are retained on this device.');
         return;
       }
-
-      const currentFingerprint = getTreeContentFingerprint(tree);
-      if (currentFingerprint === lastSavedCloudFingerprintRef.current) {
-        return;
-      }
-
-      // Queue granular per-record diffs for people and unions
-      cloudSyncBridge.queueBatchDiff(
-        tree.id,
-        lastBaseTreeRef.current,
-        tree,
-        {
-          isSubcollection: tree.storageMode === 'subcollections',
-        }
-      );
-
-      // Check if root document metadata changed (name, description, rootPersonId, collapsedPersonIds, etc.)
-      const base = lastBaseTreeRef.current;
-      const isMetaChanged =
-        !base ||
-        base.name !== tree.name ||
-        (base.description || '') !== (tree.description || '') ||
-        base.rootPersonId !== tree.rootPersonId ||
-        JSON.stringify(base.collapsedPersonIds || []) !== JSON.stringify(tree.collapsedPersonIds || []) ||
-        JSON.stringify(base.googleDriveConfig || null) !== JSON.stringify(tree.googleDriveConfig || null);
-
-      if (!isMetaChanged) {
-        // Record changes are handled granularly via cloudSyncBridge; no need to touch root document
-        lastBaseTreeRef.current = tree;
-        return;
-      }
-
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-
-      setCloudSyncStatus('saving');
-
-      autoSaveTimerRef.current = setTimeout(async () => {
-        lastSavedCloudFingerprintRef.current = currentFingerprint;
-        try {
-          const res = await updateCloudTreeData(tree, {
-            baseVersion: cloudSyncBridge.getBaseVersion(),
-          });
-          if (res?.version) {
-            cloudSyncBridge.setBaseVersion(res.version);
+      try {
+        const current = useTreeStore.getState().tree;
+        const recovered = permission === 'viewer' ? remote : cloudSyncBridge.reconcile(remote);
+        if (getTreeContentFingerprint(current) !== getTreeContentFingerprint(recovered)) {
+          if ((cloudSyncBridge.hasPendingPatches(treeId) ||
+              Object.keys(current.people).length - Object.keys(recovered.people).length >= 5) &&
+              Date.now() - lastSnapshotTime.current >= 60_000) {
+            lastSnapshotTime.current = Date.now();
+            void createSnapshot(current, 'pre-cloud-merge', 'Backup before applying cloud changes').catch(console.warn);
           }
-          lastBaseTreeRef.current = tree;
-          setCloudSyncStatus('synced');
-        } catch (err: any) {
-          console.error('Failed to auto-save to cloud:', err);
-          setCloudSyncStatus('error', err.message || 'Failed to auto-save to cloud');
+          useTreeStore.getState().setTree(recovered, false);
         }
-      }, 1000);
-    }
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
+      } catch (err) {
+        reportLocalSave(false, err);
       }
-    };
-  }, [tree, isCloudTree, userPermission, setCloudSyncStatus]);
+    }, (err) => {
+      useCollabStore.getState().setCloudSyncStatus('error', err.message || 'Real-time sync error');
+    });
+    return () => { unsubscribe?.(); };
+  }, [isCloudTree, treeId, tree.id, userPermission, user]);
 
-  return {
-    markRemoteSynced,
-  };
+  return { markRemoteSynced };
 }

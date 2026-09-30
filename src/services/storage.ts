@@ -1,6 +1,8 @@
 import type { TreeData, Person, Union, NodePositionOverride, LayoutOverrides } from '../types/tree';
 import { sanitizeTree, linkPeopleAcrossTrees } from './treeOperations';
 import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
+import { readSyncOutbox } from './syncOutbox';
+import { reportLocalSave } from './saveStatus';
 
 export type { NodePositionOverride, LayoutOverrides };
 
@@ -466,6 +468,10 @@ export function loadTreeById(treeId: string): TreeData | null {
   const store = getLocalStorage();
   if (!store || !treeId) return null;
   try {
+    const pending = readSyncOutbox(treeId, store);
+    if (pending?.tree && pending.operations.length > 0) {
+      return processTreeIngress(pending.tree, { preserveRawOnError: true }).tree;
+    }
     const raw = store.getItem(`${TREE_DATA_PREFIX}${treeId}`);
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -509,14 +515,16 @@ export function setActiveTreeId(treeId: string): void {
 /**
  * Saves a tree, updates its metadata in the index, sets it active, and keeps legacy storage in sync.
  */
-export function saveCurrentTree(tree: TreeData): void {
+export function saveCurrentTree(tree: TreeData): boolean {
   const store = getLocalStorage();
   const ingress = processTreeIngress(tree);
   const sanitized = ingress.tree;
   sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   sanitized.updatedAt = new Date().toISOString();
 
-  if (!store) return;
+  if (!store) {
+    return typeof window === 'undefined' ? false : reportLocalSave(false);
+  }
 
   try {
     // 1. Save specific tree data
@@ -538,29 +546,31 @@ export function saveCurrentTree(tree: TreeData): void {
     } else {
       summaries.unshift(summary);
     }
-    saveTreeIndex(summaries);
+    store.setItem(TREES_INDEX_KEY, JSON.stringify(summaries));
 
     // 3. Set as active tree
-    setActiveTreeId(sanitized.id);
+    store.setItem(ACTIVE_TREE_ID_KEY, sanitized.id);
 
     // 4. Legacy backup sync so older code/tools continue to work
     store.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+    return reportLocalSave(true);
   } catch (err) {
     console.error('Failed to save tree to storage:', err);
+    return reportLocalSave(false, err);
   }
 }
 
 /**
  * Saves a tree and updates its metadata in the index without setting it as active.
  */
-export function saveTreeWithoutActivating(tree: TreeData): void {
+export function saveTreeWithoutActivating(tree: TreeData): boolean {
   const store = getLocalStorage();
   const ingress = processTreeIngress(tree);
   const sanitized = ingress.tree;
   sanitized.schemaVersion = CURRENT_SCHEMA_VERSION;
   sanitized.updatedAt = new Date().toISOString();
 
-  if (!store) return;
+  if (!store) return typeof window === 'undefined' ? false : reportLocalSave(false);
 
   try {
     store.setItem(`${TREE_DATA_PREFIX}${sanitized.id}`, JSON.stringify(sanitized));
@@ -579,9 +589,11 @@ export function saveTreeWithoutActivating(tree: TreeData): void {
     } else {
       summaries.unshift(summary);
     }
-    saveTreeIndex(summaries);
+    store.setItem(TREES_INDEX_KEY, JSON.stringify(summaries));
+    return reportLocalSave(true);
   } catch (err) {
     console.error('Failed to save tree without activating:', err);
+    return reportLocalSave(false, err);
   }
 }
 

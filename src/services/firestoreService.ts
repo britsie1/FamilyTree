@@ -12,6 +12,7 @@ import {
   onSnapshot,
   writeBatch,
   runTransaction,
+  FieldValue,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
@@ -29,6 +30,7 @@ import type {
 } from '../types/tree';
 import { generateId, isPresetTreeId } from './storage';
 import { threeWayMergeTree } from './treeMerge';
+import { TREE_METADATA_FIELDS } from './syncOutbox';
 import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 import {
   compactTombstones,
@@ -248,6 +250,7 @@ export function resolveUserPermission(
  * Recursively cleanses an object of any `undefined` values before writing to Firestore.
  */
 export function cleanForFirestore<T>(data: T): T {
+  if (data instanceof FieldValue) return data;
   if (data === null || data === undefined) {
     return data;
   }
@@ -456,11 +459,32 @@ export async function updateCloudTreeData(
  * Granularly patches a single person in Firestore without overwriting the entire tree.
  * Supports targeted field-path updates, subcollection routing, and optimistic concurrency control.
  */
+export async function patchCloudTreeMetadata(
+  treeId: string, updates: Record<string, unknown>, removedFields: string[] = []
+): Promise<{ version: number }> {
+  const db = getFirebaseDb();
+  if (!db || !treeId) throw new Error('Firebase is not configured or tree ID is missing.');
+  const payload: Record<string, unknown> = {};
+  for (const field of TREE_METADATA_FIELDS) {
+    if (field in updates) payload[field] = updates[field];
+    if (removedFields.includes(field)) payload[field] = deleteField();
+  }
+  const ref = doc(db, TREES_COLLECTION, treeId);
+  const version = await withTimeout(runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) throw new Error(`Tree ${treeId} not found.`);
+    const nextVersion = (snap.data().version || 1) + 1;
+    transaction.update(ref, { ...payload, version: nextVersion, updatedAt: new Date().toISOString() });
+    return nextVersion;
+  }), 7000, 'Connection to Cloud Firestore timed out.');
+  return { version };
+}
+
 export async function patchCloudPerson(
   treeId: string,
   personId: string,
   updates: Partial<Person>,
-  options?: { baseVersion?: number; isSubcollection?: boolean }
+  options?: { baseVersion?: number; isSubcollection?: boolean; removedFields?: string[]; timestamp?: string }
 ): Promise<{ version: number }> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -468,6 +492,8 @@ export async function patchCloudPerson(
   }
 
   const cleaned = cleanForFirestore(updates) as Record<string, any>;
+  for (const field of options?.removedFields || []) cleaned[field] = deleteField();
+  cleaned.deleted = false;
   if (updates.isDeceased === false) {
     if (!updates.deathDate) {
       cleaned.deathDate = deleteField();
@@ -476,7 +502,8 @@ export async function patchCloudPerson(
       cleaned.deathPlace = deleteField();
     }
   }
-  const now = new Date().toISOString();
+  const now = options?.timestamp || new Date().toISOString();
+  cleaned.updatedAt = now;
 
   // If subcollection storage is enabled
   if (options?.isSubcollection) {
@@ -578,15 +605,18 @@ export async function patchCloudUnion(
   treeId: string,
   unionId: string,
   updates: Partial<Union>,
-  options?: { baseVersion?: number; isSubcollection?: boolean; currentUserId?: string }
+  options?: { baseVersion?: number; isSubcollection?: boolean; currentUserId?: string; removedFields?: string[]; timestamp?: string }
 ): Promise<{ version: number }> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
     throw new Error('Firebase is not configured or tree ID is missing.');
   }
 
-  const now = new Date().toISOString();
+  const now = options?.timestamp || new Date().toISOString();
   const cleaned = cleanForFirestore(updates) as Record<string, any>;
+  for (const field of options?.removedFields || []) cleaned[field] = deleteField();
+  cleaned.deleted = false;
+  cleaned.updatedAt = now;
 
   // If subcollection storage is enabled
   if (options?.isSubcollection) {
@@ -695,7 +725,7 @@ export async function patchCloudUnion(
 export async function deleteCloudPerson(
   treeId: string,
   personId: string,
-  options?: { isSubcollection?: boolean; currentUserId?: string }
+  options?: { isSubcollection?: boolean; currentUserId?: string; timestamp?: string }
 ): Promise<void> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -705,7 +735,7 @@ export async function deleteCloudPerson(
     throw new Error('Person ID is missing.');
   }
 
-  const now = new Date().toISOString();
+  const now = options?.timestamp || new Date().toISOString();
 
   if (options?.isSubcollection) {
     const personDocRef = doc(db, TREES_COLLECTION, treeId, 'people', personId);
@@ -767,7 +797,7 @@ export async function deleteCloudPerson(
 export async function deleteCloudUnion(
   treeId: string,
   unionId: string,
-  options?: { isSubcollection?: boolean; currentUserId?: string }
+  options?: { isSubcollection?: boolean; currentUserId?: string; timestamp?: string }
 ): Promise<void> {
   const db = getFirebaseDb();
   if (!db || !treeId) {
@@ -777,7 +807,7 @@ export async function deleteCloudUnion(
     throw new Error('Union ID is missing.');
   }
 
-  const now = new Date().toISOString();
+  const now = options?.timestamp || new Date().toISOString();
 
   if (options?.isSubcollection) {
     const unionDocRef = doc(db, TREES_COLLECTION, treeId, 'unions', unionId);

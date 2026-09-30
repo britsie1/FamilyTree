@@ -120,7 +120,7 @@ function FamilyTreeMain() {
   const handleSwitchTree = useCallback((newTree: TreeData, isCloud?: boolean, focusPerson?: string | null) => {
     const resolvedIsCloud = isCloud !== undefined ? isCloud : Boolean((newTree as any)?.ownerId);
     hasInitialFitRef.current = false;
-    if (resolvedIsCloud) markRemoteSynced(newTree);
+    if (resolvedIsCloud) newTree = markRemoteSynced(newTree);
     useTreeStore.getState().resetHistory(newTree);
     useCollabStore.getState().setIsCloudTree(resolvedIsCloud);
     useCollabStore.getState().setUserPermission(resolvedIsCloud ? resolveUserPermission(newTree as any, user) : 'owner');

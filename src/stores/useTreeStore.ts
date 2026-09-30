@@ -283,6 +283,17 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     debounceBaseTree = null;
   };
 
+  const persistMutation = (next: TreeData, previous: TreeData) => {
+    const collab = useCollabStore.getState();
+    if (next.id === previous.id && collab.isCloudTree &&
+        (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
+      const durable = cloudSyncBridge.queueBatchDiff(next.id, previous, next);
+      // The atomic outbox is authoritative for pending cloud work. Compatibility
+      // copies must not overwrite its save-failure status.
+      if (durable) saveCurrentTree(next);
+    } else saveCurrentTree(next);
+  };
+
   return {
     tree: initialTree,
     pastPatches: [],
@@ -323,7 +334,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         }
 
         checkTreeInvariantsInDev(nextTree);
-        saveCurrentTree(nextTree);
+        persistMutation(nextTree, currentTree);
         set({ tree: nextTree });
         useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
         return;
@@ -349,7 +360,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       }
 
       checkTreeInvariantsInDev(nextTree);
-      saveCurrentTree(nextTree);
+      persistMutation(nextTree, currentTree);
       useCanvasStore.getState().setCollapsedPersonIds(nextTree.collapsedPersonIds || []);
 
       const now = Date.now();
@@ -434,7 +445,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       historyFuture.unshift(step);
 
       const previousTree = applyPatches(currentTree, step.inversePatches);
-      saveCurrentTree(previousTree);
+      persistMutation(previousTree, currentTree);
 
       set({
         tree: previousTree,
@@ -456,7 +467,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       historyPast.push(step);
 
       const nextTree = applyPatches(currentTree, step.patches);
-      saveCurrentTree(nextTree);
+      persistMutation(nextTree, currentTree);
 
       set({
         tree: nextTree,
@@ -546,7 +557,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       isTransactionActive = false;
       activeTransactionBaseTree = null;
 
-      saveCurrentTree(baseTree);
+      persistMutation(baseTree, get().tree);
       set({ tree: baseTree });
     },
 
@@ -568,13 +579,6 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     updatePerson: (personId: string, updates: Partial<Person>) => {
       get().setTree((prev) => updatePersonInTree(prev, personId, updates));
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        const currentTree = get().tree;
-        cloudSyncBridge.queuePersonPatch(currentTree.id, personId, updates, {
-          isSubcollection: currentTree.storageMode === 'subcollections',
-        });
-      }
     },
 
     toggleCollapse: (personId: string) => {
@@ -613,14 +617,9 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     updateUnion: (unionId, updates) => {
       get().setTree((prev) => updateUnionInTree(prev, unionId, updates));
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        cloudSyncBridge.queueUnionPatch(get().tree.id, unionId, updates);
-      }
     },
 
     deleteUnion: (unionId: string) => {
-      const currentTree = get().tree;
       get().setTree((prev) => {
         const nextTree = { ...prev, unions: { ...prev.unions }, people: { ...prev.people } };
         delete nextTree.unions[unionId];
@@ -643,10 +642,6 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
         return nextTree;
       });
 
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        cloudSyncBridge.queueUnionDelete(currentTree.id, unionId);
-      }
     },
 
     deletePerson: (personId: string) => {
@@ -654,20 +649,6 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       const nextTree = deletePersonFromTree(currentTree, personId);
       get().setTree(() => nextTree);
 
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        cloudSyncBridge.queuePersonDelete(currentTree.id, personId, {
-          isSubcollection: currentTree.storageMode === 'subcollections',
-        });
-
-        // Also queue deletion for any unions that were removed because they became empty
-        const oldUnionIds = Object.keys(currentTree.unions || {});
-        for (const uId of oldUnionIds) {
-          if (!nextTree.unions[uId]) {
-            cloudSyncBridge.queueUnionDelete(currentTree.id, uId);
-          }
-        }
-      }
     },
 
     addPerson: (overrides = {}) => {
@@ -778,32 +759,10 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     attachDocument: (personId, doc) => {
       get().setTree((prev) => attachDocumentToPerson(prev, personId, doc));
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        const currentTree = get().tree;
-        const updatedDocs = currentTree.people[personId]?.documents;
-        cloudSyncBridge.queuePersonPatch(
-          currentTree.id,
-          personId,
-          { documents: updatedDocs },
-          { isSubcollection: currentTree.storageMode === 'subcollections' }
-        );
-      }
     },
 
     removeDocument: (personId, documentId) => {
       get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
-      const collab = useCollabStore.getState();
-      if (collab.isCloudTree && (collab.userPermission === 'owner' || collab.userPermission === 'editor')) {
-        const currentTree = get().tree;
-        const updatedDocs = currentTree.people[personId]?.documents;
-        cloudSyncBridge.queuePersonPatch(
-          currentTree.id,
-          personId,
-          { documents: updatedDocs },
-          { isSubcollection: currentTree.storageMode === 'subcollections' }
-        );
-      }
     },
 
     setGoogleDriveConfig: (config) => {

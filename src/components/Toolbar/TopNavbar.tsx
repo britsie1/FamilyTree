@@ -37,6 +37,8 @@ import {
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useModalStore } from '../../stores/useModalStore';
+import { useCollabStore } from '../../stores/useCollabStore';
+import { cloudSyncBridge } from '../../services/cloudSyncBridge';
 import { auditTreeHealth } from '../../services/treeHealthAndStatsService';
 
 interface TopNavbarProps {
@@ -93,6 +95,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   canRedo = false,
 }) => {
   const { user, isConfigured, signInWithGoogle, signOutUser } = useAuth();
+  const localSaveError = useCollabStore((s) => s.localSaveError);
   const isDark = useThemeStore((s) => s.isDark);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -311,22 +314,26 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               <span>Local storage (Offline)</span>
             )}
             <span>•</span>
-            {isCloudTree ? (
+            {localSaveError ? (
+              <span role="alert" title={localSaveError} className="text-rose-600 font-semibold">Not saved on this device — export a backup</span>
+            ) : isCloudTree ? (
               cloudSyncStatus === 'saving' ? (
                 <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
                   <Loader2 className="w-3 h-3 animate-spin text-blue-600 dark:text-blue-400" />
-                  <span>Saving...</span>
+                  <span>Saved on this device · Syncing...</span>
                 </span>
               ) : cloudSyncStatus === 'error' ? (
                 <button
                   type="button"
-                  onClick={!user ? () => signInWithGoogle() : undefined}
+                  onClick={() => { if (!user) void signInWithGoogle(); else void cloudSyncBridge.flushAll(tree.id); }}
                   className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-semibold hover:underline cursor-pointer"
                   title={cloudSyncError || 'Sync failed. Click to resolve.'}
                 >
                   <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400 flex-shrink-0" />
                   <span>{!user ? 'Sync failed (Sign in to sync)' : 'Sync error'}</span>
                 </button>
+              ) : cloudSyncStatus === 'offline' ? (
+                <span className="text-amber-600 font-medium">Saved on this device · Offline</span>
               ) : (
                 <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                   <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
@@ -334,7 +341,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 </span>
               )
             ) : (
-              <span>Auto-saved</span>
+              <span>Saved on this device</span>
             )}
           </p>
         </div>
