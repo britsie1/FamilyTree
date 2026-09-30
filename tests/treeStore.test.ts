@@ -6,6 +6,8 @@ import { useTemporalStore } from '../src/stores/useTemporalStore.ts';
 import { useCollabStore } from '../src/stores/useCollabStore.ts';
 import { cloudSyncBridge } from '../src/services/cloudSyncBridge.ts';
 import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
+import { checkInvariants, registerIngressRepairListener } from '../src/services/schema';
+import { loadTreeById } from '../src/services/storage';
 
 // In-memory mock for localStorage in node test environment
 class MemoryStorage implements Storage {
@@ -40,6 +42,56 @@ describe('Centralized Zustand Stores', () => {
   });
 
   describe('useTreeStore', () => {
+    it('retains repairs when loading a tree so later node additions do not repeat them', () => {
+      const dirty = createDoubleInLawPreset();
+      const union = Object.values(dirty.unions)[0];
+      const partnerId = union.partnerIds[0];
+      dirty.people[partnerId].unionIds = [];
+      let repairNotices = 0;
+      registerIngressRepairListener(() => { repairNotices++; });
+      try {
+        useTreeStore.getState().resetHistory(dirty);
+        assert.strictEqual(repairNotices, 1);
+        assert.deepStrictEqual(checkInvariants(useTreeStore.getState().tree), []);
+        for (let i = 0; i < 5; i++) useTreeStore.getState().addPerson();
+        useTreeStore.getState().addChild(partnerId);
+        useTreeStore.getState().undo();
+        useTreeStore.getState().redo();
+        const working = useTreeStore.getState().tree;
+        assert.deepStrictEqual(checkInvariants(working), []);
+        assert.deepStrictEqual(loadTreeById(working.id)?.people, working.people);
+        assert.strictEqual(repairNotices, 1);
+      } finally {
+        registerIngressRepairListener(null);
+      }
+    });
+
+    it('records repairs in the same undo step as an edit rather than only repairing the saved copy', () => {
+      const personId = Object.keys(useTreeStore.getState().tree.people)[0];
+      let repairNotices = 0;
+      registerIngressRepairListener(() => { repairNotices++; });
+      try {
+        useTreeStore.getState().setTree((prev) => ({
+          ...prev,
+          people: {
+            ...prev.people,
+            [personId]: { ...prev.people[personId], birthDate: '2000', deathDate: '1900' },
+          },
+        }));
+        assert.strictEqual(useTreeStore.getState().tree.people[personId].deathDate, undefined);
+        assert.strictEqual(repairNotices, 1);
+        useTreeStore.getState().addPerson();
+        useTreeStore.getState().undo();
+        useTreeStore.getState().undo();
+        useTreeStore.getState().redo();
+        assert.strictEqual(useTreeStore.getState().tree.people[personId].birthDate, '2000');
+        assert.strictEqual(useTreeStore.getState().tree.people[personId].deathDate, undefined);
+        assert.strictEqual(repairNotices, 1);
+      } finally {
+        registerIngressRepairListener(null);
+      }
+    });
+
     it('initializes with a valid tree structure', () => {
       const tree = useTreeStore.getState().tree;
       assert.ok(tree);

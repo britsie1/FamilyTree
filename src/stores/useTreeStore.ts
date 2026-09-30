@@ -9,7 +9,7 @@ import {
   saveCurrentTree,
   generateId,
 } from '../services/storage';
-import { checkInvariants } from '../services/schema';
+import { checkInvariants, processTreeIngress } from '../services/schema';
 import {
   addChildToPerson,
   addSiblingToPerson,
@@ -46,6 +46,12 @@ export interface HistoryStep {
 
 const MAX_HISTORY_DEPTH = 50;
 const DEBOUNCE_WINDOW_MS = 500;
+
+/** Keep the working graph and undo history consistent with the graph we persist. */
+function normalizeWorkingTree(tree: TreeData): TreeData {
+  const ingress = processTreeIngress(tree);
+  return ingress.repaired ? ingress.tree : tree;
+}
 
 function arraysEqual(a: any[] | undefined, b: any[] | undefined): boolean {
   if (a === b) return true;
@@ -307,10 +313,10 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
       // 1. Non-history update
       if (!recordHistory) {
-        const nextTree =
+        const nextTree = normalizeWorkingTree(
           typeof nextTreeOrUpdater === 'function'
             ? (nextTreeOrUpdater as (prev: TreeData) => TreeData)(currentTree)
-            : nextTreeOrUpdater;
+            : nextTreeOrUpdater);
 
         if (nextTree === currentTree) {
           return;
@@ -325,10 +331,10 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
       // 2. Transaction update
       if (isTransactionActive) {
-        const nextTree =
+        const nextTree = normalizeWorkingTree(
           typeof nextTreeOrUpdater === 'function'
             ? (nextTreeOrUpdater as (prev: TreeData) => TreeData)(currentTree)
-            : nextTreeOrUpdater;
+            : nextTreeOrUpdater);
 
         if (nextTree === currentTree) {
           return;
@@ -353,6 +359,8 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
           } else {
             reconcileTree(draft as TreeData, nextTreeOrUpdater);
           }
+          const normalized = normalizeWorkingTree(draft as TreeData);
+          if (normalized !== draft) reconcileTree(draft as TreeData, normalized);
         }
       );
 
@@ -481,6 +489,7 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
     },
 
     resetHistory: (newTree: TreeData) => {
+      newTree = normalizeWorkingTree(newTree);
       flushDebounce();
       historyPast.length = 0;
       historyFuture.length = 0;

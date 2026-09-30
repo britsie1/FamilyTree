@@ -8,7 +8,10 @@ import {
   createAndSaveNewTree,
   loadCurrentTree,
   STORAGE_KEY,
+  TREE_DATA_PREFIX,
+  getActiveTreeId,
 } from '../src/services/storage.ts';
+import { registerIngressRepairListener } from '../src/services/schema';
 import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 
 // In-memory mock for localStorage in node test environment
@@ -67,6 +70,26 @@ describe('Multi-Tree Storage and Migration', () => {
     assert.ok(loaded2);
     assert.strictEqual(loaded1.name, 'Tree One');
     assert.strictEqual(loaded2.name, 'Tree Two');
+  });
+
+  it('persists load-time repairs once without activating the loaded tree', () => {
+    const active = createAndSaveNewTree('Active');
+    const dirty = createDoubleInLawPreset();
+    Object.values(dirty.unions)[0].partnerIds.push('missing_person');
+    globalThis.localStorage.setItem(`${TREE_DATA_PREFIX}${dirty.id}`, JSON.stringify(dirty));
+    let repairNotices = 0;
+    registerIngressRepairListener(() => { repairNotices++; });
+    try {
+      const first = loadTreeById(dirty.id);
+      const second = loadTreeById(dirty.id);
+      assert.ok(first);
+      assert.deepStrictEqual(first.people, second?.people);
+      assert.deepStrictEqual(first.unions, second?.unions);
+      assert.strictEqual(repairNotices, 1);
+      assert.strictEqual(getActiveTreeId(), active.id);
+    } finally {
+      registerIngressRepairListener(null);
+    }
   });
 
   it('starts a fresh workspace with one placeholder person and no example genealogy', () => {

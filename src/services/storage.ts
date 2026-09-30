@@ -122,6 +122,8 @@ export function loadTreeById(treeId: string): TreeData | null {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
         const ingress = processTreeIngress(parsed, { preserveRawOnError: true });
+        // Persist successful repairs without switching the user's active tree.
+        if (ingress.repaired) saveTreeWithoutActivating(ingress.tree);
         return ingress.tree;
       }
     }

@@ -120,6 +120,5 @@ export function migrate(raw: unknown): TreeData {
   }
 
   // Ensure current version is recorded
-  current.schemaVersion = CURRENT_SCHEMA_VERSION;
-  return current as TreeData;
+  return { ...current, schemaVersion: CURRENT_SCHEMA_VERSION } as TreeData;
 }

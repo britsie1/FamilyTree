@@ -9,6 +9,7 @@ import {
   checkInvariants,
   repair,
   processTreeIngress,
+  registerIngressRepairListener,
 } from '../src/services/schema';
 import type { TreeData, Person, Union } from '../src/types/tree';
 
@@ -362,6 +363,31 @@ describe('Phase 1: Versioned Schema & Boundary Validation', () => {
   });
 
   describe('Boundary Pipeline (processTreeIngress)', () => {
+    it('repairs intermediate snapshots silently but still reports explicit ingress repairs', () => {
+      const dirty: TreeData = {
+        id: 'tree_notices', name: 'Notices', schemaVersion: CURRENT_SCHEMA_VERSION,
+        createdAt: '2026-01-01', updatedAt: '2026-01-01',
+        people: { p1: { id: 'p1', unionIds: [] } },
+        unions: { u1: { id: 'u1', partnerIds: ['p1', 'ghost'], childrenIds: [] } },
+      };
+      const original = structuredClone(dirty);
+      let notices = 0;
+      registerIngressRepairListener(() => { notices++; });
+      try {
+        const silent = processTreeIngress(dirty, { notifyRepairs: false });
+        assert.equal(silent.repaired, true);
+        assert.deepEqual(checkInvariants(silent.tree), []);
+        assert.equal(notices, 0);
+        processTreeIngress(dirty);
+        assert.equal(notices, 1);
+        processTreeIngress(silent.tree);
+        assert.equal(notices, 1);
+        assert.deepEqual(dirty, original);
+      } finally {
+        registerIngressRepairListener(null);
+      }
+    });
+
     it('migrates, validates, and repairs repairable trees in one pass', () => {
       const rawLegacy: any = {
         id: 'tree_raw',

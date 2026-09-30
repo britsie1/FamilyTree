@@ -40,7 +40,7 @@ export function registerIngressRepairListener(listener: IngressRepairListener | 
  */
 export function processTreeIngress(
   raw: unknown,
-  options?: { preserveRawOnError?: boolean }
+  options?: { preserveRawOnError?: boolean; notifyRepairs?: boolean }
 ): IngressResult {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Tree payload rejected: payload must be a valid non-null object.');
@@ -77,7 +77,7 @@ export function processTreeIngress(
     throw err;
   }
 
-  if (report.repaired && report.changes.length > 0 && globalIngressRepairListener) {
+  if (options?.notifyRepairs !== false && report.repaired && report.changes.length > 0 && globalIngressRepairListener) {
     globalIngressRepairListener(report, repairedTree);
   }
 

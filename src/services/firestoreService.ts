@@ -1403,7 +1403,9 @@ export function subscribeToCloudTree(
       combined.unions = activeUnions;
     }
 
-    const ingress = processTreeIngress(combined, { preserveRawOnError: true });
+    // Separate collection listeners can briefly combine different revisions.
+    // Keep repairing these snapshots, but only announce repairs at explicit loads/imports.
+    const ingress = processTreeIngress(combined, { preserveRawOnError: true, notifyRepairs: false });
     const parsed: CloudTreeData = {
       ...ingress.tree,
       version: rootData.version || 1,
