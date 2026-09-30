@@ -39,6 +39,8 @@ Built with **React**, **TypeScript**, **Vite**, and **Tailwind CSS**. Fully stat
    - Smooth pan & zoom (mouse wheel zoom centered on cursor, canvas dragging, and zoom controls).
    - Fit-to-screen button to center and scale the tree instantly.
    - Search bar to locate and jump to any relative quickly.
+   - Drag cards smoothly; Shift-click cards (or Shift-drag the background) to select a group, then drag any selected card to move them together. Each drop is one undo step.
+   - Dragging snaps to nearby card edges/centres or the 32-unit grid, with alignment guides. Hold Alt for free positioning; Escape cancels a drag. Touch dragging uses the same snapping and group movement.
 
 ---
 

@@ -15,6 +15,7 @@ export function arePersonCardPropsEqual(
     prev.isOnRelationshipPath !== next.isOnRelationshipPath ||
     prev.hasActiveComparison !== next.hasActiveComparison ||
     prev.isHovered !== next.isHovered ||
+    prev.isDragging !== next.isDragging ||
     prev.hasDescendants !== next.hasDescendants ||
     prev.temporalYear !== next.temporalYear ||
     prev.isRoomHonoree !== next.isRoomHonoree ||
@@ -65,6 +66,7 @@ export function arePersonCardPropsEqual(
     prev.onSelect !== next.onSelect ||
     prev.onHover !== next.onHover ||
     prev.onDragStart !== next.onDragStart ||
+    prev.onTouchStart !== next.onTouchStart ||
     prev.onPortMouseDown !== next.onPortMouseDown ||
     prev.onContextMenu !== next.onContextMenu ||
     prev.onAddChild !== next.onAddChild ||

@@ -12,6 +12,7 @@ import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useModalStore } from '../../stores/useModalStore';
 import { Search, X } from 'lucide-react';
+import { createDragSession, snapDrag, getDragPositions, type DragSession } from './nodeDrag';
 import {
   calculatePinchTransform,
   getTouchDistance,
@@ -159,28 +160,6 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     const u = tree.unions[uId];
     if (u?.partnerIds[0]) useModalStore.getState().openRelationshipModal(u.partnerIds[0], 'child', uId);
   });
-  const onUpdatePersonPosition = useCallback(
-    (id: string, x: number, y: number) => {
-      if (propOnUpdatePersonPosition) {
-        propOnUpdatePersonPosition(id, x, y);
-      } else {
-        useCanvasStore.getState().updatePersonPosition(id, x, y, layoutStyle);
-        useTreeStore.getState().updatePersonPosition(id, x, y, layoutStyle);
-      }
-    },
-    [propOnUpdatePersonPosition, layoutStyle]
-  );
-
-  const onFinishDragPerson = useCallback(
-    (id: string) => {
-      if (propOnFinishDragPerson) {
-        propOnFinishDragPerson(id);
-      } else {
-        useTreeStore.getState().setTree((prev) => ({ ...prev }), true);
-      }
-    },
-    [propOnFinishDragPerson]
-  );
 
   const isDark = useThemeStore((s) => s.isDark);
   const [hoveredPersonId, setHoveredPersonId] = useState<string | null>(null);
@@ -272,20 +251,98 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
 
   // Dragging a Person Card (transient 60/120 FPS drag without triggering layout recomputations)
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const [draggingIds, setDraggingIds] = useState<Set<string>>(new Set());
+  const hasMovedCardRef = useRef(false);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  const draggingPersonIdRef = useRef<string | null>(null);
+  const layoutRef = useRef(layout);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const dragSessionRef = useRef<DragSession | null>(null);
+  const committedPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const selectedIdsRef = useRef(selectedPersonIds);
+  useEffect(() => { selectedIdsRef.current = selectedPersonIds; }, [selectedPersonIds]);
+  const dragFrameRef = useRef<number | null>(null);
+  const dragElementsRef = useRef<Map<string, HTMLElement>>(new Map());
+  const guideXRef = useRef<SVGLineElement | null>(null);
+  const guideYRef = useRef<SVGLineElement | null>(null);
+  const guidesRef = useRef<{ x?: number; y?: number }>({});
+
+  const paintDrag = useCallback(() => {
+    dragFrameRef.current = null;
+    const offset = dragOffsetRef.current;
+    for (const node of dragSessionRef.current?.nodes ?? []) {
+      const element = dragElementsRef.current.get(node.id);
+      const position = !offset ? committedPositionsRef.current[node.id] : undefined;
+      if (element) element.style.transform = `translate(${position?.x ?? node.x + (offset?.x ?? 0)}px, ${position?.y ?? node.y + (offset?.y ?? 0)}px)`;
+    }
+    for (const axis of ['x', 'y'] as const) {
+      const line = axis === 'x' ? guideXRef.current : guideYRef.current;
+      if (!line) continue;
+      const value = offset ? guidesRef.current[axis] : undefined;
+      line.style.display = value === undefined ? 'none' : '';
+      if (value !== undefined) {
+        line.setAttribute(`${axis}1`, String(value));
+        line.setAttribute(`${axis}2`, String(value));
+      }
+    }
+  }, []);
+
+  const setDragOffset = useCallback((offset: { x: number; y: number } | null, bypass = false) => {
+    const session = dragSessionRef.current;
+    const snapped = offset && session ? snapDrag(session, offset, zoomRef.current, bypass) : null;
+    dragOffsetRef.current = snapped?.offset ?? null;
+    guidesRef.current = snapped?.guides ?? {};
+    if (offset) {
+      if (dragFrameRef.current === null) dragFrameRef.current = requestAnimationFrame(paintDrag);
+    }
+    else {
+      if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
+      paintDrag();
+      draggingPersonIdRef.current = null;
+      dragSessionRef.current = null;
+    }
+  }, [paintDrag]);
+
+  const beginDrag = useCallback((personId: string) => {
+    dragSessionRef.current = createDragSession(layoutRef.current.nodes, personId, selectedIdsRef.current);
+    committedPositionsRef.current = {};
+    setDraggingIds(new Set(dragSessionRef.current.nodes.map((node) => node.id)));
+    dragElementsRef.current.clear();
+    for (const element of canvasContainerRef.current?.querySelectorAll<HTMLElement>('[data-person-id]') ?? []) {
+      dragElementsRef.current.set(element.dataset.personId!, element);
+    }
+    dragOffsetRef.current = null;
+    setDraggingPersonId(personId);
+    draggingPersonIdRef.current = personId;
+  }, [canvasContainerRef]);
+
+  const commitDragRef = useRef(() => {});
+  useEffect(() => { commitDragRef.current = () => {
+    const session = dragSessionRef.current;
+    const offset = dragOffsetRef.current;
+    if (!session || !offset || !hasMovedCardRef.current || (!offset.x && !offset.y)) return;
+    const positions = getDragPositions(session, offset);
+    committedPositionsRef.current = positions;
+    if (propOnUpdatePersonPosition) {
+      for (const [id, position] of Object.entries(positions)) propOnUpdatePersonPosition(id, position.x, position.y);
+    } else {
+      // Canonical overrides own the drop so undo is not masked by presentation state.
+      useCanvasStore.getState().setLayoutOverrides((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([id]) => !(id in positions))), layoutStyle);
+      const key = layoutStyle === 'horizontal' ? 'horizontalOverrides' : 'layoutOverrides';
+      useTreeStore.getState().batch(() => {
+        useTreeStore.getState().setTree((prev) => ({ ...prev, [key]: { ...prev[key], ...positions } }));
+      });
+    }
+    for (const node of session.nodes) propOnFinishDragPerson?.(node.id);
+  }; }, [propOnUpdatePersonPosition, propOnFinishDragPerson, layoutStyle]);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; nodeX: number; nodeY: number }>({
     mouseX: 0,
     mouseY: 0,
     nodeX: 0,
     nodeY: 0,
   });
-  const hasMovedCardRef = useRef(false);
-
-  const zoomRef = useRef(zoom);
-  const panRef = useRef(pan);
-  const draggingPersonIdRef = useRef<string | null>(null);
-  const layoutRef = useRef(layout);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -354,7 +411,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       return allNodes;
     }
     return allNodes.filter((node) => {
-      if (node.id === selectedPersonId || node.id === draggingPersonId) return true;
+      if (node.id === selectedPersonId || selectedPersonIds.has(node.id) || node.id === draggingPersonId) return true;
       const nodeRight = node.x + node.width;
       const nodeBottom = node.y + node.height;
       return (
@@ -364,7 +421,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         node.y <= viewportRect.maxY
       );
     });
-  }, [layout.nodes, viewportRect, selectedPersonId, draggingPersonId]);
+  }, [layout.nodes, viewportRect, selectedPersonId, selectedPersonIds, draggingPersonId]);
 
   // Non-passive wheel listener attached to container to allow e.preventDefault() without console errors
   useEffect(() => {
@@ -464,8 +521,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             touchState.hasMoved = false;
             touchState.startedOnBackground = false;
 
-            setDraggingPersonId(personId);
-            draggingPersonIdRef.current = personId;
+            beginDrag(personId);
             hasMovedCardRef.current = false;
             dragStartRef.current = {
               mouseX: t1.clientX,
@@ -525,15 +581,13 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         const dx = (t1.clientX - dragStartRef.current.mouseX) / zoomRef.current;
         const dy = (t1.clientY - dragStartRef.current.mouseY) / zoomRef.current;
 
-        if (Math.hypot(dx, dy) > 4) {
+        if (Math.hypot(dx, dy) * zoomRef.current > 4) {
           touchState.hasMoved = true;
           hasMovedCardRef.current = true;
           suppressClick = true;
         }
 
-        const offset = { x: dx, y: dy };
-        dragOffsetRef.current = offset;
-        setDragOffset(offset);
+        if (hasMovedCardRef.current) setDragOffset({ x: dx, y: dy });
       } else if (e.touches.length === 1 && touchState.mode === 'pan') {
         const t1 = e.touches[0];
         const dx = t1.clientX - touchState.startTouch1.clientX;
@@ -600,13 +654,12 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         if (touchState.mode === 'dragCard') {
           const targetId = touchState.cardPersonId || draggingPersonIdRef.current;
           if (hasMovedCardRef.current && targetId) {
-            const finalOffset = dragOffsetRef.current || { x: 0, y: 0 };
-            const finalX = dragStartRef.current.nodeX + finalOffset.x;
-            const finalY = dragStartRef.current.nodeY + finalOffset.y;
-            onUpdatePersonPosition(targetId, finalX, finalY);
-            if (onFinishDragPerson) {
-              onFinishDragPerson(targetId);
-            }
+            const touch = e.changedTouches[0];
+            if (touch) setDragOffset({
+              x: (touch.clientX - dragStartRef.current.mouseX) / zoomRef.current,
+              y: (touch.clientY - dragStartRef.current.mouseY) / zoomRef.current,
+            });
+            commitDragRef.current();
           }
 
           setDraggingPersonId(null);
@@ -684,7 +737,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       container.removeEventListener('gestureend', preventSafariGesture);
       if (suppressClickTimer) clearTimeout(suppressClickTimer);
     };
-  }, [canvasContainerRef, setZoom, setPan, onSelectPerson]);
+  }, [canvasContainerRef, setZoom, setPan, onSelectPerson, beginDrag, setDragOffset]);
 
   // Mouse Down on Canvas (Start Panning or Marquee Selection)
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -744,7 +797,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   }, []);
 
   const handleCardHover = useCallback((id: string | null) => {
-    if (!connectingStateRef.current) {
+    if (!connectingStateRef.current && !draggingPersonIdRef.current) {
       setHoveredPersonId(id);
     }
   }, []);
@@ -752,11 +805,12 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   // Mouse Down on a Card (Start Dragging Node) - referentially stable callback
   const handleCardDragStart = useCallback((e: React.MouseEvent, personId: string) => {
     e.stopPropagation();
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button, a, input')) return;
+    e.preventDefault();
     const node = layoutRef.current.nodes[personId];
     if (!node) return;
 
-    setDraggingPersonId(personId);
-    draggingPersonIdRef.current = personId;
+    beginDrag(personId);
     hasMovedCardRef.current = false;
     dragStartRef.current = {
       mouseX: e.clientX,
@@ -764,7 +818,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       nodeX: node.x,
       nodeY: node.y,
     };
-  }, []);
+  }, [beginDrag]);
 
   // Touch Start on a Card (Start Dragging Node on Touchscreen) - referentially stable callback (Bug 4.2)
   const handleCardTouchStart = useCallback((e: React.TouchEvent, personId: string) => {
@@ -776,8 +830,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     if (!node) return;
 
     const t = e.touches[0];
-    setDraggingPersonId(personId);
-    draggingPersonIdRef.current = personId;
+    beginDrag(personId);
     hasMovedCardRef.current = false;
     dragStartRef.current = {
       mouseX: t.clientX,
@@ -785,7 +838,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       nodeX: node.x,
       nodeY: node.y,
     };
-  }, []);
+  }, [beginDrag]);
 
   const handleCardContextMenu = useCallback((e: React.MouseEvent, personId: string) => {
     onPersonContextMenuRef.current?.(e, personId);
@@ -921,17 +974,15 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           x: e.clientX - panStartRef.current.x,
           y: e.clientY - panStartRef.current.y,
         });
-      } else if (draggingPersonId) {
-        const dx = (e.clientX - dragStartRef.current.mouseX) / zoom;
-        const dy = (e.clientY - dragStartRef.current.mouseY) / zoom;
+      } else if (draggingPersonIdRef.current) {
+        const dx = (e.clientX - dragStartRef.current.mouseX) / zoomRef.current;
+        const dy = (e.clientY - dragStartRef.current.mouseY) / zoomRef.current;
 
-        if (Math.hypot(dx, dy) > 4) {
+        if (Math.hypot(dx, dy) * zoomRef.current > 4) {
           hasMovedCardRef.current = true;
         }
 
-        const offset = { x: dx, y: dy };
-        dragOffsetRef.current = offset;
-        setDragOffset(offset);
+        if (hasMovedCardRef.current) setDragOffset({ x: dx, y: dy }, e.altKey);
       }
     };
 
@@ -1026,15 +1077,15 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         }
         setIsPanning(false);
       }
-      if (draggingPersonId) {
+      if (draggingPersonIdRef.current) {
         if (hasMovedCardRef.current) {
-          const finalOffset = dragOffsetRef.current || { x: 0, y: 0 };
-          const finalX = dragStartRef.current.nodeX + finalOffset.x;
-          const finalY = dragStartRef.current.nodeY + finalOffset.y;
-          onUpdatePersonPosition(draggingPersonId, finalX, finalY);
-          if (onFinishDragPerson) {
-            onFinishDragPerson(draggingPersonId);
-          }
+          setDragOffset({
+            x: (e.clientX - dragStartRef.current.mouseX) / zoomRef.current,
+            y: (e.clientY - dragStartRef.current.mouseY) / zoomRef.current,
+          }, e.altKey);
+          commitDragRef.current();
+          suppressClickRef.current = true;
+          setTimeout(() => { suppressClickRef.current = false; }, 150);
         }
         setDraggingPersonId(null);
         setDragOffset(null);
@@ -1049,7 +1100,23 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, draggingPersonId, zoom, setPan, onUpdatePersonPosition, onFinishDragPerson, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson, onQuickSpawnRelative]);
+  }, [isPanning, draggingPersonId, zoom, setPan, setDragOffset, layout.nodes, onMultiSelectPeople, canvasContainerRef, onSelectPerson, onQuickSpawnRelative]);
+
+  useEffect(() => {
+    const cancel = () => {
+      setDragOffset(null);
+      setDraggingPersonId(null);
+      hasMovedCardRef.current = false;
+    };
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') cancel(); };
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('blur', cancel);
+    return () => {
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('blur', cancel);
+      if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
+    };
+  }, [setDragOffset]);
 
   return (
     <div
@@ -1176,6 +1243,10 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         )}
 
         {/* HTML Interactive Person Cards (Culled to visible viewport) */}
+        <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none" style={{ zIndex: 44 }} aria-hidden="true">
+          <line ref={guideXRef} data-testid="drag-guide-x" y1={-100000} y2={100000} stroke="#6366f1" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeDasharray="5 4" style={{ display: 'none' }} />
+          <line ref={guideYRef} data-testid="drag-guide-y" x1={-100000} x2={100000} stroke="#6366f1" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeDasharray="5 4" style={{ display: 'none' }} />
+        </svg>
         {visibleNodes.map((node: LayoutNode) => {
           const isSearchActive = searchMatchSet !== null;
           const isSearchMatch = isSearchActive ? searchMatchSet.has(node.id) : false;
@@ -1186,7 +1257,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             <PersonCard
               key={node.id}
               node={node}
-              dragOffset={draggingPersonId === node.id ? dragOffset : null}
+              isDragging={Boolean(draggingPersonId && draggingIds.has(node.id))}
               layoutStyle={layoutStyle}
               isSelected={selectedPersonId === node.id}
               isMultiSelected={selectedPersonIds ? selectedPersonIds.has(node.id) : false}

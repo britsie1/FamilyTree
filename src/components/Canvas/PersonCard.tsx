@@ -30,6 +30,7 @@ export interface PersonCardProps {
   onDragStart: (e: React.MouseEvent, personId: string) => void;
   onTouchStart?: (e: React.TouchEvent, personId: string) => void;
   dragOffset?: { x: number; y: number } | null;
+  isDragging?: boolean;
   onPortMouseDown?: (
     e: React.MouseEvent,
     personId: string,
@@ -84,6 +85,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   onDragStart,
   onTouchStart,
   dragOffset = null,
+  isDragging = false,
   onPortMouseDown,
   isConnectTarget = false,
   onOpenTreeLink,
@@ -156,8 +158,9 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
         transform: `translate(${currentX}px, ${currentY}px)`,
         width: `${width}px`,
         height: `${height}px`,
+        willChange: isDragging ? 'transform' : undefined,
       }}
-      className={`group select-none pointer-events-auto transition-all duration-200 cursor-grab active:cursor-grabbing rounded-xl bg-white dark:bg-slate-900 border border-l-4 shadow-sm ${cardStateClasses} ${
+      className={`group select-none pointer-events-auto transition-[box-shadow,border-color,background-color] duration-200 cursor-grab active:cursor-grabbing rounded-xl bg-white dark:bg-slate-900 border border-l-4 shadow-sm ${cardStateClasses} ${
         isBeaconActive
           ? 'ring-4 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-950 border-indigo-500 shadow-2xl z-45'
           : isConnectTarget
