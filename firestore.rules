@@ -6,47 +6,51 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner() {
-      return isAuthenticated() && resource != null && resource.data.ownerId == request.auth.uid;
+    function isOwnerOf(data) {
+      return isAuthenticated() && data.ownerId == request.auth.uid;
     }
 
-    function isPublic() {
-      return resource != null && resource.data.get('isPublic', false) == true;
+    // Keep this encoding in sync with encodeEmailKey in firestoreService.ts.
+    function emailKey() {
+      return request.auth.token.email.lower()
+        .replace('%', '%25').replace('[.]', '%2E')
+        .replace('@', '%40').replace('/', '%2F');
     }
 
-    function isPublicEditor() {
-      return isPublic() && resource.data.get('publicRole', 'viewer') == 'editor';
+    function invitedRole(data) {
+      return isAuthenticated() && request.auth.token.get('email', null) is string
+        ? data.get('sharedWith', {}).get(emailKey(), {}).get('role', 'none')
+        : 'none';
     }
 
-    function isInvitedCollaborator() {
-      return isAuthenticated() &&
-             request.auth.token.email != null &&
-             resource != null &&
-             ('sharedEmails' in resource.data) &&
-             request.auth.token.email.lower() in resource.data.sharedEmails;
+    function isLegacyInvite(data) {
+      return isAuthenticated() && request.auth.token.get('email', null) is string &&
+             request.auth.token.email.lower() in data.get('sharedEmails', []);
+    }
+
+    function canReadData(data) {
+      return data.get('isPublic', false) == true || isOwnerOf(data) ||
+             invitedRole(data) in ['viewer', 'editor'] || isLegacyInvite(data);
+    }
+
+    function canEditData(data) {
+      // An explicit viewer invitation takes precedence over a public editor link.
+      // Legacy email-only invitations never grant write access.
+      return isAuthenticated() && (isOwnerOf(data) || invitedRole(data) == 'editor' ||
+        (invitedRole(data) == 'none' && !isLegacyInvite(data) &&
+         data.get('isPublic', false) == true && data.get('publicRole', 'viewer') == 'editor'));
     }
 
     function canReadTree(treeId) {
-      return resource == null ||
-             get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true ||
-             get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid ||
-             (isAuthenticated() && request.auth.token.email != null &&
-              request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails);
+      return canReadData(get(/databases/$(database)/documents/trees/$(treeId)).data);
     }
 
     function isTreeOwner(treeId) {
-      return isAuthenticated() &&
-             get(/databases/$(database)/documents/trees/$(treeId)).data.ownerId == request.auth.uid;
+      return isOwnerOf(get(/databases/$(database)/documents/trees/$(treeId)).data);
     }
 
     function canEditTree(treeId) {
-      return isAuthenticated() && (
-        isTreeOwner(treeId) ||
-        (get(/databases/$(database)/documents/trees/$(treeId)).data.get('isPublic', false) == true &&
-         get(/databases/$(database)/documents/trees/$(treeId)).data.get('publicRole', 'viewer') == 'editor') ||
-        (request.auth.token.email != null &&
-         request.auth.token.email.lower() in get(/databases/$(database)/documents/trees/$(treeId)).data.sharedEmails)
-      );
+      return canEditData(get(/databases/$(database)/documents/trees/$(treeId)).data);
     }
 
     function isValidPersonDoc(data, personId) {
@@ -77,25 +81,25 @@ service cloud.firestore {
 
     // Rules for family tree documents
     match /trees/{treeId} {
-      allow read: if resource == null || isPublic() || isOwner() || isInvitedCollaborator();
+      // Missing root gets support checking whether a local tree was uploaded.
+      // This exception must not apply to subcollection records or list queries.
+      allow get: if resource == null || canReadData(resource.data);
+      allow list: if canReadData(resource.data);
 
       allow create: if isAuthenticated() &&
                        request.resource.data.ownerId == request.auth.uid;
 
-      allow update: if (
-                       isOwner()
-                    ) || (
-                       isPublicEditor() &&
-                       request.resource.data.ownerId == resource.data.ownerId &&
-                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false) &&
-                       request.resource.data.get('publicRole', 'viewer') == resource.data.get('publicRole', 'viewer')
-                    ) || (
-                       isInvitedCollaborator() &&
-                       request.resource.data.ownerId == resource.data.ownerId &&
-                       request.resource.data.get('isPublic', false) == resource.data.get('isPublic', false)
-                    );
+      allow update: if request.resource.data.ownerId == resource.data.ownerId && (
+        isOwnerOf(resource.data) ||
+        (canEditData(resource.data) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           'name', 'description', 'rootPersonId', 'collapsedPersonIds',
+           'people', 'unions', 'googleDriveConfig', 'layoutOverrides', 'horizontalOverrides',
+           'storageMode', 'schemaVersion', 'version', 'updatedAt'
+         ]))
+      );
 
-      allow delete: if isOwner();
+      allow delete: if isOwnerOf(resource.data);
 
       // Subcollection for individual people documents with shape validation and compaction permissions
       match /people/{personId} {

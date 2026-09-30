@@ -54,6 +54,36 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
+### Tests and cloud security
+
+```bash
+npm test
+npm run test:rules
+npm run lint
+npm run build
+```
+
+`test:rules` requires Java 21 or newer and runs the actual Firestore rules in a
+local emulator using the isolated `demo-familytree` project. It does not access
+production data. CI runs this suite as well as the ordinary unit tests.
+
+Cloud permissions are enforced by `firestore.rules`: viewers are read-only,
+editors can change tree content, and only owners can change sharing settings or
+delete a tree. Explicit viewer invitations override public editor links. Legacy
+`sharedEmails`-only invitations are read-only; owners must assign an explicit
+editor role in the sharing dialog to grant write access. Ownership transfers are
+not supported. Public editing requires Firebase authentication (anonymous
+authentication is supported).
+
+**Deploy the rules separately from the static website** to activate these
+protections in your Firebase project:
+
+```bash
+npx firebase deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
+```
+
+Deploying to Netlify alone does not update Firestore security rules.
+
 ---
 
 ## Deploying to Netlify

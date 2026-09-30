@@ -24,11 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Run linter (oxlint)
         run: npm run lint
 
       - name: Run invariant, schema, and property test suites
         run: npm test
+
+      - name: Test actual Firestore authorization rules
+        run: npm run test:rules
 
       - name: Verify production build (tsc -b && vite build)
         run: npm run build

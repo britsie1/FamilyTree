@@ -296,11 +296,11 @@ Four concrete failure scenarios have been reproduced and codified into `tests/da
    - Tombstones (`deleted == true`) skip the content checks, because `deleteCloudPerson` / `deleteCloudUnion` write minimal `{ id, deleted, deletedAt, updatedAt, updatedBy }` documents.
 2. **What `tests/firestoreRules.test.ts` does and does not prove.**
    - It verifies that `firestore.rules` and `RECOMMENDED_FIRESTORE_RULES` are identical, that expected functions exist, and that a TypeScript *mirror* of the validators behaves as intended.
-   - It does **not** execute the rules language. No Firestore emulator or `@firebase/rules-unit-testing` is installed, so `get(...)` lookups, `resource == null` handling and operator semantics are unverified by CI.
-3. **Manual verification required before deploying rules** (Firebase Emulator or a staging project):
-   - An owner, an invited editor (`sharedEmails`), a public editor and a stranger each attempt create / update / delete on `/people` and `/unions`.
+    - These fast checks do not execute the rules language. `tests/firestoreAuthorization.rules.ts` separately executes actual rules with `@firebase/rules-unit-testing` and the Firestore emulator via `npm run test:rules`; CI runs both suites.
+3. **Emulator coverage and deployment verification**:
+    - Owners, explicit invited editors (`sharedWith` role), viewers, legacy email-only invitees, public editors and strangers are covered by emulator read/write tests on root documents and `/people` and `/unions`.
    - A person with only `{ id }` or with no `lastName` can be written; a person with `gender: 'robot'` is rejected.
    - A tombstone write succeeds for editors; an editor cannot delete a non-tombstone; an editor can delete a tombstone; an owner can delete anything.
-   - Trees whose root document lacks `sharedEmails` still allow the expected reads (the subcollection rules call `.data.sharedEmails` directly).
-   - `trees/{treeId}` rules changed in structure from `origin/main` (helper functions). Confirm access for owner, public editor, invited collaborator and stranger is unchanged.
-4. **Follow-up:** add `@firebase/rules-unit-testing` with the emulator to CI to replace the mirror tests.
+    - Missing sharing fields use safe defaults; missing subcollection records and orphaned subcollections never bypass parent permissions.
+    - After deploying, verify representative owner, editor and viewer access in a staging project before relying on these protections in production.
+4. **Authorization policy:** explicit viewers (and legacy email-only invitees) are read-only even on public editor trees. Editors can only update allowed content fields, not sharing or owner metadata. Only owners manage sharing and delete trees; ownership transfers are rejected. Deploy `firestore.rules` separately to the production Firebase project to activate these protections.

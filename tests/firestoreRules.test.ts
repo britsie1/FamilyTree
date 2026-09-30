@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RECOMMENDED_FIRESTORE_RULES, compactCloudTombstones } from '../src/services/firestoreService';
+import { RECOMMENDED_FIRESTORE_RULES, compactCloudTombstones, encodeEmailKey, resolveUserPermission } from '../src/services/firestoreService';
+import type { CloudTreeMetadata } from '../src/types/tree';
 
 describe('Firestore Security Rules & Shape Validation', () => {
   const firestoreRulesPath = path.resolve(process.cwd(), 'firestore.rules');
@@ -59,15 +60,13 @@ describe('Firestore Security Rules & Shape Validation', () => {
 
   function canDeleteDoc(
     user: { uid: string; email?: string } | null,
-    treeMeta: { ownerId: string; sharedEmails?: string[]; isPublic?: boolean; publicRole?: string },
+    treeMeta: CloudTreeMetadata,
     resourceData: Record<string, any>
   ): boolean {
     if (!user) return false;
-    const isOwner = user.uid === treeMeta.ownerId;
-    const isEditor =
-      isOwner ||
-      (treeMeta.isPublic === true && treeMeta.publicRole === 'editor') ||
-      Boolean(user.email && treeMeta.sharedEmails?.map((e) => e.toLowerCase()).includes(user.email.toLowerCase()));
+    const permission = resolveUserPermission(treeMeta, user);
+    const isOwner = permission === 'owner';
+    const isEditor = permission === 'editor';
 
     return isOwner || (isEditor && resourceData.deleted === true);
   }
@@ -196,9 +195,16 @@ describe('Firestore Security Rules & Shape Validation', () => {
   });
 
   describe('Tombstone Deletion & Compaction Permissions', () => {
-    const tree = {
+    const tree: CloudTreeMetadata = {
       ownerId: 'owner-1',
+      ownerEmail: 'owner@test.com',
+      ownerDisplayName: 'Owner',
       sharedEmails: ['editor@test.com'],
+      sharedWith: {
+        [encodeEmailKey('editor@test.com')]: {
+          email: 'editor@test.com', role: 'editor', addedAt: '2026-01-01T00:00:00Z',
+        },
+      },
       isPublic: false,
       publicRole: 'viewer',
     };

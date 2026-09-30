@@ -46,6 +46,16 @@ describe('Firestore Cloud Service & Permission Resolution', () => {
     assert.equal(perm, 'viewer');
   });
 
+  it('keeps an invited viewer read-only even with a public editor link', () => {
+    assert.equal(resolveUserPermission({ ...baseTree, isPublic: true, publicRole: 'editor' },
+      { uid: 'viewer', email: 'charlie@example.com' }), 'viewer');
+  });
+
+  it('treats legacy email-only invitations as viewers, never editors', () => {
+    assert.equal(resolveUserPermission({ ...baseTree, sharedWith: {}, isPublic: true, publicRole: 'editor' },
+      { uid: 'legacy', email: 'BOB@EXAMPLE.COM' }), 'viewer');
+  });
+
   it('handles case-insensitivity and extra whitespace in user emails', () => {
     const perm = resolveUserPermission(baseTree, { uid: 'different-uid', email: '  BOB@EXAMPLE.COM  ' });
     assert.equal(perm, 'editor');
@@ -258,7 +268,8 @@ describe('Firestore Cloud Service & Permission Resolution', () => {
   it('RECOMMENDED_FIRESTORE_RULES includes security rules for the /people/{personId} subcollection', async () => {
     const { RECOMMENDED_FIRESTORE_RULES } = await import('../src/services/firestoreService');
     assert.ok(RECOMMENDED_FIRESTORE_RULES.includes('match /people/{personId}'));
-    assert.ok(RECOMMENDED_FIRESTORE_RULES.includes('isPublicEditor()'));
-    assert.ok(RECOMMENDED_FIRESTORE_RULES.includes('isInvitedCollaborator()'));
+    assert.ok(RECOMMENDED_FIRESTORE_RULES.includes('function canEditData(data)'));
+    assert.ok(RECOMMENDED_FIRESTORE_RULES.includes("invitedRole(data) == 'editor'"));
+    assert.ok(RECOMMENDED_FIRESTORE_RULES.includes('affectedKeys().hasOnly(['));
   });
 });
