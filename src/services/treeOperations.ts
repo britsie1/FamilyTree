@@ -462,7 +462,7 @@ export function addPartnerToPerson(
   const newPartner: Person = createEmptyPerson({
     id: newPartnerId,
     firstName: '',
-    lastName: '',
+    lastName: person.lastName || '',
     gender: person.gender === 'male' ? 'female' : person.gender === 'female' ? 'male' : 'unspecified',
     unionIds: [],
     generation: personGen,

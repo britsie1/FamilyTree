@@ -48,6 +48,8 @@ describe('Relative creation defaults', () => {
       const { tree, id } = makeTree(gender);
       const result = addPartnerToPerson(tree, id);
       assert.equal(result.tree.people[result.newPartnerId].gender, expected);
+      assert.equal(result.tree.people[result.newPartnerId].lastName, 'Smith');
+      assert.equal(tree.people[id].lastName, 'Smith');
       delete result.tree.people[result.newPartnerId];
       result.tree.unions[result.newUnionId].partnerIds = [id];
       result.tree.people.child = { id: 'child', parentUnionId: result.newUnionId, unionIds: [] };
@@ -55,8 +57,16 @@ describe('Relative creation defaults', () => {
       const reused = addPartnerToPerson(result.tree, id);
       assert.equal(reused.newUnionId, result.newUnionId);
       assert.equal(reused.tree.people[reused.newPartnerId].gender, expected);
+      assert.equal(reused.tree.people[reused.newPartnerId].lastName, 'Smith');
     });
   }
+
+  it('leaves a new partner surname blank when the source has no surname, without using the maiden name', () => {
+    const { tree, id } = makeTree();
+    delete tree.people[id].lastName;
+    const result = addPartnerToPerson(tree, id);
+    assert.equal(result.tree.people[result.newPartnerId].lastName, '');
+  });
 });
 
 describe('Person health issue index', () => {

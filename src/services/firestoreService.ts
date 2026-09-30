@@ -31,6 +31,7 @@ import type {
 import { generateId, isPresetTreeId } from './storage';
 import { threeWayMergeTree } from './treeMerge';
 import { TREE_METADATA_FIELDS } from './syncOutbox';
+import { CloudCollectionSnapshots } from './cloudTreeSnapshots';
 import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 import {
   compactTombstones,
@@ -1370,8 +1371,7 @@ export function subscribeToCloudTree(
   if (!db || !treeId) return null;
 
   let rootData: CloudTreeData | null = null;
-  let peopleMap: Record<string, Person> = {};
-  let unionsMap: Record<string, Union> = {};
+  const collections = new CloudCollectionSnapshots();
   let unsubscribePeople: Unsubscribe | null = null;
   let unsubscribeUnions: Unsubscribe | null = null;
   let isSubcollections = false;
@@ -1381,11 +1381,12 @@ export function subscribeToCloudTree(
       onUpdate(null);
       return;
     }
+    if (isSubcollections && !collections.ready) return;
 
     const combined: TreeData = {
       ...rootData,
-      people: isSubcollections ? peopleMap : (rootData.people || {}),
-      unions: isSubcollections ? unionsMap : (rootData.unions || {}),
+      people: isSubcollections ? collections.people : (rootData.people || {}),
+      unions: isSubcollections ? collections.unions : (rootData.unions || {}),
     };
 
     // Prune tombstones if in subcollections
@@ -1426,32 +1427,28 @@ export function subscribeToCloudTree(
     const peopleColRef = collection(db, TREES_COLLECTION, treeId, 'people');
     unsubscribePeople = onSnapshot(
       peopleColRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
-        if (snapshot.metadata.hasPendingWrites) return;
-        snapshot.docChanges().forEach((change) => {
-          const p = change.doc.data() as Person;
-          peopleMap[change.doc.id] = { ...p, id: change.doc.id };
-        });
-        emit();
+        const documents = snapshot.docs.map((document) => ({ id: document.id, data: () => document.data() as Person }));
+        if (collections.acceptPeople(documents, snapshot.metadata.hasPendingWrites)) emit();
       },
       (err) => {
         console.warn(`Realtime people subcollection subscription warning for tree ${treeId}:`, err);
+        onError(err);
       }
     );
 
     const unionsColRef = collection(db, TREES_COLLECTION, treeId, 'unions');
     unsubscribeUnions = onSnapshot(
       unionsColRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
-        if (snapshot.metadata.hasPendingWrites) return;
-        snapshot.docChanges().forEach((change) => {
-          const u = change.doc.data() as Union;
-          unionsMap[change.doc.id] = { ...u, id: change.doc.id };
-        });
-        emit();
+        const documents = snapshot.docs.map((document) => ({ id: document.id, data: () => document.data() as Union }));
+        if (collections.acceptUnions(documents, snapshot.metadata.hasPendingWrites)) emit();
       },
       (err) => {
         console.warn(`Realtime unions subcollection subscription warning for tree ${treeId}:`, err);
+        onError(err);
       }
     );
   };
@@ -1459,6 +1456,7 @@ export function subscribeToCloudTree(
   const docRef = doc(db, TREES_COLLECTION, treeId);
   const unsubscribeRoot = onSnapshot(
     docRef,
+    { includeMetadataChanges: true },
     (snap) => {
       if (snap.metadata.hasPendingWrites) return;
       if (!snap.exists()) {
