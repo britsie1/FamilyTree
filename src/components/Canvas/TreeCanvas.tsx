@@ -7,6 +7,7 @@ import { ConnectionCable, type PortType } from './ConnectionCable';
 import { QuickLinkMenu, type QuickLinkType } from './QuickLinkMenu';
 import { MiniMap } from './MiniMap';
 import { getPersonDisplayName } from '../../services/treeOperations';
+import { getPersonHealthIssues } from '../../services/personHealthIssues';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useTreeStore } from '../../stores/useTreeStore';
@@ -407,6 +408,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
     setConnectingState(newConnecting);
     connectingStateRef.current = newConnecting;
   }, []);
+
+  const personHealthIssues = useMemo(() => getPersonHealthIssues(tree), [tree]);
 
   // Viewport-culled visible nodes for rendering scalability
   const visibleNodes = useMemo(() => {
@@ -1292,6 +1295,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             <PersonCard
               key={node.id}
               node={node}
+              healthIssues={personHealthIssues.get(node.id)}
               isDragging={Boolean(draggingPersonId && draggingIds.has(node.id))}
               layoutStyle={layoutStyle}
               isSelected={selectedPersonId === node.id}

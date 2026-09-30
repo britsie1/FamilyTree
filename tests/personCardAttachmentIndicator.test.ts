@@ -70,6 +70,11 @@ describe('PersonCard Node Attachment Indicator', () => {
   });
 
   describe('arePersonCardPropsEqual with onPreviewDocument', () => {
+    it('rerenders when health issues change or are resolved', () => {
+      const prev = createProps({ healthIssues: [] });
+      assert.equal(arePersonCardPropsEqual(prev, createProps()), false);
+      assert.equal(arePersonCardPropsEqual(prev, createProps({ healthIssues: prev.healthIssues })), true);
+    });
     it('returns true when onPreviewDocument is identical', () => {
       const prev = createProps();
       const next = createProps();

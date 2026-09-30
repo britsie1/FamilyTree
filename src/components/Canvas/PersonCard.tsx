@@ -4,6 +4,8 @@ import { getPersonDisplayInfo } from '../../services/displayUtils';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
 import { getDirectImageUrl } from '../../services/googleDriveService';
 import { arePersonCardPropsEqual } from './personCardMemo';
+import type { HealthAnomaly } from '../../services/treeHealthAndStatsService';
+import { PersonWarningIndicator } from './PersonWarningIndicator';
 import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip, GitCommit } from 'lucide-react';
 
 export interface PersonCardProps {
@@ -44,6 +46,7 @@ export interface PersonCardProps {
   isBeaconActive?: boolean;
   isSearchMatch?: boolean;
   isSearchDimmed?: boolean;
+  healthIssues?: HealthAnomaly[];
 }
 
 const GENDER_STYLES: Record<string, { avatarBg: string; borderAccent: string }> = {
@@ -55,9 +58,9 @@ const GENDER_STYLES: Record<string, { avatarBg: string; borderAccent: string }> 
     avatarBg: 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800',
     borderAccent: 'border-l-rose-500',
   },
-  other: {
+  unspecified: {
     avatarBg: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700',
-    borderAccent: 'border-l-indigo-500',
+    borderAccent: 'border-l-yellow-500',
   },
 };
 
@@ -93,6 +96,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   isBeaconActive = false,
   isSearchMatch = false,
   isSearchDimmed = false,
+  healthIssues,
 }) => {
   const { data: person, x, y, width, height } = node;
   const currentX = dragOffset ? x + dragOffset.x : x;
@@ -133,7 +137,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
     }
   }
 
-  const styles = (person.gender && GENDER_STYLES[person.gender]) || GENDER_STYLES.other;
+  const styles = (person.gender && GENDER_STYLES[person.gender]) || GENDER_STYLES.unspecified;
 
   // Compute card style classes based on 4D temporal status
   let cardStateClasses = styles.borderAccent;
@@ -197,6 +201,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
       onMouseDown={(e) => onDragStart(e, person.id)}
       onTouchStart={(e) => onTouchStart?.(e, person.id)}
     >
+      {healthIssues && healthIssues.length > 0 && <PersonWarningIndicator issues={healthIssues} personId={person.id} />}
       {/* Interactive Beacon Radar Pulse (Target Locate) */}
       {isBeaconActive && (
         <div
@@ -312,12 +317,11 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
               data-testid="person-card-attachment-badge"
               title={documentTooltip}
               onClick={handleAttachmentClick}
-              className={`absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full shadow-md border-2 border-white dark:border-slate-900 flex items-center justify-center cursor-pointer pointer-events-auto transition-transform hover:scale-110 z-10 ${
-                documentCount > 1 ? 'px-1.5 h-5 gap-0.5 text-[10px] font-bold' : 'w-5 h-5'
-              }`}
+              aria-label={documentTooltip}
+              className="absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full shadow-md border-2 border-white dark:border-slate-900 flex items-center justify-center cursor-pointer pointer-events-auto transition-transform hover:scale-110 z-10 px-1.5 h-5 gap-0.5 text-[10px] font-bold"
             >
               <Paperclip className="w-2.5 h-2.5 stroke-[2.5]" />
-              {documentCount > 1 && <span>{documentCount}</span>}
+              <span>{documentCount}</span>
             </button>
           )}
         </div>
@@ -353,17 +357,6 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
               >
                 <GitFork className="w-3.5 h-3.5 rotate-90" />
               </span>
-            )}
-            {hasDocuments && (
-              <button
-                type="button"
-                data-testid="person-card-attachment-icon"
-                title={documentTooltip}
-                onClick={handleAttachmentClick}
-                className="text-amber-500 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 cursor-pointer flex items-center flex-shrink-0 transition-colors p-0.5 rounded hover:bg-amber-50 dark:hover:bg-amber-950/40"
-              >
-                <Paperclip className="w-3.5 h-3.5" />
-              </button>
             )}
           </div>
 
@@ -402,7 +395,8 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
           ) : (
             dateText && (
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono mt-0.5 leading-tight">
-                {dateText}
+                <span className="block" data-testid="person-card-years">{dateText.replace(/ \(age -?\d+\)$/, '')}</span>
+                {displayInfo.age !== null && <span className="block" data-testid="person-card-age">(age {displayInfo.age})</span>}
               </p>
             )
           )}

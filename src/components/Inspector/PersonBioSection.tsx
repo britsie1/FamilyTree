@@ -185,15 +185,15 @@ export const PersonBioSection: React.FC<PersonBioSectionProps> = ({
         {/* Gender */}
         <div>
           <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Gender</label>
-          <div className="grid grid-cols-4 gap-1">
-            {(['male', 'female', 'other', 'unspecified'] as Gender[]).map((g) => (
+          <div className="grid grid-cols-3 gap-1">
+            {(['male', 'female', 'unspecified'] as Gender[]).map((g) => (
               <button
                 key={g}
                 type="button"
                 disabled={isReadOnly}
                 onClick={() => handleUpdate(person.id, { gender: g })}
                 className={`py-1 text-xs rounded capitalize border transition-all disabled:opacity-50 ${
-                  (person.gender || 'unspecified') === g
+                  (person.gender === 'other' ? 'unspecified' : person.gender || 'unspecified') === g
                     ? 'bg-indigo-600 text-white border-indigo-600 font-medium shadow-sm'
                     : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-750 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}

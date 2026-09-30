@@ -23,7 +23,8 @@ export function arePersonCardPropsEqual(
     prev.layoutStyle !== next.layoutStyle ||
     prev.isBeaconActive !== next.isBeaconActive ||
     prev.isSearchMatch !== next.isSearchMatch ||
-    prev.isSearchDimmed !== next.isSearchDimmed
+    prev.isSearchDimmed !== next.isSearchDimmed ||
+    prev.healthIssues !== next.healthIssues
   ) {
     return false;
   }

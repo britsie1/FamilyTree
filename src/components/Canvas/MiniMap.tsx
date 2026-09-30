@@ -239,12 +239,12 @@ export const MiniMap: React.FC<MiniMapProps> = ({
               ? '#60a5fa' // blue-400
               : gender === 'female'
               ? '#f472b6' // rose-400
-              : '#a78bfa' // violet-400
+              : '#facc15' // yellow-400
             : gender === 'male'
             ? '#3b82f6' // blue-500
             : gender === 'female'
             ? '#ec4899' // pink-500
-            : '#8b5cf6'; // violet-500
+            : '#eab308'; // yellow-500
 
           return (
             <rect

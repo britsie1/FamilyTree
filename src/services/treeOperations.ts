@@ -21,6 +21,11 @@ export function createEmptyPerson(overrides: Partial<Person> = {}): Person {
   };
 }
 
+/** Prefer a woman's birth surname when creating her parents or siblings. */
+function getFamilySurname(person: Person): string {
+  return (person.gender === 'female' ? person.maidenName?.trim() : '') || person.lastName || '';
+}
+
 /**
  * Normalizes and cleans up the tree structure:
  * 1. Merges duplicate unions that share the exact same set of partners.
@@ -378,7 +383,7 @@ export function addSiblingToPerson(
     const newParent: Person = createEmptyPerson({
       id: newParentId,
       firstName: 'Parent of',
-      lastName: person.lastName || person.firstName || 'Family',
+      lastName: getFamilySurname(person) || person.firstName || 'Family',
       unionIds: [],
       generation: personGen - 1,
     });
@@ -408,7 +413,7 @@ export function addSiblingToPerson(
   const newSibling: Person = createEmptyPerson({
     id: newSiblingId,
     firstName: '',
-    lastName: person.lastName || '',
+    lastName: getFamilySurname(person),
     parentUnionId,
     unionIds: [],
     generation: personGen,
@@ -542,7 +547,7 @@ export function addParentToPerson(
       const newParent: Person = createEmptyPerson({
         id: newParentId,
         firstName: '',
-        lastName: existingParent?.lastName || person.lastName || '',
+        lastName: (person.gender === 'female' && person.maidenName?.trim()) || existingParent?.lastName || getFamilySurname(person),
         gender: existingParent?.gender === 'male' ? 'female' : existingParent?.gender === 'female' ? 'male' : 'unspecified',
         unionIds: [parentUnionId],
         generation: existingParent?.generation ?? newParentGen,
@@ -569,7 +574,7 @@ export function addParentToPerson(
   const newParent: Person = createEmptyPerson({
     id: newParentId,
     firstName: '',
-    lastName: person.lastName || '',
+    lastName: getFamilySurname(person),
     unionIds: [parentUnionId],
     generation: newParentGen,
   });
