@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { socialPreviewPlugin } from './scripts/socialPreview.ts';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -10,6 +11,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      socialPreviewPlugin({ ...env, ...process.env } as Record<string, string>),
     ],
     envPrefix: ['VITE_', 'FIREBASE_'],
     define: {

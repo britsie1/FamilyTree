@@ -116,6 +116,31 @@ Firebase.
 
 ## Deploying to Netlify
 
+### Social link previews
+
+Shared links use a branded 1200 × 630 PNG and static Open Graph / Twitter card
+metadata, so WhatsApp and other crawlers do not need to run JavaScript. All links
+use the same app-level preview; no family names, photos, or private tree data are
+included.
+
+Netlify supplies the public site URL through its `URL` build environment variable.
+For other hosts or manual builds, set `VITE_SITE_URL` to your public HTTPS website
+URL before running `npm run build` (see `.env.example`). This takes precedence
+over Netlify's URL and should include any deployment subdirectory. Without either
+variable, the build warns and uses a relative image URL, which some sharing
+services may not support.
+
+The editable artwork is `public/social-preview.svg`; crawlers receive
+`public/social-preview.png` for compatibility. After changing the SVG, regenerate
+the PNG with `node scripts/generateSocialPreview.mjs` (requires Playwright Chromium:
+`npx playwright install chromium`). The PNG is committed, so deployment builds do
+not require a browser.
+
+After deploying, confirm the image URL in the page source is publicly accessible.
+Messaging services cache previews, so an existing shared link may retain its old
+appearance for a while; a fresh query string can help test a new scrape. The exact
+card layout is controlled by the sharing app.
+
 ### Option A: 1-Click Git Deployment
 1. Push this repository to GitHub / GitLab.
 2. In Netlify, click **"Add new site" > "Import an existing project"**.

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>MyFamTree — Your Family, Connected</title>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#4f46e5"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <g id="person">
+      <rect width="106" height="108" rx="22" fill="#fff"/>
+      <circle cx="53" cy="37" r="15" fill="#c7d2fe"/>
+      <path d="M29 76c0-29 48-29 48 0" fill="#c7d2fe"/>
+      <rect x="32" y="89" width="42" height="4" rx="2" fill="#e0e7ff"/>
+    </g>
+  </defs>
+  <rect width="1200" height="630" fill="#3730a3"/>
+  <circle cx="1090" cy="80" r="300" fill="#a78bfa" opacity=".10"/>
+  <circle cx="40" cy="650" r="260" fill="#818cf8" opacity=".12"/>
+  <g transform="translate(72 72)">
+    <rect width="64" height="64" rx="16" fill="url(#brand)" stroke="#a5b4fc" stroke-opacity=".4"/>
+    <path d="M32 51V30M32 39L18 25M32 39L46 25M32 32V19" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="32" cy="15" r="6" fill="#fff"/><circle cx="16" cy="23" r="6" fill="#a7f3d0"/><circle cx="48" cy="23" r="6" fill="#a7f3d0"/>
+    <path d="M24 52h16" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="154" y="116" font-size="38" font-weight="700" fill="#fff">MyFamTree</text>
+    <text x="72" y="258" font-size="64" font-weight="700" fill="#fff">Your Family,</text>
+    <text x="72" y="335" font-size="64" font-weight="700" fill="#a7f3d0">Connected.</text>
+    <text x="74" y="404" font-size="25" fill="#e0e7ff">Bring your family story to life.</text>
+    <text x="74" y="444" font-size="25" fill="#e0e7ff">Explore your roots. Share your story.</text>
+    <rect x="72" y="502" width="303" height="54" rx="27" fill="#fff" fill-opacity=".12" stroke="#c7d2fe" stroke-opacity=".3"/>
+    <text x="223" y="537" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">Every generation matters</text>
+  </g>
+  <g fill="none" stroke="#a7f3d0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M826 211h140M896 211v94M746 305h300M746 305v70M896 305v70M1046 305v70"/>
+  </g>
+  <use href="#person" x="773" y="142"/>
+  <use href="#person" x="913" y="142"/>
+  <use href="#person" x="693" y="370"/>
+  <use href="#person" x="843" y="370"/>
+  <use href="#person" x="993" y="370"/>
+  <circle cx="896" cy="305" r="9" fill="#a7f3d0"/>
+</svg>
