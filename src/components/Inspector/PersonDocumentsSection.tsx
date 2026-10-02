@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DocumentDetails, DocumentDetailsForm, type DocumentDetailsValues } from './DocumentDetails';
 import type { Person, PersonDocument, TreeData } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import {
@@ -41,7 +42,11 @@ export interface PersonDocumentsSectionProps {
 
 type CategoryTab = 'all' | 'vital' | 'photos' | 'documents';
 
-export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
+export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = (props) => (
+  <PersonDocumentsContent key={props.person.id} {...props} />
+);
+
+const PersonDocumentsContent: React.FC<PersonDocumentsSectionProps> = ({
   person,
   tree: propTree,
   isReadOnly: propIsReadOnly,
@@ -52,7 +57,10 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
   const { user } = useAuth();
   const [isAttachingDoc, setIsAttachingDoc] = useState(false);
   const [selectedFile, setSelectedFile] = useState<globalThis.File | null>(null);
-  const [docDescription, setDocDescription] = useState('');
+  const [docDetails, setDocDetails] = useState<DocumentDetailsValues>({});
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editingDetails, setEditingDetails] = useState<DocumentDetailsValues>({});
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<CategoryTab>('all');
@@ -70,6 +78,15 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
 
   const displayName = getPersonDisplayName(person);
   const documents = person.documents || [];
+
+  const saveDetails = () => {
+    if (isReadOnly || !editingDocId) return;
+    handleUpdate(person.id, {
+      documents: documents.map((doc) => doc.id === editingDocId ? { ...doc, ...editingDetails } : doc),
+    });
+    setExpandedDocId(editingDocId);
+    setEditingDocId(null);
+  };
 
   const renderDocIcon = (doc: PersonDocument) => {
     const cat = getFileCategory(doc.fileType, doc.name);
@@ -116,7 +133,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
   };
 
   const handleUploadDocument = async () => {
-    if (!selectedFile || !tree.googleDriveConfig?.folderId) return;
+    if (isReadOnly || !selectedFile || !tree.googleDriveConfig?.folderId) return;
     setIsUploading(true);
     setUploadError(null);
     try {
@@ -126,7 +143,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
         tree.googleDriveConfig.folderId,
         token,
         {
-          description: docDescription.trim(),
+          description: docDetails.description?.trim(),
           user: user
             ? {
                 uid: user.uid,
@@ -137,10 +154,10 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
         }
       );
       const currentDocs = person.documents || [];
-      handleUpdate(person.id, { documents: [...currentDocs, newDoc] });
+      handleUpdate(person.id, { documents: [...currentDocs, { ...newDoc, ...docDetails }] });
       setIsAttachingDoc(false);
       setSelectedFile(null);
-      setDocDescription('');
+      setDocDetails({});
     } catch (err: any) {
       console.error('Failed to upload document to Google Drive:', err);
       setUploadError(err.message || 'Failed to upload document.');
@@ -150,6 +167,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
   };
 
   const handleDeleteDocument = async (docToDelete: PersonDocument) => {
+    if (isReadOnly) return;
     if (!window.confirm(`Delete document "${docToDelete.name}" from ${displayName}?`)) {
       return;
     }
@@ -195,7 +213,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
       </div>
 
       {/* If tree does NOT have Google Drive linked */}
-      {!tree.googleDriveConfig ? (
+      {!tree.googleDriveConfig && (
         <div className="bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs space-y-2">
           <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
             <Folder className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -212,10 +230,11 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
             </button>
           )}
         </div>
-      ) : (
+      )}
+      {(tree.googleDriveConfig || documents.length > 0) && (
         <>
           {/* Linked Folder Hint */}
-          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
+          {tree.googleDriveConfig && <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
             <span className="truncate">
               Storage: <span className="font-semibold text-slate-700 dark:text-slate-300">{tree.googleDriveConfig.folderName}</span>
             </span>
@@ -230,10 +249,10 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             )}
-          </div>
+          </div>}
 
           {/* Upload Form Drawer */}
-          {isAttachingDoc && (
+          {isAttachingDoc && !isReadOnly && (
             <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-xl p-3 space-y-2.5 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1">
@@ -244,7 +263,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                   onClick={() => {
                     setIsAttachingDoc(false);
                     setSelectedFile(null);
-                    setDocDescription('');
+                    setDocDetails({});
                     setUploadError(null);
                   }}
                   className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
@@ -280,15 +299,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                 </div>
               )}
 
-              <div>
-                <input
-                  type="text"
-                  value={docDescription}
-                  onChange={(e) => setDocDescription(e.target.value)}
-                  placeholder="Description (e.g. Birth Certificate, Photo 1945)"
-                  className="w-full px-2.5 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-                />
-              </div>
+              <DocumentDetailsForm value={docDetails} onChange={setDocDetails} disabled={isUploading} />
 
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
@@ -296,7 +307,7 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                   onClick={() => {
                     setIsAttachingDoc(false);
                     setSelectedFile(null);
-                    setDocDescription('');
+                    setDocDetails({});
                   }}
                   className="px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 rounded-lg cursor-pointer"
                 >
@@ -356,8 +367,8 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
           ) : (
             <div className="space-y-1.5">
               {filteredDocuments.map((doc) => (
+                <div key={doc.id} className="space-y-2">
                 <div
-                  key={doc.id}
                   className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-lg group transition-colors"
                 >
                   <div
@@ -387,6 +398,13 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       type="button"
+                      onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
+                      aria-expanded={expandedDocId === doc.id}
+                      aria-label={`Details for ${doc.name}`}
+                      className="px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                    >Details</button>
+                    <button
+                      type="button"
                       onClick={() =>
                         onPreviewDocument
                           ? onPreviewDocument(doc, displayName)
@@ -409,6 +427,24 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                     {!isReadOnly && (
                       <button
                         type="button"
+                        aria-label={`Edit details for ${doc.name}`}
+                        onClick={() => {
+                          setEditingDocId(doc.id);
+                          setEditingDetails({
+                            description: doc.description || '',
+                            documentType: doc.documentType || '',
+                            documentDate: doc.documentDate || '',
+                            documentPlace: doc.documentPlace || '',
+                            sourceReference: doc.sourceReference || '',
+                            transcription: doc.transcription || '',
+                          });
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                      >Edit</button>
+                    )}
+                    {!isReadOnly && (
+                      <button
+                        type="button"
                         onClick={() => handleDeleteDocument(doc)}
                         className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-all cursor-pointer"
                         title="Delete this document"
@@ -417,6 +453,18 @@ export const PersonDocumentsSection: React.FC<PersonDocumentsSectionProps> = ({
                       </button>
                     )}
                   </div>
+                </div>
+                {editingDocId === doc.id && !isReadOnly ? (
+                  <div className="p-3 space-y-3 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <DocumentDetailsForm value={editingDetails} onChange={setEditingDetails} />
+                    <div className="flex justify-end gap-3 text-xs">
+                      <button type="button" onClick={() => setEditingDocId(null)} className="text-slate-500 cursor-pointer">Cancel</button>
+                      <button type="button" onClick={saveDetails} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg cursor-pointer">Save details</button>
+                    </div>
+                  </div>
+                ) : expandedDocId === doc.id ? (
+                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800"><DocumentDetails document={doc} /></div>
+                ) : null}
                 </div>
               ))}
             </div>

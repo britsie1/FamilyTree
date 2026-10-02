@@ -46,6 +46,24 @@ Built with **React**, **TypeScript**, **Vite**, and **Tailwind CSS**. Fully stat
 
 ## Getting Started Locally
 
+### Typed attachment details
+
+In a person's **Documents & Records** section, add optional details during upload,
+or choose **Edit** on an existing attachment. Details include a description/notes,
+document type, date, place, source/reference and a multiline transcription of the
+handwritten text. Dates accept partial or approximate values such as “circa 1890”.
+Use **Save details** to save edits or **Cancel** to discard them; blanking a field
+clears it. **Details** shows the saved text without loading Google Drive, and
+**View** displays it alongside the original scan. In the preview modal, choose
+**Edit details** to update the text while looking at the scan, then **Save details**
+or **Cancel**. Closing the preview discards unsaved changes. Viewers can read but
+not edit.
+
+These details are stored with the attachment in the family tree (including local
+storage, cloud sync and JSON backups), not written back into the original Drive
+file. Existing attachments need no migration. Transcription is manual; no OCR is
+performed.
+
 ```bash
 # Install dependencies
 npm install

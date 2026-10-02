@@ -57,6 +57,11 @@ export function validatePersonDocument(raw: unknown): ValidationResult<PersonDoc
   if (!isString(raw.uploadedAt)) {
     errors.push('PersonDocument.uploadedAt must be a string');
   }
+  for (const field of ['description', 'documentType', 'documentDate', 'documentPlace', 'sourceReference', 'transcription']) {
+    if (raw[field] !== undefined && !isString(raw[field])) {
+      errors.push(`PersonDocument.${field} must be a string if provided`);
+    }
+  }
 
   return {
     success: errors.length === 0,

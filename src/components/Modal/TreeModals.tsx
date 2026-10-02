@@ -89,6 +89,12 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
 
   const previewDoc = useModalStore((s) => s.previewDoc);
   const closePreviewDoc = useModalStore((s) => s.closePreviewDoc);
+  // Resolve the attachment owner rather than relying on canvas selection, which
+  // can change while the preview is open. Use live data to reflect saved edits.
+  const previewPerson = previewDoc
+    ? Object.values(tree.people).find((person) => person.documents?.some((doc) => doc.id === previewDoc.doc.id))
+    : undefined;
+  const livePreviewDoc = previewPerson?.documents?.find((doc) => doc.id === previewDoc?.doc.id);
 
   const isSunburstModalOpen = useModalStore((s) => s.isSunburstModalOpen);
   const closeSunburstModal = useModalStore((s) => s.closeSunburstModal);
@@ -252,16 +258,25 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
       {/* Document Preview Modal */}
       {previewDoc && (
         <DocumentPreviewModal
+          key={`${tree.id}:${previewDoc.doc.id}`}
           isOpen={Boolean(previewDoc)}
           onClose={closePreviewDoc}
-          document={previewDoc.doc}
+          document={livePreviewDoc || previewDoc.doc}
           personName={previewDoc.personName}
           isReadOnly={isReadOnly}
+          onSaveDetails={previewPerson ? (details) => {
+            if (useCollabStore.getState().userPermission === 'viewer') return;
+            const person = useTreeStore.getState().tree.people[previewPerson.id];
+            if (!person?.documents?.some((doc) => doc.id === previewDoc.doc.id)) return;
+            updatePerson(person.id, {
+              documents: person.documents.map((doc) => doc.id === previewDoc.doc.id ? { ...doc, ...details } : doc),
+            });
+          } : undefined}
           onDelete={(docId) => {
-            if (selectedPersonId) {
-              const person = tree.people[selectedPersonId];
+            if (!isReadOnly && previewPerson) {
+              const person = tree.people[previewPerson.id];
               if (person && person.documents) {
-                updatePerson(selectedPersonId, {
+                updatePerson(person.id, {
                   documents: person.documents.filter((d) => d.id !== docId),
                 });
               }

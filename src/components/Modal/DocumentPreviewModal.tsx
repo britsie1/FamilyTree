@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { PersonDocument } from '../../types/tree';
+import { DocumentDetails, DocumentDetailsForm, type DocumentDetailsValues } from '../Inspector/DocumentDetails';
 import {
   getDriveEmbedUrl,
   formatFileSize,
@@ -30,6 +31,7 @@ interface DocumentPreviewModalProps {
   personName?: string;
   isReadOnly?: boolean;
   onDelete?: (documentId: string) => void;
+  onSaveDetails?: (details: DocumentDetailsValues) => void;
 }
 
 export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
@@ -39,8 +41,11 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   personName,
   isReadOnly = false,
   onDelete,
+  onSaveDetails,
 }) => {
   const [iframeLoading, setIframeLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftDetails, setDraftDetails] = useState<DocumentDetailsValues>({});
 
   if (!isOpen || !document) return null;
 
@@ -130,8 +135,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </div>
         </div>
 
+        <div className="flex-1 min-h-0 flex flex-col sm:flex-row overflow-auto">
         {/* Preview Frame */}
-        <div className="flex-1 relative bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
+        <div className="flex-1 min-h-[240px] relative bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
           {iframeLoading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100/90 dark:bg-slate-950/90 z-10">
               <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
@@ -146,6 +152,50 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             allow="autoplay"
             onLoad={() => setIframeLoading(false)}
           />
+        </div>
+        <aside aria-label="Typed document details" className="sm:w-80 sm:flex-shrink-0 p-4 overflow-y-auto border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h4 className="font-semibold text-sm text-slate-800 dark:text-slate-200">Document details</h4>
+            {!isReadOnly && onSaveDetails && !isEditing && (
+              <button
+                type="button"
+                onClick={() => { setDraftDetails({}); setIsEditing(true); }}
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 cursor-pointer"
+              >Edit details</button>
+            )}
+          </div>
+          {isEditing && !isReadOnly && onSaveDetails ? (
+            <div className="space-y-3">
+              <DocumentDetailsForm
+                value={{ ...document, ...draftDetails }}
+                onChange={(details) => {
+                  // Keep only the editable fields, never file IDs or upload metadata.
+                  setDraftDetails({
+                    description: details.description,
+                    documentType: details.documentType,
+                    documentDate: details.documentDate,
+                    documentPlace: details.documentPlace,
+                    sourceReference: details.sourceReference,
+                    transcription: details.transcription,
+                  });
+                }}
+              />
+              <div className="flex justify-end gap-3 text-xs">
+                <button type="button" onClick={() => { setDraftDetails({}); setIsEditing(false); }} className="text-slate-500 cursor-pointer">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isReadOnly || !onSaveDetails) return;
+                    onSaveDetails(draftDetails);
+                    setDraftDetails({});
+                    setIsEditing(false);
+                  }}
+                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg cursor-pointer"
+                >Save details</button>
+              </div>
+            </div>
+          ) : <DocumentDetails document={document} />}
+        </aside>
         </div>
 
         {/* Details & Action Bar */}

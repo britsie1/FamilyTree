@@ -11,6 +11,8 @@ import {
   resolveUserPermission,
 } from '../src/services/firestoreService';
 import type { TreeData, PersonDocument, GoogleDriveConfig, CloudTreeMetadata } from '../src/types/tree';
+import { validatePersonDocument } from '../src/services/schema/validators';
+import { updatePersonInTree } from '../src/services/treeOperations';
 
 describe('Person Documents & Google Drive Tree Storage', () => {
   const sampleDoc: PersonDocument = {
@@ -57,6 +59,34 @@ describe('Person Documents & Google Drive Tree Storage', () => {
     assert.equal(p.documents[0].name, 'Birth_Certificate_1890.pdf');
     assert.equal(p.documents[0].driveFileId, 'drive-file-abc-123');
     assert.ok(new Date(updated.updatedAt).getTime() >= new Date(sampleTree.updatedAt).getTime());
+  });
+
+  it('preserves typed metadata through attachment, edits, sanitization and JSON/cloud serialization', () => {
+    const details = {
+      description: 'Research notes', documentType: 'Birth register', documentDate: 'circa 1890',
+      documentPlace: 'Cape Town', sourceReference: 'Register 4, page 12',
+      transcription: 'John Smith\nMother: [illegible]\n<not markup>',
+    };
+    const attached = attachDocumentToPerson(sampleTree, 'p1', { ...sampleDoc, ...details });
+    const otherDoc = { ...sampleDoc, id: 'doc-other' };
+    const withOther = attachDocumentToPerson(attached, 'p1', otherDoc);
+    const updated = updatePersonInTree(withOther, 'p1', {
+      documents: withOther.people.p1.documents!.map((doc) => doc.id === sampleDoc.id ? { ...doc, documentDate: '1891' } : doc),
+    });
+    const roundTrip = sanitizeTree(JSON.parse(JSON.stringify(cleanForFirestore(updated))));
+    assert.deepEqual(roundTrip.people.p1.documents?.[0], { ...sampleDoc, ...details, documentDate: '1891' });
+    assert.deepEqual(roundTrip.people.p1.documents?.[1], otherDoc);
+    assert.equal(attached.people.p1.documents?.[0].documentDate, 'circa 1890');
+    assert.equal(sampleTree.people.p1.documents, undefined);
+  });
+
+  it('accepts legacy and empty metadata but rejects non-text metadata', () => {
+    assert.equal(validatePersonDocument(sampleDoc).success, true);
+    for (const field of ['description', 'documentType', 'documentDate', 'documentPlace', 'sourceReference', 'transcription']) {
+      assert.equal(validatePersonDocument({ ...sampleDoc, [field]: '' }).success, true);
+      assert.equal(validatePersonDocument({ ...sampleDoc, [field]: 123 }).success, false);
+      assert.equal(validatePersonDocument({ ...sampleDoc, [field]: {} }).success, false);
+    }
   });
 
   it('appends multiple documents to an existing document array', () => {

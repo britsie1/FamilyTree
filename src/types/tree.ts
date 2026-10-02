@@ -66,6 +66,11 @@ export interface PersonDocument {
     email?: string;
   };
   description?: string;
+  documentType?: string;
+  documentDate?: string; // Free text supports approximate dates and partial years
+  documentPlace?: string;
+  sourceReference?: string;
+  transcription?: string;
 }
 
 export interface GoogleDriveConfig {
