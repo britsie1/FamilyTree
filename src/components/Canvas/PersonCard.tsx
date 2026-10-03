@@ -1,12 +1,14 @@
 import React, { memo } from 'react';
 import type { LayoutNode, LayoutStyle, Person, TreeLink, PersonDocument } from '../../types/tree';
-import { getPersonDisplayInfo } from '../../services/displayUtils';
+import { getPersonDisplayInfo, getPersonCardNameLines } from '../../services/displayUtils';
 import { getPersonTemporalInfo, type HistoricalMoment } from '../../services/temporalEngine';
 import { getDirectImageUrl } from '../../services/googleDriveService';
+import { getPersonSilhouetteUrl } from '../../services/personPortrait';
+import { PORTRAIT_HEIGHT } from '../../services/layout/constants';
 import { arePersonCardPropsEqual } from './personCardMemo';
 import type { HealthAnomaly } from '../../services/treeHealthAndStatsService';
 import { PersonWarningIndicator } from './PersonWarningIndicator';
-import { User, Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip, GitCommit } from 'lucide-react';
+import { Heart, Baby, Users, ArrowUp, ArrowLeft, ChevronDown, ChevronUp, Sparkles, Cake, Check, GitFork, ExternalLink, Paperclip, GitCommit } from 'lucide-react';
 
 export interface PersonCardProps {
   node: LayoutNode;
@@ -103,7 +105,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
   const currentY = dragOffset ? y + dragOffset.y : y;
 
   const displayInfo = node.displayInfo ?? getPersonDisplayInfo(person);
-  const { displayName, fullName, isUnnamed, initials, birthYear, standardDateText } = displayInfo;
+  const { displayName, fullName, isUnnamed, birthYear, standardDateText } = displayInfo;
 
   const hasDocuments = Boolean(person.documents && person.documents.length > 0);
   const documentCount = person.documents?.length || 0;
@@ -286,28 +288,36 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
         </button>
       )}
 
-      <div className="flex items-center gap-3 p-2.5 h-full relative">
-        {/* Avatar */}
+      <div className="flex flex-col h-full relative">
+        {/* Full-width portrait, with a silhouette behind photos that fail to load. */}
         <div className="relative flex-shrink-0">
           <div
-            className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm border overflow-hidden shadow-inner ${styles.avatarBg} ${
+            data-testid="person-card-portrait"
+            style={{ height: PORTRAIT_HEIGHT }}
+            className={`relative w-full rounded-t-[11px] overflow-hidden bg-gradient-to-b from-white/50 to-transparent dark:from-white/5 ${styles.avatarBg} ${
               isUnborn ? 'opacity-40' : ''
             }`}
           >
+            <img
+              src={getPersonSilhouetteUrl(person.gender)}
+              alt={`${person.gender === 'male' ? 'Male' : person.gender === 'female' ? 'Female' : 'Neutral'} profile silhouette`}
+              data-testid="person-card-silhouette"
+              className="w-full h-full object-contain opacity-80 dark:opacity-65"
+              draggable={false}
+            />
             {person.avatarUrl ? (
               <img
+                key={person.avatarUrl}
                 src={getDirectImageUrl(person.avatarUrl)}
                 alt={displayName}
-                className="w-full h-full object-cover"
+                data-testid="person-card-photo"
+                className="absolute inset-0 w-full h-full object-cover object-[center_35%]"
+                draggable={false}
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
-            ) : initials !== '?' ? (
-              <span>{initials}</span>
-            ) : (
-              <User className="w-5 h-5 opacity-60" />
-            )}
+            ) : null}
           </div>
 
           {/* Attachment Indicator Badge on Avatar */}
@@ -318,7 +328,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
               title={documentTooltip}
               onClick={handleAttachmentClick}
               aria-label={documentTooltip}
-              className="absolute -bottom-1 -right-1 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full shadow-md border-2 border-white dark:border-slate-900 flex items-center justify-center cursor-pointer pointer-events-auto transition-transform hover:scale-110 z-10 px-1.5 h-5 gap-0.5 text-[10px] font-bold"
+              className="absolute bottom-2 right-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full shadow-md border-2 border-white dark:border-slate-900 flex items-center justify-center cursor-pointer pointer-events-auto transition-transform hover:scale-110 z-10 px-2 h-6 gap-1 text-[10px] font-bold"
             >
               <Paperclip className="w-2.5 h-2.5 stroke-[2.5]" />
               <span>{documentCount}</span>
@@ -327,10 +337,11 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
         </div>
 
         {/* Info */}
-        <div className="flex-1 min-w-0 pr-1">
-          <div className="flex items-center gap-1.5">
+        <div className="flex-1 min-w-0 px-3 pt-3 pb-2 text-center">
+          <div className="flex items-center justify-center gap-1.5">
             <h4
-              className={`text-sm font-semibold truncate leading-tight ${
+              data-testid="person-card-name"
+              className={`text-[22px] min-w-0 font-semibold leading-tight tracking-tight ${
                 isUnborn
                   ? 'text-slate-400 dark:text-slate-500 font-normal italic'
                   : isUnnamed
@@ -339,7 +350,9 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
               }`}
               title={person.knownAs?.trim() && (person.firstName || person.middleNames) ? `${displayName} (${fullName})` : fullName}
             >
-              {displayName}
+              {getPersonCardNameLines(person).map((line, index) => (
+                <span key={index} className="block truncate" data-testid="person-card-name-line">{line}</span>
+              ))}
             </h4>
             {person.isDeceased && !isTemporalActive && (
               <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded font-normal flex-shrink-0">
@@ -369,9 +382,10 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
 
           {/* Temporal Age Badge or Standard Date Text */}
           {isTemporalActive && temporalInfo ? (
-            <div className="mt-0.5">
+            <div className="mt-2">
+              {standardDateText && <p className="text-xs text-slate-500 dark:text-slate-400" data-testid="person-card-years">{standardDateText.replace(/ \(age -?\d+\)$/, '')}</p>}
               {isLivingAtYear ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 mt-1">
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.2 rounded-full shadow-xs">
                     <Sparkles className="w-2.5 h-2.5" />
                     {temporalInfo.ageLabel}
@@ -383,7 +397,7 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
                   )}
                 </div>
               ) : isDeceasedAtYear ? (
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1 font-medium mt-1">
                   <span className="text-slate-400 dark:text-slate-500">✝</span> {temporalInfo.ageLabel}
                 </span>
               ) : (
@@ -394,9 +408,9 @@ const PersonCardComponent: React.FC<PersonCardProps> = ({
             </div>
           ) : (
             dateText && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono mt-0.5 leading-tight">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
                 <span className="block" data-testid="person-card-years">{dateText.replace(/ \(age -?\d+\)$/, '')}</span>
-                {displayInfo.age !== null && <span className="block" data-testid="person-card-age">(age {displayInfo.age})</span>}
+                {displayInfo.age !== null && <span className="block mt-1 text-[11px] text-slate-400 dark:text-slate-500" data-testid="person-card-age">(age {displayInfo.age})</span>}
               </p>
             )
           )}

@@ -5,6 +5,8 @@ import {
   computeLayout,
   detectFamilyGroups,
   CARD_WIDTH,
+  CARD_HEIGHT,
+  VERTICAL_SPACING,
   HORIZONTAL_SPACING,
 } from '../src/services/layoutEngine.ts';
 import { orderPeopleSubset } from '../src/services/layout/barycentricOrdering.ts';
@@ -620,12 +622,12 @@ describe('calculateGenerations', () => {
     assert.strictEqual(layout.nodes[rootId].generation, 0);
     assert.strictEqual(layout.nodes[c1].generation, 1);
 
-    // Vertical spacing: level * 254
-    assert.strictEqual(layout.nodes[p1].y, -254, 'Parent card should be at Y = -254');
+    const generationStep = CARD_HEIGHT + VERTICAL_SPACING;
+    assert.strictEqual(layout.nodes[p1].y, -generationStep, 'Parent card should be one generation above root');
     assert.strictEqual(layout.nodes[rootId].y, 0, 'Root card should be at Y = 0');
-    assert.strictEqual(layout.nodes[c1].y, 254, 'Child card should be at Y = 254');
+    assert.strictEqual(layout.nodes[c1].y, generationStep, 'Child card should be one generation below root');
 
-    assert.ok(layout.bounds.minY <= -254, 'Bounds minY must encompass negative Y coordinates');
+    assert.ok(layout.bounds.minY <= -generationStep, 'Bounds minY must encompass negative Y coordinates');
   });
 });
 
@@ -958,10 +960,11 @@ describe('multi-lane bus routing and line clarity', () => {
     const u_orphan = layout.unions['u_orphan_above'];
 
     assert(u_gp && u_orphan);
-    // Grandparents are at y=[0, 104], children at y=[254, 358]
-    // u_gp bus MUST be strictly below grandparents (y > 104) and above children (y < 254)
-    assert(u_gp.busCoord! > 104, `u_gp bus bar must be below grandparents card (got ${u_gp.busCoord})`);
-    assert(u_gp.busCoord! < 254, `u_gp bus bar must be above children card (got ${u_gp.busCoord})`);
+    // The bus must stay in the gap between the grandparent and child cards.
+    const grandparentBottom = Math.max(...u_gp.partnerNodes.map((node) => node.y + node.height));
+    const childTop = Math.min(...u_gp.childrenNodes.map((node) => node.y));
+    assert(u_gp.busCoord! > grandparentBottom, `u_gp bus bar must be below grandparents card (got ${u_gp.busCoord})`);
+    assert(u_gp.busCoord! < childTop, `u_gp bus bar must be above children card (got ${u_gp.busCoord})`);
 
     // u_orphan bus bar MUST be above grandparents (y <= 0)
     assert(u_orphan.busCoord! <= 0, `u_orphan bus bar must be above grandparents card (got ${u_orphan.busCoord})`);

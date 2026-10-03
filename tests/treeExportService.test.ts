@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { generateTreeSvgString } from '../src/services/treeExportService.ts';
 import { createDoubleInLawPreset } from './fixtures/exampleTrees.ts';
 import { computeLayout } from '../src/services/layoutEngine.ts';
+import { getPersonSilhouetteUrl } from '../src/services/personPortrait.ts';
 
 describe('treeExportService', () => {
   it('generates valid SVG XML string for a tree layout', () => {
@@ -76,7 +77,20 @@ describe('treeExportService', () => {
     );
     assert.ok(
       svgString.includes(`clip-path="url(#avatar-clip-${firstPersonId})"`),
-      'Should link image to circular clip-path'
+      'Should link image to portrait clip-path'
     );
+  });
+
+  it('exports full-width silhouettes with name, dates, and age stacked vertically', () => {
+    const tree = createDoubleInLawPreset();
+    const id = Object.keys(tree.people)[0];
+    Object.assign(tree.people[id], { gender: 'female', birthDate: '1920', deathDate: '1995', isDeceased: true, avatarUrl: undefined });
+    const layout = computeLayout(tree, 'vertical');
+    const svg = generateTreeSvgString(tree, layout);
+    assert.ok(svg.includes(getPersonSilhouetteUrl('female').replace(/'/g, '&apos;')));
+    assert.ok(svg.includes('1920 – 1995</text>'));
+    assert.ok(svg.includes('(age 75)</text>'));
+    assert.ok(svg.includes('font-size="22"'));
+    assert.ok(!svg.includes('Avatar Circle'));
   });
 });

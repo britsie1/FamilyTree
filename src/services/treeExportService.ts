@@ -1,7 +1,9 @@
 import type { TreeData, TreeLayout } from '../types/tree';
-import { getPersonDisplayInfo } from './displayUtils';
+import { getPersonDisplayInfo, getPersonCardNameLines } from './displayUtils';
 import { sanitizeFilename } from './storage';
 import { getDirectImageUrl } from './googleDriveService';
+import { getPersonSilhouetteUrl } from './personPortrait';
+import { PORTRAIT_HEIGHT } from './layout/constants';
 import confetti from 'canvas-confetti';
 
 /**
@@ -116,67 +118,61 @@ export function generateTreeSvgString(
   for (const node of Object.values(layout.nodes)) {
     const person = node.data;
     const displayInfo = node.displayInfo ?? getPersonDisplayInfo(person);
-    const { displayName, birthYear, deathYear, initials } = displayInfo;
+    const { standardDateText, age } = displayInfo;
+    const nameLines = getPersonCardNameLines(person);
 
     const gender = person.gender || 'other';
     let genderAccent = '#6366f1';
     let avatarFill = isDark ? '#1e1b4b' : '#e0e7ff';
-    let avatarTextColor = isDark ? '#a5b4fc' : '#4338ca';
 
     if (gender === 'male') {
       genderAccent = '#3b82f6';
       avatarFill = isDark ? '#172554' : '#dbeafe';
-      avatarTextColor = isDark ? '#93c5fd' : '#1d4ed8';
     } else if (gender === 'female') {
       genderAccent = '#f43f5e';
       avatarFill = isDark ? '#4c0519' : '#ffe4e6';
-      avatarTextColor = isDark ? '#fda4af' : '#be123c';
     }
 
-    let dateSpan = '';
-    if (birthYear || deathYear) {
-      dateSpan = `${birthYear || '?'} - ${deathYear || (person.isDeceased ? '?' : 'Present')}`;
-    }
+    const dateSpan = standardDateText.replace(/ \(age -?\d+\)$/, '');
+    const portraitWidth = node.width - 5;
+    const textY = PORTRAIT_HEIGHT + 34;
+    const nameHeight = nameLines.length * 28;
+    const datesY = textY + nameHeight;
 
     parts.push(
       `    <g id="person-${person.id}" transform="translate(${node.x}, ${node.y})" filter="url(#card-shadow)">`,
       `      <!-- Card Base -->`,
       `      <rect x="0" y="0" width="${node.width}" height="${node.height}" rx="12" fill="${cardBg}" stroke="${cardBorder}" stroke-width="1" />`,
       `      <!-- Gender Accent Line -->`,
-      `      <path d="M0 12 Q0 0 12 0 L12 ${node.height} Q0 ${node.height} 0 ${node.height - 12} Z" fill="${genderAccent}" />`
+      `      <path d="M0 12 Q0 0 4 2 L4 ${node.height - 2} Q0 ${node.height} 0 ${node.height - 12} Z" fill="${genderAccent}" />`,
+      `      <clipPath id="avatar-clip-${person.id}"><path d="M4 12 Q4 1 15 1 H${node.width - 12} Q${node.width - 1} 1 ${node.width - 1} 12 V${PORTRAIT_HEIGHT} H4 Z" /></clipPath>`,
+      `      <g clip-path="url(#avatar-clip-${person.id})">`,
+      `        <rect x="4" y="1" width="${portraitWidth}" height="${PORTRAIT_HEIGHT}" fill="${avatarFill}" />`,
+      `        <image href="${escapeXml(getPersonSilhouetteUrl(person.gender))}" x="4" y="1" width="${portraitWidth}" height="${PORTRAIT_HEIGHT}" />`
     );
 
     if (person.avatarUrl) {
       const avatarSrc = getDirectImageUrl(person.avatarUrl);
       parts.push(
-        `      <clipPath id="avatar-clip-${person.id}">`,
-        `        <circle cx="34" cy="${node.height / 2}" r="18" />`,
-        `      </clipPath>`,
-        `      <!-- Avatar Circle (Background & Fallback) -->`,
-        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="${avatarFill}" stroke="${genderAccent}" stroke-width="1.5" />`,
-        `      <text x="34" y="${node.height / 2 + 4}" font-size="11" font-weight="bold" fill="${avatarTextColor}" text-anchor="middle">${escapeXml(initials || '?')}</text>`,
         `      <!-- Custom Photo Avatar -->`,
-        `      <image href="${escapeXml(avatarSrc)}" x="16" y="${node.height / 2 - 18}" width="36" height="36" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar-clip-${person.id})" />`,
-        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="none" stroke="${genderAccent}" stroke-width="1.5" />`
-      );
-    } else {
-      parts.push(
-        `      <!-- Avatar Circle -->`,
-        `      <circle cx="34" cy="${node.height / 2}" r="18" fill="${avatarFill}" stroke="${genderAccent}" stroke-width="1.5" />`,
-        `      <text x="34" y="${node.height / 2 + 4}" font-size="11" font-weight="bold" fill="${avatarTextColor}" text-anchor="middle">${escapeXml(initials || '?')}</text>`
+        `      <image href="${escapeXml(avatarSrc)}" x="4" y="1" width="${portraitWidth}" height="${PORTRAIT_HEIGHT}" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar-clip-${person.id})" />`
       );
     }
 
     parts.push(
+      `      </g>`,
       `      <!-- Name -->`,
-      `      <text x="62" y="${dateSpan ? node.height / 2 - 2 : node.height / 2 + 5}" font-size="12" font-weight="600" fill="${textColor}">${escapeXml(displayName)}</text>`
+      `      <svg x="12" y="${textY - 22}" width="${node.width - 24}" height="${nameHeight}">${nameLines.map((line, index) => `<text x="50%" y="${22 + index * 28}" text-anchor="middle" font-size="22" font-weight="600" fill="${textColor}">${escapeXml(line)}</text>`).join('')}</svg>`
     );
 
     if (dateSpan) {
       parts.push(
         `      <!-- Lifespan Dates -->`,
-        `      <text x="62" y="${node.height / 2 + 14}" font-size="10" font-family="monospace" fill="${subtextColor}">${escapeXml(dateSpan)}</text>`
+        `      <text x="${node.width / 2}" y="${datesY}" text-anchor="middle" font-size="12" fill="${subtextColor}">${escapeXml(dateSpan)}</text>`
       );
+    }
+    if (age !== null) {
+      parts.push(`      <text x="${node.width / 2}" y="${datesY + 20}" text-anchor="middle" font-size="11" fill="${subtextColor}">(age ${age})</text>`);
     }
 
     parts.push(`    </g>`);

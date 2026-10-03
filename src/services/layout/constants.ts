@@ -1,5 +1,6 @@
 export const CARD_WIDTH = 220;
-export const CARD_HEIGHT = 104;
+export const CARD_HEIGHT = 284;
+export const PORTRAIT_HEIGHT = 132;
 export const HORIZONTAL_SPACING = 60;
 export const VERTICAL_SPACING = 150;
 export const UNION_NODE_RADIUS = 13;

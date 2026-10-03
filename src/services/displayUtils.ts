@@ -13,6 +13,14 @@ export function getPersonDisplayName(person?: Person | null): string {
   return result || 'Unnamed Person';
 }
 
+/** Separate name and surname without splitting multi-word names or surnames. */
+export function getPersonCardNameLines(person?: Person | null): string[] {
+  const name = person?.knownAs?.trim() || person?.firstName?.trim() || '';
+  const surname = person?.lastName?.trim() || '';
+  const lines = [name, surname].filter(Boolean);
+  return lines.length ? lines : ['Unnamed Person'];
+}
+
 /**
  * Returns the full legal name of a person (firstName + middleNames + lastName).
  */

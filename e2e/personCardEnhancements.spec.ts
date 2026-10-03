@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createBlankTree, STORAGE_KEY } from '../src/services/storage';
+import { getPersonSilhouetteUrl } from '../src/services/personPortrait';
 
 test.beforeEach(async ({ page }) => {
   const tree = createBlankTree();
@@ -60,4 +61,44 @@ test('warning descriptions support keyboard focus and Escape', async ({ page }) 
   await expect(page.getByRole('tooltip')).toContainText('1880');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
+});
+
+test('portrait spans the card above a larger name, dates, and age', async ({ page }) => {
+  const card = page.getByTestId('person-card');
+  const portrait = card.getByTestId('person-card-portrait');
+  const name = card.getByTestId('person-card-name');
+  await expect(name).toHaveCSS('font-size', '22px');
+  const nameLines = name.getByTestId('person-card-name-line');
+  await expect(nameLines).toHaveText(['Visual', 'Test']);
+  const firstLineBox = (await nameLines.nth(0).boundingBox())!;
+  const surnameBox = (await nameLines.nth(1).boundingBox())!;
+  expect(surnameBox.y).toBeGreaterThanOrEqual(firstLineBox.y + firstLineBox.height);
+  await expect(card.getByTestId('person-card-silhouette')).toHaveAttribute('src', getPersonSilhouetteUrl());
+  await expect(card).not.toContainText('VT');
+  const cardBox = (await card.boundingBox())!;
+  const portraitBox = (await portrait.boundingBox())!;
+  const nameBox = (await name.boundingBox())!;
+  const yearsBox = (await card.getByTestId('person-card-years').boundingBox())!;
+  const ageBox = (await card.getByTestId('person-card-age').boundingBox())!;
+  expect(portraitBox.width / cardBox.width).toBeGreaterThan(0.95);
+  expect(nameBox.y).toBeGreaterThanOrEqual(portraitBox.y + portraitBox.height);
+  expect(yearsBox.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
+  expect(ageBox.y).toBeGreaterThanOrEqual(yearsBox.y + yearsBox.height);
+});
+
+test('missing portraits follow gender and failed photos reveal the silhouette', async ({ page }) => {
+  const card = page.getByTestId('person-card');
+  await card.click();
+  const inspector = page.getByTestId('person-inspector');
+  for (const gender of ['male', 'female', 'unspecified'] as const) {
+    await inspector.getByRole('button', { name: gender, exact: true }).click();
+    await expect(card.getByTestId('person-card-silhouette')).toHaveAttribute('src', getPersonSilhouetteUrl(gender));
+  }
+  await page.evaluate(async () => {
+    const { useTreeStore } = await import('/src/stores/useTreeStore.ts');
+    const { tree, updatePerson } = useTreeStore.getState();
+    updatePerson(tree.rootPersonId!, { avatarUrl: '/missing-portrait.jpg' });
+  });
+  await expect(card.getByTestId('person-card-photo')).toBeHidden();
+  await expect(card.getByTestId('person-card-silhouette')).toBeVisible();
 });
