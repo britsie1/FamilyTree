@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { produceWithPatches, applyPatches, enablePatches, setAutoFreeze, type Patch } from 'immer';
-import type { TreeData, Person, Union, UnionType, PersonDocument, GoogleDriveConfig } from '../types/tree';
+import type { TreeData, Person, Union, PersonDocument, GoogleDriveConfig } from '../types/tree';
 import { useCanvasStore } from './useCanvasStore';
 import { useCollabStore } from './useCollabStore';
 import { cloudSyncBridge } from '../services/cloudSyncBridge';
@@ -29,6 +29,8 @@ import {
   clearManualPositions,
   attachDocumentToPerson,
   removeDocumentFromPerson,
+  attachDocumentToUnion,
+  removeDocumentFromUnion,
   updateTreeGoogleDriveConfig,
 } from '../services/treeOperations';
 
@@ -244,7 +246,7 @@ export interface TreeStoreState {
   ) => void;
   updateUnion: (
     unionId: string,
-    updates: Partial<{ type: UnionType; marriageDate?: string; divorceDate?: string }>
+    updates: Partial<Union>
   ) => void;
   deleteUnion: (unionId: string) => void;
   deletePerson: (personId: string) => void;
@@ -264,6 +266,8 @@ export interface TreeStoreState {
   makeCopy: () => TreeData;
   attachDocument: (personId: string, doc: PersonDocument) => void;
   removeDocument: (personId: string, documentId: string) => void;
+  attachDocumentToUnion: (unionId: string, doc: PersonDocument) => void;
+  removeDocumentFromUnion: (unionId: string, documentId: string) => void;
   setGoogleDriveConfig: (config: GoogleDriveConfig | null) => void;
 }
 
@@ -779,6 +783,14 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
 
     removeDocument: (personId, documentId) => {
       get().setTree((prev) => removeDocumentFromPerson(prev, personId, documentId));
+    },
+
+    attachDocumentToUnion: (unionId, doc) => {
+      get().setTree((prev) => attachDocumentToUnion(prev, unionId, doc));
+    },
+
+    removeDocumentFromUnion: (unionId, documentId) => {
+      get().setTree((prev) => removeDocumentFromUnion(prev, unionId, documentId));
     },
 
     setGoogleDriveConfig: (config) => {

@@ -321,6 +321,33 @@ export function threeWayMergeUnion(
       continue;
     }
 
+    // Special handling for documents (merge by doc ID)
+    if (key === 'documents') {
+      const bDocs = (bVal as PersonDocument[]) || [];
+      const lDocs = (lVal as PersonDocument[]) || [];
+      const rDocs = (rVal as PersonDocument[]) || [];
+
+      const docMap = new Map<string, PersonDocument>();
+      for (const doc of bDocs) docMap.set(doc.id, doc);
+      for (const doc of rDocs) docMap.set(doc.id, doc);
+      for (const doc of lDocs) docMap.set(doc.id, doc);
+
+      const bIds = new Set(bDocs.map((d) => d.id));
+      const lIds = new Set(lDocs.map((d) => d.id));
+      const rIds = new Set(rDocs.map((d) => d.id));
+
+      const mergedDocs: PersonDocument[] = [];
+      for (const [id, doc] of docMap.entries()) {
+        if (bIds.has(id)) {
+          if (!lIds.has(id) && rIds.has(id)) continue;
+          if (!rIds.has(id) && lIds.has(id)) continue;
+        }
+        mergedDocs.push(doc);
+      }
+      merged.documents = mergedDocs.length > 0 ? mergedDocs : undefined;
+      continue;
+    }
+
     const localChanged = !deepEqual(lVal, bVal);
     const remoteChanged = !deepEqual(rVal, bVal);
 

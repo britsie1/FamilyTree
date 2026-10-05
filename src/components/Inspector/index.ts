@@ -16,5 +16,8 @@ export type { PersonRelationshipsSectionProps } from './PersonRelationshipsSecti
 export { PersonDocumentsSection } from './PersonDocumentsSection';
 export type { PersonDocumentsSectionProps } from './PersonDocumentsSection';
 
+export { EntityDocumentsSection } from './EntityDocumentsSection';
+export type { EntityDocumentsSectionProps } from './EntityDocumentsSection';
+
 export { PersonCrossTreeLinksSection } from './PersonCrossTreeLinksSection';
 export type { PersonCrossTreeLinksSectionProps } from './PersonCrossTreeLinksSection';

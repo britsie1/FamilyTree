@@ -464,9 +464,27 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
         const divorceYear = union.data.divorceDate ? union.data.divorceDate.split('-')[0] : '';
         const marriageYear = union.data.marriageDate ? union.data.marriageDate.split('-')[0] : '';
 
+        const hasUnionDocuments = Boolean(union.data.documents && union.data.documents.length > 0);
+        const docCount = union.data.documents?.length || 0;
+        const hasComments = Boolean(
+          (union.data.notes && union.data.notes.trim()) ||
+          (union.data.comments && union.data.comments.trim())
+        );
+        const partnerNames = union.partnerNodes.map((p) => p.data.firstName || p.data.lastName || 'Partner').join(' & ');
+        const unionTooltip = [
+          partnerNames ? `${partnerNames} (${unionType})` : `${unionType} relationship`,
+          union.data.marriageDate ? `Married: ${union.data.marriageDate}` : null,
+          union.data.divorceDate ? `Divorced: ${union.data.divorceDate}` : null,
+          hasUnionDocuments ? `${docCount} attached document${docCount === 1 ? '' : 's'}` : null,
+          hasComments ? `Comment: ${(union.data.notes || union.data.comments)!.slice(0, 80)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' • ');
+
         return (
           <g
             key={`union_${union.id}`}
+            data-testid={`union-node-${union.id}`}
             transform={`translate(${union.x}, ${union.y})`}
             style={{ pointerEvents: 'auto', cursor: 'pointer' }}
             className="group"
@@ -483,6 +501,7 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
               onSelectUnion?.(union.id);
             }}
           >
+            {unionTooltip && <title>{unionTooltip}</title>}
             {/* If Divorced & effective in temporal year: Draw double diagonal divorce slash marks (//) across anchor */}
             {isDivorcedEffective && (
               <g stroke="#ef4444" strokeWidth={2.5} strokeLinecap="round">
@@ -702,6 +721,34 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
                   fontFamily="sans-serif"
                 >
                   M. {marriageYear}
+                </text>
+              </g>
+            )}
+
+            {/* Document badge indicator if union has attached documents */}
+            {hasUnionDocuments && (
+              <g
+                data-testid="union-document-badge"
+                transform="translate(-13, -11)"
+                className="transition-transform group-hover:scale-110 pointer-events-none"
+              >
+                <circle
+                  r={6.5}
+                  fill="#4f46e5"
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  className="shadow-xs"
+                />
+                <text
+                  x={0}
+                  y={2.4}
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize={7}
+                  fontWeight="bold"
+                  fontFamily="sans-serif"
+                >
+                  {docCount}
                 </text>
               </g>
             )}

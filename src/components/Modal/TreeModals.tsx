@@ -88,13 +88,18 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
   const closeShareModal = useModalStore((s) => s.closeShareModal);
 
   const previewDoc = useModalStore((s) => s.previewDoc);
+  const openPreviewDoc = useModalStore((s) => s.openPreviewDoc);
   const closePreviewDoc = useModalStore((s) => s.closePreviewDoc);
   // Resolve the attachment owner rather than relying on canvas selection, which
   // can change while the preview is open. Use live data to reflect saved edits.
   const previewPerson = previewDoc
     ? Object.values(tree.people).find((person) => person.documents?.some((doc) => doc.id === previewDoc.doc.id))
     : undefined;
-  const livePreviewDoc = previewPerson?.documents?.find((doc) => doc.id === previewDoc?.doc.id);
+  const previewUnion = previewDoc
+    ? Object.values(tree.unions).find((union) => union.documents?.some((doc) => doc.id === previewDoc.doc.id))
+    : undefined;
+  const livePreviewDoc = previewPerson?.documents?.find((doc) => doc.id === previewDoc?.doc.id)
+    ?? previewUnion?.documents?.find((doc) => doc.id === previewDoc?.doc.id);
 
   const isSunburstModalOpen = useModalStore((s) => s.isSunburstModalOpen);
   const closeSunburstModal = useModalStore((s) => s.closeSunburstModal);
@@ -224,6 +229,9 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
           selectPerson(id);
           setSelectedUnionId(null);
         }}
+        onPreviewDocument={openPreviewDoc}
+        onOpenShareModal={() => openShareModal()}
+        isReadOnly={isReadOnly}
       />
 
       {/* Create Tree from Selection Modal */}
@@ -264,21 +272,38 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
           document={livePreviewDoc || previewDoc.doc}
           personName={previewDoc.personName}
           isReadOnly={isReadOnly}
-          onSaveDetails={previewPerson ? (details) => {
+          onSaveDetails={(previewPerson || previewUnion) ? (details) => {
             if (useCollabStore.getState().userPermission === 'viewer') return;
-            const person = useTreeStore.getState().tree.people[previewPerson.id];
-            if (!person?.documents?.some((doc) => doc.id === previewDoc.doc.id)) return;
-            updatePerson(person.id, {
-              documents: person.documents.map((doc) => doc.id === previewDoc.doc.id ? { ...doc, ...details } : doc),
-            });
+            if (previewPerson) {
+              const person = useTreeStore.getState().tree.people[previewPerson.id];
+              if (!person?.documents?.some((doc) => doc.id === previewDoc.doc.id)) return;
+              updatePerson(person.id, {
+                documents: person.documents.map((doc) => doc.id === previewDoc.doc.id ? { ...doc, ...details } : doc),
+              });
+            } else if (previewUnion) {
+              const union = useTreeStore.getState().tree.unions[previewUnion.id];
+              if (!union?.documents?.some((doc) => doc.id === previewDoc.doc.id)) return;
+              updateUnion(union.id, {
+                documents: (union.documents || []).map((doc) => doc.id === previewDoc.doc.id ? { ...doc, ...details } : doc),
+              });
+            }
           } : undefined}
           onDelete={(docId) => {
-            if (!isReadOnly && previewPerson) {
-              const person = tree.people[previewPerson.id];
-              if (person && person.documents) {
-                updatePerson(person.id, {
-                  documents: person.documents.filter((d) => d.id !== docId),
-                });
+            if (!isReadOnly) {
+              if (previewPerson) {
+                const person = tree.people[previewPerson.id];
+                if (person && person.documents) {
+                  updatePerson(person.id, {
+                    documents: person.documents.filter((d) => d.id !== docId),
+                  });
+                }
+              } else if (previewUnion) {
+                const union = tree.unions[previewUnion.id];
+                if (union && union.documents) {
+                  updateUnion(union.id, {
+                    documents: union.documents.filter((d) => d.id !== docId),
+                  });
+                }
               }
             }
           }}

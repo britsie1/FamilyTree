@@ -181,6 +181,24 @@ export function validateUnion(raw: unknown): ValidationResult<Union> {
   if (raw.divorceDate !== undefined && !isString(raw.divorceDate)) {
     errors.push('Union.divorceDate must be a string');
   }
+  if (raw.notes !== undefined && !isString(raw.notes)) {
+    errors.push('Union.notes must be a string');
+  }
+  if (raw.comments !== undefined && !isString(raw.comments)) {
+    errors.push('Union.comments must be a string');
+  }
+  if (raw.documents !== undefined) {
+    if (!Array.isArray(raw.documents)) {
+      errors.push('Union.documents must be an array');
+    } else {
+      raw.documents.forEach((doc, idx) => {
+        const res = validatePersonDocument(doc);
+        if (!res.success) {
+          errors.push(`Union.documents[${idx}] invalid: ${res.errors.join(', ')}`);
+        }
+      });
+    }
+  }
   if (raw.updatedAt !== undefined && !isString(raw.updatedAt)) {
     errors.push('Union.updatedAt must be a string');
   }

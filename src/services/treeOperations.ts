@@ -58,6 +58,7 @@ export function sanitizeTree(tree: TreeData): TreeData {
       ...u,
       partnerIds: [...(u.partnerIds || [])],
       childrenIds: [...(u.childrenIds || [])],
+      documents: u.documents ? [...u.documents] : undefined,
     };
   }
 
@@ -1593,6 +1594,60 @@ export function removeDocumentFromPerson(
 }
 
 /**
+ * Attaches a document to a specific union/marriage in the tree.
+ */
+export function attachDocumentToUnion(
+  tree: TreeData,
+  unionId: string,
+  doc: PersonDocument
+): TreeData {
+  const union = tree.unions[unionId];
+  if (!union) return tree;
+
+  const currentDocs = union.documents || [];
+  const updatedUnion: Union = {
+    ...union,
+    documents: [...currentDocs, doc],
+  };
+
+  return {
+    ...tree,
+    unions: {
+      ...tree.unions,
+      [unionId]: updatedUnion,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Removes an attached document from a specific union/marriage in the tree.
+ */
+export function removeDocumentFromUnion(
+  tree: TreeData,
+  unionId: string,
+  documentId: string
+): TreeData {
+  const union = tree.unions[unionId];
+  if (!union || !union.documents) return tree;
+
+  const updatedDocs = union.documents.filter((d) => d.id !== documentId);
+  const updatedUnion: Union = {
+    ...union,
+    documents: updatedDocs,
+  };
+
+  return {
+    ...tree,
+    unions: {
+      ...tree.unions,
+      [unionId]: updatedUnion,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Updates the Google Drive configuration on the tree (or removes it if null).
  */
 export function updateTreeGoogleDriveConfig(
@@ -1607,3 +1662,4 @@ export function updateTreeGoogleDriveConfig(
   }
   return nextTree;
 }
+

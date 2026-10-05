@@ -92,6 +92,10 @@ export interface Union {
   marriageDate?: string;
   divorceDate?: string;
   type?: UnionType;
+  notes?: string;         // Free text comments/notes for this union/marriage
+  comments?: string;      // Alias for comments
+  // Attached Google Drive documents & records
+  documents?: PersonDocument[];
   // Position override if manually dragged or calculated
   x?: number;
   y?: number;
@@ -102,6 +106,8 @@ export interface Union {
   deleted?: boolean;
   deletedAt?: string;
 }
+
+export type UnionDocument = PersonDocument;
 
 export interface TreeData {
   id: string;

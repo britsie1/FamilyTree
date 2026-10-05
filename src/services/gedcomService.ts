@@ -334,6 +334,15 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
         divorceDate = normalizeGedcomDate(getSubtagValue(divNode, 'DATE'));
       }
 
+      // Notes / Comments
+      const noteParts: string[] = [];
+      for (const child of node.children) {
+        if (child.tag === 'NOTE' && child.value) {
+          noteParts.push(child.value);
+        }
+      }
+      const notes = noteParts.length > 0 ? noteParts.join('\n\n') : undefined;
+
       unions[unionId] = {
         id: unionId,
         partnerIds,
@@ -341,6 +350,8 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
         type,
         marriageDate: marriageDate || undefined,
         divorceDate: divorceDate || undefined,
+        notes,
+        comments: notes,
       };
 
       // Cross-link partners
@@ -628,6 +639,12 @@ export function exportGedcom(tree: TreeData): string {
       if (union.divorceDate) {
         lines.push(`2 DATE ${formatGedcomDate(union.divorceDate)}`);
       }
+    }
+
+    // Notes / Comments
+    const unionNote = union.notes || union.comments;
+    if (unionNote) {
+      appendGedcomNote(lines, unionNote, 1);
     }
   }
 

@@ -137,8 +137,14 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
         set.add(p.id);
       }
     }
+    for (const u of Object.values(tree.unions)) {
+      const uText = `${u.notes || ''} ${u.comments || ''} ${(u.documents || []).map((d) => `${d.name} ${d.description || ''} ${d.transcription || ''}`).join(' ')}`.toLowerCase();
+      if (uText.includes(query)) {
+        u.partnerIds.forEach((pId) => set.add(pId));
+      }
+    }
     return set;
-  }, [tree.people, canvasSearchQuery]);
+  }, [tree.people, tree.unions, canvasSearchQuery]);
 
   const zoom = propZoom !== undefined ? propZoom : storeZoom;
   const pan = propPan !== undefined ? propPan : storePan;
