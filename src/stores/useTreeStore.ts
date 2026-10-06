@@ -261,7 +261,7 @@ export interface TreeStoreState {
   linkSibling: (sourcePersonId: string, targetPersonId: string) => void;
   linkPartner: (sourcePersonId: string, targetPersonId: string) => void;
   linkParent: (sourcePersonId: string, targetPersonId: string, parentLinkType?: ParentLinkType) => void;
-  updateParentLinkTypeAction: (childPersonId: string, unionId: string, type: ParentLinkType) => void;
+  updateParentLinkTypeAction: (childPersonId: string, unionId: string, type: ParentLinkType, parentPersonId?: string) => void;
   setPrimaryParentUnionAction: (childPersonId: string, unionId: string) => void;
   unlinkPartnerAction: (personId: string, unionId: string) => void;
   unlinkChildAction: (childPersonId: string, unionId?: string) => void;
@@ -743,8 +743,8 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       get().setTree((prev) => linkExistingParent(prev, sourcePersonId, targetPersonId, parentLinkType));
     },
 
-    updateParentLinkTypeAction: (childPersonId, unionId, type) => {
-      get().setTree((prev) => updateParentLinkType(prev, childPersonId, unionId, type));
+    updateParentLinkTypeAction: (childPersonId, unionId, type, parentPersonId) => {
+      get().setTree((prev) => updateParentLinkType(prev, childPersonId, unionId, type, parentPersonId));
     },
 
     setPrimaryParentUnionAction: (childPersonId, unionId) => {

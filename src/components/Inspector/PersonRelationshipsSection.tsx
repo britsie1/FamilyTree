@@ -169,7 +169,7 @@ export const PersonRelationshipsSection: React.FC<PersonRelationshipsSectionProp
                         <select
                           value={group.type}
                           onChange={(e) => {
-                            storeUpdateParentLinkType(person.id, group.unionId, e.target.value as ParentLinkType);
+                            storeUpdateParentLinkType(person.id, group.unionId, e.target.value as ParentLinkType, p.id);
                           }}
                           className="text-[10px] font-medium py-0.5 px-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         >

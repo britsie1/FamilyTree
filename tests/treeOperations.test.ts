@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { unlinkParentFromChild, unlinkChild, sanitizeTree, updatePersonInTree } from '../src/services/treeOperations.ts';
+import { unlinkParentFromChild, unlinkChild, sanitizeTree, updatePersonInTree, updateParentLinkType, linkExistingParent } from '../src/services/treeOperations.ts';
 import type { TreeData } from '../src/types/tree.ts';
 
 describe('Tree Operations - Bug 3.4 & Bug 3.5', () => {
@@ -205,6 +205,75 @@ describe('Tree Operations - Bug 3.4 & Bug 3.5', () => {
       const next = unlinkChild(makeTree(), 'kid');
       assert.strictEqual(next.people['kid'].parentUnionId, undefined);
       assert.strictEqual(next.people['kid'].parentLinks, undefined);
+    });
+  });
+
+  describe('regressions: duplicate union merge and per-parent link type', () => {
+    it('sanitizeTree merges duplicate partner-pair unions without throwing and relinks children', () => {
+      const tree = {
+        id: 't', name: 't', createdAt: '', updatedAt: '',
+        people: {
+          a: { id: 'a', unionIds: ['u1', 'u2'] },
+          b: { id: 'b', unionIds: ['u1', 'u2'] },
+          kid: { id: 'kid', unionIds: [], parentUnionId: 'u2' },
+        },
+        unions: {
+          u1: { id: 'u1', partnerIds: ['a', 'b'], childrenIds: [] },
+          u2: { id: 'u2', partnerIds: ['a', 'b'], childrenIds: ['kid'] },
+        },
+      } as any;
+      const next = sanitizeTree(tree);
+      assert.strictEqual(Object.keys(next.unions).length, 1);
+      const remaining = Object.keys(next.unions)[0];
+      assert.strictEqual(next.people['kid'].parentUnionId, remaining);
+    });
+
+    it('linking a second parent to a child with a single parent does not throw', () => {
+      const tree = {
+        id: 't', name: 't', createdAt: '', updatedAt: '',
+        people: {
+          a: { id: 'a', unionIds: ['u1'] },
+          b: { id: 'b', unionIds: [] },
+          kid: { id: 'kid', unionIds: [], parentUnionId: 'u1' },
+        },
+        unions: { u1: { id: 'u1', partnerIds: ['a'], childrenIds: ['kid'] } },
+      } as any;
+      const next = linkExistingParent(tree, 'kid', 'b');
+      const u = next.unions[next.people['kid'].parentUnionId];
+      assert.ok(u.partnerIds.includes('a') && u.partnerIds.includes('b'));
+    });
+
+    it('changing one parent type in a two-parent union leaves the other parent unchanged', () => {
+      const tree = {
+        id: 't', name: 't', createdAt: '', updatedAt: '',
+        people: {
+          mum: { id: 'mum', unionIds: ['u1'] },
+          dad: { id: 'dad', unionIds: ['u1'] },
+          kid: { id: 'kid', unionIds: [], parentUnionId: 'u1' },
+        },
+        unions: { u1: { id: 'u1', partnerIds: ['mum', 'dad'], childrenIds: ['kid'] } },
+      } as any;
+      const next = updateParentLinkType(tree, 'kid', 'u1', 'step', 'dad');
+      const links = next.people['kid'].parentLinks as any[];
+      assert.strictEqual(links.length, 2);
+      const typeOf = (pid: string) =>
+        links.find((l) => next.unions[l.unionId].partnerIds.includes(pid))?.type;
+      assert.strictEqual(typeOf('dad'), 'step');
+      assert.strictEqual(typeOf('mum'), 'biological');
+      assert.ok(!links.some((l) => next.unions[l.unionId].partnerIds.length === 2 && l.type === 'step'));
+    });
+
+    it('changing the type of a single-parent link only changes that link', () => {
+      const tree = {
+        id: 't', name: 't', createdAt: '', updatedAt: '',
+        people: {
+          mum: { id: 'mum', unionIds: ['u1'] },
+          kid: { id: 'kid', unionIds: [], parentUnionId: 'u1' },
+        },
+        unions: { u1: { id: 'u1', partnerIds: ['mum'], childrenIds: ['kid'] } },
+      } as any;
+      const next = updateParentLinkType(tree, 'kid', 'u1', 'adoptive', 'mum');
+      assert.strictEqual(next.people['kid'].parentLinks[0].type, 'adoptive');
     });
   });
 });

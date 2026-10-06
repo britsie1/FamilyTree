@@ -179,6 +179,7 @@ export function sanitizeTree(tree: TreeData): TreeData {
       nextTree.unions[canonical.id] = canonical;
 
       // Update children's parentUnionId and parentLinks
+      const dupIdSet = new Set(duplicates.map((d) => d.id));
       for (const childId of canonical.childrenIds) {
         const child = nextTree.people[childId];
         if (child) {
@@ -197,7 +198,6 @@ export function sanitizeTree(tree: TreeData): TreeData {
       }
 
       // Update partners' unionIds
-      const dupIdSet = new Set(duplicates.map((d) => d.id));
       canonical.partnerIds.forEach((pId) => {
         if (nextTree.people[pId]) {
           const currentUnionIds = nextTree.people[pId].unionIds || [];
@@ -954,7 +954,7 @@ export function linkExistingParent(
     const u = nextTree.unions[link.unionId];
     if (u && u.partnerIds.includes(parentPersonId)) {
       // Already linked via this union! Update type if needed
-      return updateParentLinkType(nextTree, childPersonId, u.id, parentLinkType);
+      return updateParentLinkType(nextTree, childPersonId, u.id, parentLinkType, parentPersonId);
     }
     if (u && u.partnerIds.length < 2 && parentLinkType === 'biological') {
       targetUnionId = u.id;
@@ -1013,14 +1013,60 @@ export function updateParentLinkType(
   tree: TreeData,
   childPersonId: string,
   unionId: string,
-  type: ParentLinkType
+  type: ParentLinkType,
+  parentPersonId?: string
 ): TreeData {
   const child = tree.people[childPersonId];
   if (!child) return tree;
 
   const currentLinks = getParentLinks(child);
-  const found = currentLinks.some((l) => l.unionId === unionId);
-  if (!found) return tree;
+  const link = currentLinks.find((l) => l.unionId === unionId);
+  if (!link) return tree;
+  if (link.type === type) return tree;
+
+  const sharedUnion = tree.unions[unionId];
+  if (parentPersonId && sharedUnion && sharedUnion.partnerIds.length >= 2 && sharedUnion.partnerIds.includes(parentPersonId)) {
+    // The type belongs to the child<->union link, so to change a single parent we
+    // detach the child from the shared union and attach it to one single-parent
+    // union per parent: the untouched parent(s) keep the old type, this parent gets the new one.
+    const nextTree = sanitizeTree(tree);
+    const nextChild = nextTree.people[childPersonId];
+    const union = nextTree.unions[unionId];
+    union.childrenIds = union.childrenIds.filter((id) => id !== childPersonId);
+
+    const others = union.partnerIds.filter((id) => id !== parentPersonId);
+    const nextLinks: ParentLink[] = currentLinks.filter((l) => l.unionId !== unionId);
+
+    [
+      ...others.map((id) => ({ id, linkType: link.type })),
+      { id: parentPersonId, linkType: type },
+    ].forEach(({ id, linkType }, idx) => {
+      const partner = nextTree.people[id];
+      if (!partner) return;
+      let singleUnionId = (partner.unionIds || []).find((uId) => {
+        const su = nextTree.unions[uId];
+        return su && su.partnerIds.length === 1 && su.partnerIds[0] === id;
+      });
+      if (!singleUnionId) {
+        singleUnionId = generateId('u_parents');
+        nextTree.unions[singleUnionId] = {
+          id: singleUnionId,
+          partnerIds: [id],
+          childrenIds: [childPersonId],
+          type: 'married',
+        };
+        nextTree.people[id] = { ...partner, unionIds: [...(partner.unionIds || []), singleUnionId] };
+      } else if (!nextTree.unions[singleUnionId].childrenIds.includes(childPersonId)) {
+        nextTree.unions[singleUnionId].childrenIds.push(childPersonId);
+      }
+      if (!nextLinks.some((l) => l.unionId === singleUnionId)) {
+        nextLinks.push({ unionId: singleUnionId, type: linkType, isPrimary: Boolean(link.isPrimary) && idx === 0 });
+      }
+    });
+
+    nextTree.people[childPersonId] = withParentLinks(nextChild, nextLinks);
+    return sanitizeTree(nextTree);
+  }
 
   const nextLinks = currentLinks.map((l) => (l.unionId === unionId ? { ...l, type } : l));
   const nextTree: TreeData = {
