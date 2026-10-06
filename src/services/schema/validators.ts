@@ -1,8 +1,9 @@
-import type { Person, Union, TreeData, TreeLink, PersonDocument, Gender, UnionType } from '../../types/tree';
+import type { Person, Union, TreeData, TreeLink, PersonDocument, Gender, UnionType, ParentLink, ParentLinkType } from '../../types/tree';
 import type { ValidationResult } from './types';
 
 const VALID_GENDERS: Set<Gender> = new Set(['male', 'female', 'other', 'unspecified']);
 const VALID_UNION_TYPES: Set<UnionType> = new Set(['married', 'divorced', 'separated', 'partner', 'other']);
+const VALID_PARENT_LINK_TYPES: Set<ParentLinkType> = new Set(['biological', 'adoptive', 'step', 'foster', 'unknown']);
 
 function isObject(val: unknown): val is Record<string, any> {
   return typeof val === 'object' && val !== null && !Array.isArray(val);
@@ -14,6 +15,27 @@ function isString(val: unknown): val is string {
 
 function isStringArray(val: unknown): val is string[] {
   return Array.isArray(val) && val.every((item) => typeof item === 'string');
+}
+
+export function validateParentLink(raw: unknown): ValidationResult<ParentLink> {
+  const errors: string[] = [];
+  if (!isObject(raw)) {
+    return { success: false, errors: ['ParentLink must be an object'] };
+  }
+  if (!isString(raw.unionId) || raw.unionId.trim() === '') {
+    errors.push('ParentLink.unionId must be a non-empty string');
+  }
+  if (!isString(raw.type) || !VALID_PARENT_LINK_TYPES.has(raw.type as ParentLinkType)) {
+    errors.push(`ParentLink.type must be one of: biological, adoptive, step, foster, unknown; got "${raw.type}"`);
+  }
+  if (raw.isPrimary !== undefined && typeof raw.isPrimary !== 'boolean') {
+    errors.push('ParentLink.isPrimary must be a boolean if provided');
+  }
+  return {
+    success: errors.length === 0,
+    data: errors.length === 0 ? (raw as ParentLink) : undefined,
+    errors,
+  };
 }
 
 export function validateTreeLink(raw: unknown): ValidationResult<TreeLink> {
@@ -100,6 +122,18 @@ export function validatePerson(raw: unknown): ValidationResult<Person> {
   }
   if (raw.parentUnionId !== undefined && !isString(raw.parentUnionId)) {
     errors.push('Person.parentUnionId must be a string');
+  }
+  if (raw.parentLinks !== undefined) {
+    if (!Array.isArray(raw.parentLinks)) {
+      errors.push('Person.parentLinks must be an array');
+    } else {
+      raw.parentLinks.forEach((link, idx) => {
+        const res = validateParentLink(link);
+        if (!res.success) {
+          errors.push(`Person.parentLinks[${idx}] invalid: ${res.errors.join(', ')}`);
+        }
+      });
+    }
   }
   if (!Array.isArray(raw.unionIds) || !isStringArray(raw.unionIds)) {
     errors.push('Person.unionIds must be an array of strings');

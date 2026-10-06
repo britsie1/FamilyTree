@@ -1,6 +1,6 @@
-import type { TreeData, Person, Union, Gender, UnionType } from '../types/tree';
+import type { TreeData, Person, Union, Gender, UnionType, ParentLink, ParentLinkType } from '../types/tree';
 import { generateId, sanitizeFilename } from './storage';
-import { sanitizeTree } from './treeOperations';
+import { sanitizeTree, getParentLinks, withParentLinks } from './treeOperations';
 import { CURRENT_SCHEMA_VERSION, processTreeIngress } from './schema';
 
 interface GedcomLine {
@@ -366,7 +366,18 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
       // Cross-link children
       for (const cId of childrenIds) {
         if (people[cId]) {
-          people[cId].parentUnionId = unionId;
+          if (!people[cId].parentUnionId) {
+            people[cId].parentUnionId = unionId;
+          } else if (people[cId].parentUnionId !== unionId) {
+            // Child listed under several FAMs via CHIL: keep every link
+            const links = getParentLinks(people[cId]);
+            if (!links.some((l) => l.unionId === unionId)) {
+              people[cId] = withParentLinks(people[cId], [
+                ...links,
+                { unionId, type: 'biological', isPrimary: false },
+              ]);
+            }
+          }
         }
       }
     }
@@ -378,11 +389,38 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
       const personId = xrefToPersonId[node.xref];
       if (!personId || !people[personId]) continue;
 
+      const person = people[personId];
+      const famcNodes = node.children.filter((c) => c.tag === 'FAMC' && c.value);
+      const linkMap = new Map<string, ParentLink>();
+
+      if (famcNodes.length === 0) {
+        for (const l of getParentLinks(person)) {
+          linkMap.set(l.unionId, l);
+        }
+      }
+
       for (const child of node.children) {
         if (child.tag === 'FAMC' && child.value) {
           const uId = xrefToUnionId[child.value];
           if (uId && unions[uId]) {
-            people[personId].parentUnionId = uId;
+            // Determine pedigree type from sub-tags (e.g. 2 PEDI ADOPTED, FOSTER, BIRTH)
+            let linkType: ParentLinkType = 'biological';
+            const pediVal = getSubtagValue(child, 'PEDI')?.toUpperCase();
+            const adopNode = findChild(child, 'ADOP');
+
+            if (pediVal === 'ADOPTED' || adopNode) {
+              linkType = 'adoptive';
+            } else if (pediVal === 'FOSTER') {
+              linkType = 'foster';
+            } else if (pediVal === 'STEP') {
+              linkType = 'step';
+            } else if (pediVal === 'BIRTH') {
+              linkType = 'biological';
+            }
+
+            const isPrimary = linkMap.size === 0;
+            linkMap.set(uId, { unionId: uId, type: linkType, isPrimary });
+
             if (!unions[uId].childrenIds.includes(personId)) {
               unions[uId].childrenIds.push(personId);
             }
@@ -398,6 +436,10 @@ export function parseGedcom(rawText: string, defaultTreeName: string = 'Imported
             }
           }
         }
+      }
+
+      if (linkMap.size > 0) {
+        people[personId] = withParentLinks(person, Array.from(linkMap.values()));
       }
     }
   }
@@ -563,8 +605,21 @@ export function exportGedcom(tree: TreeData): string {
     }
 
     // Family links
-    if (person.parentUnionId && unionToXref[person.parentUnionId]) {
-      lines.push(`1 FAMC ${unionToXref[person.parentUnionId]}`);
+    const parentLinks = getParentLinks(person);
+    for (const link of parentLinks) {
+      const famcXref = unionToXref[link.unionId];
+      if (famcXref) {
+        lines.push(`1 FAMC ${famcXref}`);
+        if (link.type === 'adoptive') {
+          lines.push('2 PEDI ADOPTED');
+        } else if (link.type === 'foster') {
+          lines.push('2 PEDI FOSTER');
+        } else if (link.type === 'step') {
+          lines.push('2 PEDI STEP');
+        } else if (link.type === 'biological') {
+          lines.push('2 PEDI BIRTH');
+        }
+      }
     }
     for (const uId of person.unionIds) {
       if (unionToXref[uId]) {

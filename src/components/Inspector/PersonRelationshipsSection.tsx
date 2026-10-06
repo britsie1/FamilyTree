@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Person, TreeData } from '../../types/tree';
-import { getPersonDisplayName } from '../../services/treeOperations';
+import type { Person, TreeData, ParentLinkType } from '../../types/tree';
+import { getPersonDisplayName, getParentLinks } from '../../services/treeOperations';
 import { useTreeStore } from '../../stores/useTreeStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useCollabStore } from '../../stores/useCollabStore';
@@ -24,7 +24,7 @@ export interface PersonRelationshipsSectionProps {
   onAddSibling?: (personId: string) => void;
   onAddParent?: (personId: string) => void;
   onUnlinkPartner?: (personId: string, unionId: string) => void;
-  onUnlinkChild?: (childPersonId: string) => void;
+  onUnlinkChild?: (childPersonId: string, unionId?: string) => void;
   onUnlinkParentFromChild?: (childPersonId: string, parentPersonId: string) => void;
   onEditUnion?: (unionId: string) => void;
 }
@@ -48,6 +48,7 @@ export const PersonRelationshipsSection: React.FC<PersonRelationshipsSectionProp
   const storeUnlinkPartner = useTreeStore((s) => s.unlinkPartnerAction);
   const storeUnlinkChild = useTreeStore((s) => s.unlinkChildAction);
   const storeUnlinkParentFromChild = useTreeStore((s) => s.unlinkParentFromChildAction);
+  const storeUpdateParentLinkType = useTreeStore((s) => s.updateParentLinkTypeAction);
   const storeSelectPerson = useCanvasStore((s) => s.selectPerson);
   const storeSetSelectedUnionId = useCanvasStore((s) => s.setSelectedUnionId);
   const storeUserPermission = useCollabStore((s) => s.userPermission);
@@ -62,20 +63,39 @@ export const PersonRelationshipsSection: React.FC<PersonRelationshipsSectionProp
 
   const displayName = getPersonDisplayName(person);
 
-  // Find parents
-  const parentUnion = person.parentUnionId ? tree.unions[person.parentUnionId] : null;
-  const parents = parentUnion
-    ? parentUnion.partnerIds.map((id) => tree.people[id]).filter(Boolean)
-    : [];
+  // Find parents with relationship type metadata
+  const parentLinks = getParentLinks(person);
+  const parentGroups: { unionId: string; type: ParentLinkType; isPrimary?: boolean; parents: Person[] }[] = [];
+  const seenUnionIds = new Set<string>();
 
-  // Find siblings
+  for (const link of parentLinks) {
+    if (seenUnionIds.has(link.unionId)) continue;
+    seenUnionIds.add(link.unionId);
+    const u = tree.unions[link.unionId];
+    if (u) {
+      const parentPeople = u.partnerIds.map((id) => tree.people[id]).filter(Boolean);
+      parentGroups.push({
+        unionId: link.unionId,
+        type: link.type,
+        isPrimary: link.isPrimary,
+        parents: parentPeople,
+      });
+    }
+  }
+
+  // Find siblings across all parent unions
   const siblings: Person[] = [];
-  if (person.parentUnionId && tree.unions[person.parentUnionId]) {
-    tree.unions[person.parentUnionId].childrenIds.forEach((cId) => {
-      if (cId !== person.id && tree.people[cId]) {
-        siblings.push(tree.people[cId]);
-      }
-    });
+  const seenSiblingIds = new Set<string>();
+  for (const link of parentLinks) {
+    const u = tree.unions[link.unionId];
+    if (u && u.childrenIds) {
+      u.childrenIds.forEach((cId) => {
+        if (cId !== person.id && tree.people[cId] && !seenSiblingIds.has(cId)) {
+          seenSiblingIds.add(cId);
+          siblings.push(tree.people[cId]);
+        }
+      });
+    }
   }
 
   // Find spouses / partners
@@ -123,39 +143,65 @@ export const PersonRelationshipsSection: React.FC<PersonRelationshipsSectionProp
             </button>
           )}
         </div>
-        {parents.length === 0 ? (
+        {parentGroups.length === 0 || parentGroups.every((g) => g.parents.length === 0) ? (
           <p className="text-xs text-slate-400 dark:text-slate-500 italic">No parents attached</p>
         ) : (
-          <div className="space-y-1">
-            {parents.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-lg group transition-colors"
-              >
-                <div
-                  onClick={() => handleSelectPerson(p.id)}
-                  className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
-                >
-                  <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
-                    {getPersonDisplayName(p)}
-                  </span>
-                  <ExternalLink className="w-3 h-3 text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex-shrink-0" />
-                </div>
-
-                {!isReadOnly && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm(`Unlink ${displayName} from parent ${getPersonDisplayName(p)}?`)) {
-                        handleUnlinkParentFromChild(person.id, p.id);
-                      }
-                    }}
-                    className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-all cursor-pointer"
-                    title="Unlink from this parent"
+          <div className="space-y-2">
+            {parentGroups.map((group) => (
+              <div key={group.unionId} className="space-y-1">
+                {group.parents.map((p) => (
+                  <div
+                    key={`${group.unionId}_${p.id}`}
+                    className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-lg group transition-colors"
                   >
-                    <Unlink className="w-3 h-3" />
-                  </button>
-                )}
+                    <div
+                      onClick={() => handleSelectPerson(p.id)}
+                      className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
+                    >
+                      <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                        {getPersonDisplayName(p)}
+                      </span>
+                      <ExternalLink className="w-3 h-3 text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex-shrink-0" />
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {!isReadOnly ? (
+                        <select
+                          value={group.type}
+                          onChange={(e) => {
+                            storeUpdateParentLinkType(person.id, group.unionId, e.target.value as ParentLinkType);
+                          }}
+                          className="text-[10px] font-medium py-0.5 px-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          <option value="biological">Biological</option>
+                          <option value="adoptive">Adoptive</option>
+                          <option value="step">Step</option>
+                          <option value="foster">Foster</option>
+                          <option value="unknown">Unknown</option>
+                        </select>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 font-medium capitalize">
+                          {group.type}
+                        </span>
+                      )}
+
+                      {!isReadOnly && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Unlink ${displayName} from parent ${getPersonDisplayName(p)}?`)) {
+                              handleUnlinkParentFromChild(person.id, p.id);
+                            }
+                          }}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-all cursor-pointer"
+                          title="Unlink from this parent"
+                        >
+                          <Unlink className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -321,7 +367,10 @@ export const PersonRelationshipsSection: React.FC<PersonRelationshipsSectionProp
                     onClick={(e) => {
                       e.stopPropagation();
                       if (window.confirm(`Unlink child ${getPersonDisplayName(ch)} from parent?`)) {
-                        handleUnlinkChild(ch.id);
+                        const viaUnionId = person.unionIds.find((uId) =>
+                          tree.unions[uId]?.childrenIds.includes(ch.id)
+                        );
+                        handleUnlinkChild(ch.id, viaUnionId);
                       }
                     }}
                     className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-all cursor-pointer"

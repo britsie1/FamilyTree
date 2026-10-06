@@ -114,8 +114,10 @@ export function checkInvariants(tree: TreeData): InvariantViolation[] {
 
   // 3. Person Invariants (Relationships, Dates, Cross-tree links)
   for (const person of Object.values(people)) {
-    // Check parentUnionId
+    // Check parentUnionId and parentLinks
+    const allParentUnionIds = new Set<string>();
     if (person.parentUnionId) {
+      allParentUnionIds.add(person.parentUnionId);
       const parentUnion = unions[person.parentUnionId];
       if (!parentUnion) {
         violations.push({
@@ -137,6 +139,48 @@ export function checkInvariants(tree: TreeData): InvariantViolation[] {
             entityType: 'person',
           });
         }
+      }
+    }
+
+    if (person.parentLinks) {
+      person.parentLinks.forEach((link, idx) => {
+        allParentUnionIds.add(link.unionId);
+        const parentUnion = unions[link.unionId];
+        if (!parentUnion) {
+          violations.push({
+            code: 'DANGLING_UNION_REF',
+            severity: 'error',
+            message: `Person "${person.id}" references non-existent parent link unionId "${link.unionId}"`,
+            path: ['people', person.id, 'parentLinks', String(idx), 'unionId'],
+            entityId: person.id,
+            entityType: 'person',
+          });
+        } else {
+          if (!parentUnion.childrenIds.includes(person.id)) {
+            violations.push({
+              code: 'INCONSISTENT_PARENT_LINK',
+              severity: 'error',
+              message: `Person "${person.id}" specifies parentLink unionId "${link.unionId}", but union does not list person in childrenIds`,
+              path: ['people', person.id, 'parentLinks', String(idx)],
+              entityId: person.id,
+              entityType: 'person',
+            });
+          }
+        }
+      });
+
+      if (
+        person.parentLinks.length > 0 &&
+        !person.parentLinks.some((l) => l.unionId === person.parentUnionId)
+      ) {
+        violations.push({
+          code: 'INCONSISTENT_PARENT_LINK',
+          severity: 'error',
+          message: `Person "${person.id}" has parentUnionId "${person.parentUnionId ?? ''}" that is not among its parentLinks`,
+          path: ['people', person.id, 'parentUnionId'],
+          entityId: person.id,
+          entityType: 'person',
+        });
       }
     }
 
@@ -269,11 +313,13 @@ export function checkInvariants(tree: TreeData): InvariantViolation[] {
           entityType: 'union',
         });
       } else {
-        if (child.parentUnionId !== union.id) {
+        const hasParentLink = child.parentUnionId === union.id ||
+          Boolean(child.parentLinks?.some((link) => link.unionId === union.id));
+        if (!hasParentLink) {
           violations.push({
             code: 'INCONSISTENT_PARENT_LINK',
             severity: 'error',
-            message: `Union "${union.id}" lists child "${cId}", but child parentUnionId is "${child.parentUnionId ?? 'undefined'}"`,
+            message: `Union "${union.id}" lists child "${cId}", but child does not reference union in parentUnionId or parentLinks`,
             path: ['unions', union.id, 'childrenIds'],
             entityId: union.id,
             entityType: 'union',
@@ -312,9 +358,24 @@ export function checkInvariants(tree: TreeData): InvariantViolation[] {
   // Directed Graph: Child -> Parent
   const getParents = (personId: string): string[] => {
     const person = people[personId];
-    if (!person || !person.parentUnionId) return [];
-    const parentUnion = unions[person.parentUnionId];
-    return parentUnion ? parentUnion.partnerIds.filter((pId) => Boolean(people[pId])) : [];
+    if (!person) return [];
+    const parentUnionIds = new Set<string>();
+    if (person.parentUnionId) parentUnionIds.add(person.parentUnionId);
+    if (person.parentLinks) {
+      for (const link of person.parentLinks) {
+        if (link.unionId) parentUnionIds.add(link.unionId);
+      }
+    }
+    const parents: string[] = [];
+    for (const uId of parentUnionIds) {
+      const parentUnion = unions[uId];
+      if (parentUnion) {
+        for (const pId of parentUnion.partnerIds) {
+          if (people[pId]) parents.push(pId);
+        }
+      }
+    }
+    return parents;
   };
 
   const visitedGlobal = new Set<string>();

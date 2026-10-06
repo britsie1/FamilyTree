@@ -1,9 +1,51 @@
-import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConfig, LayoutOverrides } from '../types/tree';
+import type { TreeData, Person, Union, TreeLink, PersonDocument, GoogleDriveConfig, LayoutOverrides, ParentLink, ParentLinkType } from '../types/tree';
 import { generateId } from './storage';
 import { calculateGenerations } from './layoutEngine';
 
 import { getPersonDisplayName, getPersonFullName, formatLifespanWithAge, getPersonMaidenNameLabel } from './displayUtils';
 export { getPersonDisplayName, getPersonFullName, formatLifespanWithAge, getPersonMaidenNameLabel };
+
+/**
+ * Returns all normalized parent links for a person.
+ * If person has `parentLinks`, returns them.
+ * If only `parentUnionId` is present, converts it into a default biological primary parent link.
+ */
+export function getParentLinks(person: Person): ParentLink[] {
+  if (person.parentLinks && person.parentLinks.length > 0) {
+    return person.parentLinks;
+  }
+  if (person.parentUnionId) {
+    return [{ unionId: person.parentUnionId, type: 'biological', isPrimary: true }];
+  }
+  return [];
+}
+
+/**
+ * Gets the primary parent union ID for a person, falling back to parentUnionId or first parentLink.
+ */
+export function getPrimaryParentUnionId(person: Person): string | undefined {
+  if (person.parentLinks && person.parentLinks.length > 0) {
+    const primary = person.parentLinks.find((l) => l.isPrimary);
+    if (primary) return primary.unionId;
+    return person.parentLinks[0].unionId;
+  }
+  return person.parentUnionId;
+}
+
+/**
+ * Normalizes parentLinks and parentUnionId on a person object.
+ */
+export function withParentLinks(
+  person: Person,
+  links: ParentLink[]
+): Person {
+  const primaryId = links.find((l) => l.isPrimary)?.unionId || links[0]?.unionId;
+  return {
+    ...person,
+    parentUnionId: primaryId,
+    parentLinks: links.length > 0 ? links : undefined,
+  };
+}
 
 /**
  * Creates a blank person with zero required fields.
@@ -136,13 +178,21 @@ export function sanitizeTree(tree: TreeData): TreeData {
       canonical.childrenIds = Array.from(mergedChildren);
       nextTree.unions[canonical.id] = canonical;
 
-      // Update children's parentUnionId
+      // Update children's parentUnionId and parentLinks
       for (const childId of canonical.childrenIds) {
-        if (nextTree.people[childId]) {
-          nextTree.people[childId] = {
-            ...nextTree.people[childId],
-            parentUnionId: canonical.id,
-          };
+        const child = nextTree.people[childId];
+        if (child) {
+          const links = getParentLinks(child).map((l) =>
+            dupIdSet.has(l.unionId) ? { ...l, unionId: canonical.id } : l
+          );
+          // Deduplicate links by unionId
+          const uniqueLinks: ParentLink[] = [];
+          for (const l of links) {
+            if (!uniqueLinks.some((ul) => ul.unionId === l.unionId)) {
+              uniqueLinks.push(l);
+            }
+          }
+          nextTree.people[childId] = withParentLinks(child, uniqueLinks);
         }
       }
 
@@ -179,10 +229,10 @@ export function sanitizeTree(tree: TreeData): TreeData {
         }
       }
     } else if (u.partnerIds.length === 0) {
-      // If union has 0 partners, check if any of its children actually point to this union as parentUnionId
+      // If union has 0 partners, check if any of its children actually point to this union
       const activeChildren = (u.childrenIds || []).filter((cId) => {
         const child = nextTree.people[cId];
-        return child && child.parentUnionId === uId;
+        return child && (child.parentUnionId === uId || child.parentLinks?.some((l) => l.unionId === uId));
       });
       if (activeChildren.length === 0) {
         delete nextTree.unions[uId];
@@ -210,18 +260,23 @@ export function sanitizeTree(tree: TreeData): TreeData {
       const u = nextTree.unions[uId];
       return Boolean(u && u.partnerIds.includes(pId));
     });
-    // Clean parentUnionId
-    let validParentUnionId = person.parentUnionId;
-    if (validParentUnionId) {
-      const pu = nextTree.unions[validParentUnionId];
-      if (!pu) {
-        validParentUnionId = undefined;
-      } else if (!pu.childrenIds.includes(pId)) {
+    // Clean parentLinks & parentUnionId
+    const currentLinks = getParentLinks(person);
+    const validLinks = currentLinks.filter((link) => {
+      const pu = nextTree.unions[link.unionId];
+      if (!pu) return false;
+      if (!pu.childrenIds.includes(pId)) {
         pu.childrenIds.push(pId);
       }
-    }
-    const changed = validUnionIds.length !== prevUnions.length || validParentUnionId !== person.parentUnionId;
-    nextTree.people[pId] = {
+      return true;
+    });
+
+    const changed =
+      validUnionIds.length !== prevUnions.length ||
+      validLinks.length !== currentLinks.length ||
+      validLinks.some((l, i) => l.unionId !== currentLinks[i]?.unionId || l.type !== currentLinks[i]?.type);
+
+    let updatedPerson: Person = {
       ...person,
       unionIds: validUnionIds,
       ...(changed
@@ -231,15 +286,19 @@ export function sanitizeTree(tree: TreeData): TreeData {
           }
         : {}),
     };
-    if (validParentUnionId) {
-      nextTree.people[pId].parentUnionId = validParentUnionId;
+
+    if (person.parentLinks !== undefined || validLinks.length > 1) {
+      updatedPerson = withParentLinks(updatedPerson, validLinks);
     } else {
-      delete nextTree.people[pId].parentUnionId;
+      updatedPerson.parentUnionId = validLinks[0]?.unionId;
+      delete updatedPerson.parentLinks;
     }
+
     if (person.isDeceased === false) {
-      delete nextTree.people[pId].deathDate;
-      delete nextTree.people[pId].deathPlace;
+      delete updatedPerson.deathDate;
+      delete updatedPerson.deathPlace;
     }
+    nextTree.people[pId] = updatedPerson;
   }
 
   for (const [uId, u] of Object.entries(nextTree.unions)) {
@@ -273,7 +332,8 @@ export function sanitizeTree(tree: TreeData): TreeData {
 export function addChildToPerson(
   tree: TreeData,
   parentPersonId: string,
-  preferredUnionId?: string
+  preferredUnionId?: string,
+  parentLinkType: ParentLinkType = 'biological'
 ): { tree: TreeData; newChildId: string } {
   const nextTree: TreeData = {
     ...tree,
@@ -328,6 +388,7 @@ export function addChildToPerson(
     firstName: '',
     lastName: parent.lastName || '',
     parentUnionId: targetUnionId,
+    parentLinks: [{ unionId: targetUnionId, type: parentLinkType, isPrimary: true }],
     unionIds: [],
     generation: newChildGen,
   });
@@ -512,7 +573,8 @@ export function addPartnerToPerson(
  */
 export function addParentToPerson(
   tree: TreeData,
-  personId: string
+  personId: string,
+  parentLinkType: ParentLinkType = 'biological'
 ): { tree: TreeData; newParentId: string } {
   const nextTree: TreeData = {
     ...tree,
@@ -537,12 +599,12 @@ export function addParentToPerson(
     }
   });
 
-  let parentUnionId = person.parentUnionId;
+  const parentUnionId = person.parentUnionId;
   const newParentId = generateId('parent');
 
   if (parentUnionId && nextTree.unions[parentUnionId]) {
     const parentUnion = nextTree.unions[parentUnionId];
-    // If union only has 1 parent, add the second parent
+    // If union only has 1 parent, add the second parent to this union
     if (parentUnion.partnerIds.length < 2) {
       const existingParent = nextTree.people[parentUnion.partnerIds[0]];
       const newParent: Person = createEmptyPerson({
@@ -563,35 +625,36 @@ export function addParentToPerson(
     }
   }
 
-  // Otherwise, create a new parent and union
-  if (person.parentUnionId && nextTree.unions[person.parentUnionId]) {
-    const oldU = nextTree.unions[person.parentUnionId];
-    nextTree.unions[person.parentUnionId] = {
-      ...oldU,
-      childrenIds: oldU.childrenIds.filter((cId) => cId !== personId),
-    };
-  }
-  parentUnionId = generateId('u_parents');
+  // Otherwise, create a new separate parent union
+  const newParentUnionId = generateId('u_parents');
   const newParent: Person = createEmptyPerson({
     id: newParentId,
     firstName: '',
     lastName: getFamilySurname(person),
-    unionIds: [parentUnionId],
+    unionIds: [newParentUnionId],
     generation: newParentGen,
   });
 
   const newUnion: Union = {
-    id: parentUnionId,
+    id: newParentUnionId,
     partnerIds: [newParentId],
     childrenIds: [personId],
     type: 'married',
   };
 
   nextTree.people[newParentId] = newParent;
-  nextTree.unions[parentUnionId] = newUnion;
+  nextTree.unions[newParentUnionId] = newUnion;
+
+  // Add new parent union to person's parentLinks
+  const currentLinks = getParentLinks(person);
+  const isFirst = currentLinks.length === 0;
+  const updatedLinks: ParentLink[] = [
+    ...currentLinks,
+    { unionId: newParentUnionId, type: parentLinkType, isPrimary: isFirst },
+  ];
+
   nextTree.people[personId] = {
-    ...nextTree.people[personId],
-    parentUnionId,
+    ...withParentLinks(person, updatedLinks),
     generation: personGen,
   };
 
@@ -793,13 +856,14 @@ export function linkExistingPartner(
 }
 
 /**
- * Links an EXISTING person as a child to parentPersonId.
+ * Links an EXISTING person as a child to parentPersonId with an optional relationship type.
  */
 export function linkExistingChild(
   tree: TreeData,
   parentPersonId: string,
   childPersonId: string,
-  preferredUnionId?: string
+  preferredUnionId?: string,
+  parentLinkType: ParentLinkType = 'biological'
 ): TreeData {
   if (parentPersonId === childPersonId) return tree;
 
@@ -808,46 +872,23 @@ export function linkExistingChild(
   const child = nextTree.people[childPersonId];
   if (!parent || !child) return tree;
 
-  // 1. If preferred union is specified and parent is a partner in it
+  // Determine target parent union
+  let targetUnionId: string | null = null;
+
+  // 1. If preferred union is specified and parent is in it
   if (preferredUnionId && nextTree.unions[preferredUnionId]) {
     const union = nextTree.unions[preferredUnionId];
     if (union.partnerIds.includes(parentPersonId)) {
-      if (!union.childrenIds.includes(childPersonId)) {
-        union.childrenIds.push(childPersonId);
-      }
-      nextTree.people[childPersonId] = {
-        ...child,
-        parentUnionId: preferredUnionId,
-      };
-      return sanitizeTree(nextTree);
+      targetUnionId = preferredUnionId;
     }
   }
 
-  // 2. If child already has a parentUnion, check if that union's partner shares a union with parentPersonId
-  if (child.parentUnionId && nextTree.unions[child.parentUnionId]) {
-    const currentUnion = nextTree.unions[child.parentUnionId];
-    const sharedUnion = Object.values(nextTree.unions).find((u) => {
-      return (
-        u.partnerIds.includes(parentPersonId) &&
-        currentUnion.partnerIds.some((pId) => u.partnerIds.includes(pId))
-      );
-    });
-
-    if (sharedUnion) {
-      if (!sharedUnion.childrenIds.includes(childPersonId)) {
-        sharedUnion.childrenIds.push(childPersonId);
-      }
-      nextTree.people[childPersonId] = {
-        ...child,
-        parentUnionId: sharedUnion.id,
-      };
-      currentUnion.childrenIds = currentUnion.childrenIds.filter((id) => id !== childPersonId);
-      return sanitizeTree(nextTree);
-    }
+  // 2. Check if parent already has a union
+  if (!targetUnionId) {
+    targetUnionId = parent.unionIds[0] || null;
   }
 
-  // 3. Fallback: attach to parent's first union or create single-parent union
-  let targetUnionId = parent.unionIds[0];
+  // 3. If parent has no union, create one
   if (!targetUnionId || !nextTree.unions[targetUnionId]) {
     targetUnionId = generateId('u_parents');
     const newUnion: Union = {
@@ -868,29 +909,33 @@ export function linkExistingChild(
     }
   }
 
-  if (child.parentUnionId && child.parentUnionId !== targetUnionId && nextTree.unions[child.parentUnionId]) {
-    const oldU = nextTree.unions[child.parentUnionId];
-    nextTree.unions[child.parentUnionId] = {
-      ...oldU,
-      childrenIds: oldU.childrenIds.filter((id) => id !== childPersonId),
-    };
+  // Add to child's parentLinks
+  const currentLinks = getParentLinks(child);
+  const existingLinkIndex = currentLinks.findIndex((l) => l.unionId === targetUnionId);
+  let nextLinks: ParentLink[];
+  if (existingLinkIndex >= 0) {
+    nextLinks = [...currentLinks];
+    nextLinks[existingLinkIndex] = { ...nextLinks[existingLinkIndex], type: parentLinkType };
+  } else {
+    nextLinks = [
+      ...currentLinks,
+      { unionId: targetUnionId, type: parentLinkType, isPrimary: currentLinks.length === 0 },
+    ];
   }
 
-  nextTree.people[childPersonId] = {
-    ...nextTree.people[childPersonId],
-    parentUnionId: targetUnionId,
-  };
+  nextTree.people[childPersonId] = withParentLinks(child, nextLinks);
 
   return sanitizeTree(nextTree);
 }
 
 /**
- * Links an EXISTING person as a parent to childPersonId.
+ * Links an EXISTING person as a parent to childPersonId with an optional relationship type.
  */
 export function linkExistingParent(
   tree: TreeData,
   childPersonId: string,
-  parentPersonId: string
+  parentPersonId: string,
+  parentLinkType: ParentLinkType = 'biological'
 ): TreeData {
   if (childPersonId === parentPersonId) return tree;
 
@@ -899,65 +944,30 @@ export function linkExistingParent(
   const parent = nextTree.people[parentPersonId];
   if (!child || !parent) return tree;
 
-  const currentUnionId = child.parentUnionId;
+  const currentLinks = getParentLinks(child);
 
-  if (currentUnionId && nextTree.unions[currentUnionId]) {
-    const currentUnion = nextTree.unions[currentUnionId];
-    // Already in this union?
-    if (currentUnion.partnerIds.includes(parentPersonId)) return nextTree;
+  // If parent already has an open single-parent union, or any union
+  let targetUnionId: string | null = null;
 
-    // Check if any partner in currentUnion ALREADY shares a union with parentPersonId
-    const existingSharedUnion = Object.values(nextTree.unions).find((u) => {
-      if (u.id === currentUnion.id) return false;
-      return (
-        u.partnerIds.includes(parentPersonId) &&
-        currentUnion.partnerIds.some((pId) => u.partnerIds.includes(pId))
-      );
-    });
-
-    if (existingSharedUnion) {
-      // Attach child to this existing shared union!
-      if (!existingSharedUnion.childrenIds.includes(childPersonId)) {
-        existingSharedUnion.childrenIds.push(childPersonId);
-      }
-      nextTree.people[childPersonId] = {
-        ...child,
-        parentUnionId: existingSharedUnion.id,
-      };
-
-      // Remove child from old currentUnion
-      currentUnion.childrenIds = currentUnion.childrenIds.filter((id) => id !== childPersonId);
-
-      // If currentUnion was a temporary single-parent wrapper that now has 0 children, delete it
-      if (currentUnion.childrenIds.length === 0 && currentUnion.partnerIds.length <= 1) {
-        delete nextTree.unions[currentUnion.id];
-        currentUnion.partnerIds.forEach((pId) => {
-          if (nextTree.people[pId]) {
-            nextTree.people[pId] = {
-              ...nextTree.people[pId],
-              unionIds: (nextTree.people[pId].unionIds || []).filter((id) => id !== currentUnion.id),
-            };
-          }
-        });
-      }
-
-      return sanitizeTree(nextTree);
+  // Check if any existing parent union for child can accept this parent
+  for (const link of currentLinks) {
+    const u = nextTree.unions[link.unionId];
+    if (u && u.partnerIds.includes(parentPersonId)) {
+      // Already linked via this union! Update type if needed
+      return updateParentLinkType(nextTree, childPersonId, u.id, parentLinkType);
     }
-
-    // No existing shared union, and currentUnion has space for 2nd parent: add parentPersonId to this union
-    if (currentUnion.partnerIds.length < 2) {
-      currentUnion.partnerIds.push(parentPersonId);
+    if (u && u.partnerIds.length < 2 && parentLinkType === 'biological') {
+      targetUnionId = u.id;
+      u.partnerIds.push(parentPersonId);
       nextTree.people[parentPersonId] = {
         ...parent,
-        unionIds: [...(parent.unionIds || []), currentUnion.id],
+        unionIds: [...(parent.unionIds || []), u.id],
       };
       return sanitizeTree(nextTree);
     }
   }
 
-  // Child has no parent union OR current parent union is already full (2 parents)
-  // Check if parent has an open single-parent union
-  let targetUnionId: string | null = null;
+  // Otherwise, find or create an open union for parent
   for (const uId of parent.unionIds || []) {
     const u = nextTree.unions[uId];
     if (u && u.partnerIds.length === 1 && u.partnerIds[0] === parentPersonId) {
@@ -980,25 +990,73 @@ export function linkExistingParent(
       unionIds: [...(parent.unionIds || []), targetUnionId],
     };
   } else {
-    const targetUnion = nextTree.unions[targetUnionId];
-    if (!targetUnion.childrenIds.includes(childPersonId)) {
-      targetUnion.childrenIds.push(childPersonId);
+    const u = nextTree.unions[targetUnionId];
+    if (!u.childrenIds.includes(childPersonId)) {
+      u.childrenIds.push(childPersonId);
     }
   }
 
-  if (child.parentUnionId && child.parentUnionId !== targetUnionId && nextTree.unions[child.parentUnionId]) {
-    const oldU = nextTree.unions[child.parentUnionId];
-    nextTree.unions[child.parentUnionId] = {
-      ...oldU,
-      childrenIds: oldU.childrenIds.filter((id) => id !== childPersonId),
-    };
-  }
+  const nextLinks: ParentLink[] = [
+    ...currentLinks.filter((l) => l.unionId !== targetUnionId),
+    { unionId: targetUnionId, type: parentLinkType, isPrimary: currentLinks.length === 0 },
+  ];
 
-  nextTree.people[childPersonId] = {
-    ...nextTree.people[childPersonId],
-    parentUnionId: targetUnionId,
+  nextTree.people[childPersonId] = withParentLinks(child, nextLinks);
+
+  return sanitizeTree(nextTree);
+}
+
+/**
+ * Updates the relationship type (e.g. biological, adoptive, step, foster) of a parent link for a child.
+ */
+export function updateParentLinkType(
+  tree: TreeData,
+  childPersonId: string,
+  unionId: string,
+  type: ParentLinkType
+): TreeData {
+  const child = tree.people[childPersonId];
+  if (!child) return tree;
+
+  const currentLinks = getParentLinks(child);
+  const found = currentLinks.some((l) => l.unionId === unionId);
+  if (!found) return tree;
+
+  const nextLinks = currentLinks.map((l) => (l.unionId === unionId ? { ...l, type } : l));
+  const nextTree: TreeData = {
+    ...tree,
+    people: {
+      ...tree.people,
+      [childPersonId]: withParentLinks(child, nextLinks),
+    },
   };
+  return sanitizeTree(nextTree);
+}
 
+/**
+ * Sets which parent union is considered primary for a child.
+ */
+export function setPrimaryParentUnion(
+  tree: TreeData,
+  childPersonId: string,
+  unionId: string
+): TreeData {
+  const child = tree.people[childPersonId];
+  if (!child) return tree;
+
+  const currentLinks = getParentLinks(child);
+  const nextLinks = currentLinks.map((l) => ({
+    ...l,
+    isPrimary: l.unionId === unionId,
+  }));
+
+  const nextTree: TreeData = {
+    ...tree,
+    people: {
+      ...tree.people,
+      [childPersonId]: withParentLinks(child, nextLinks),
+    },
+  };
   return sanitizeTree(nextTree);
 }
 
@@ -1018,28 +1076,36 @@ export function linkExistingSibling(
   if (!pA || !pB) return tree;
 
   // Case 1: personA already has a parent union
-  if (pA.parentUnionId && nextTree.unions[pA.parentUnionId]) {
-    const pUnion = nextTree.unions[pA.parentUnionId];
+  const pAPrimary = getPrimaryParentUnionId(pA);
+  if (pAPrimary && nextTree.unions[pAPrimary]) {
+    const pUnion = nextTree.unions[pAPrimary];
     if (!pUnion.childrenIds.includes(personBId)) {
       pUnion.childrenIds.push(personBId);
     }
-    nextTree.people[personBId] = {
-      ...pB,
-      parentUnionId: pA.parentUnionId,
-    };
+    const currentBLinks = getParentLinks(pB);
+    if (!currentBLinks.some((l) => l.unionId === pAPrimary)) {
+      nextTree.people[personBId] = withParentLinks(pB, [
+        ...currentBLinks,
+        { unionId: pAPrimary, type: 'biological', isPrimary: currentBLinks.length === 0 },
+      ]);
+    }
     return sanitizeTree(nextTree);
   }
 
   // Case 2: personB has a parent union
-  if (pB.parentUnionId && nextTree.unions[pB.parentUnionId]) {
-    const pUnion = nextTree.unions[pB.parentUnionId];
+  const pBPrimary = getPrimaryParentUnionId(pB);
+  if (pBPrimary && nextTree.unions[pBPrimary]) {
+    const pUnion = nextTree.unions[pBPrimary];
     if (!pUnion.childrenIds.includes(personAId)) {
       pUnion.childrenIds.push(personAId);
     }
-    nextTree.people[personAId] = {
-      ...pA,
-      parentUnionId: pB.parentUnionId,
-    };
+    const currentALinks = getParentLinks(pA);
+    if (!currentALinks.some((l) => l.unionId === pBPrimary)) {
+      nextTree.people[personAId] = withParentLinks(pA, [
+        ...currentALinks,
+        { unionId: pBPrimary, type: 'biological', isPrimary: currentALinks.length === 0 },
+      ]);
+    }
     return sanitizeTree(nextTree);
   }
 
@@ -1052,21 +1118,14 @@ export function linkExistingSibling(
     type: 'married',
   };
   nextTree.unions[newUnionId] = newUnion;
-  nextTree.people[personAId] = {
-    ...pA,
-    parentUnionId: newUnionId,
-  };
-  nextTree.people[personBId] = {
-    ...pB,
-    parentUnionId: newUnionId,
-  };
+  nextTree.people[personAId] = withParentLinks(pA, [{ unionId: newUnionId, type: 'biological', isPrimary: true }]);
+  nextTree.people[personBId] = withParentLinks(pB, [{ unionId: newUnionId, type: 'biological', isPrimary: true }]);
 
   return sanitizeTree(nextTree);
 }
 
 /**
- * Unlinks a specific parent from a child.
- * If the union had 2 parents [P1, P2], unlinking P2 leaves the child attached to P1.
+ * Unlinks a specific parent from a child across all applicable parent unions.
  */
 export function unlinkParentFromChild(
   tree: TreeData,
@@ -1076,93 +1135,90 @@ export function unlinkParentFromChild(
   let nextTree = sanitizeTree(tree);
   const child = nextTree.people[childPersonId];
   if (!child) return tree;
-  if (!child.parentUnionId) return nextTree;
 
-  const currentUnion = nextTree.unions[child.parentUnionId];
-  if (!currentUnion) {
-    nextTree.people[childPersonId] = {
-      ...child,
-      parentUnionId: undefined,
-    };
-    return sanitizeTree(nextTree);
-  }
+  const currentLinks = getParentLinks(child);
+  if (currentLinks.length === 0) return nextTree;
 
-  // If the union has no parents (orphan union), detach child and cleanup
-  if (currentUnion.partnerIds.length === 0) {
-    currentUnion.childrenIds = (currentUnion.childrenIds || []).filter((id) => id !== childPersonId);
-    nextTree.people[childPersonId] = {
-      ...child,
-      parentUnionId: undefined,
-    };
-    if (currentUnion.childrenIds.length === 0) {
-      delete nextTree.unions[currentUnion.id];
-    }
-    return sanitizeTree(nextTree);
-  }
+  // Find all unions where parentPersonId is a partner
+  let relevantLinks = currentLinks.filter((link) => {
+    const u = nextTree.unions[link.unionId];
+    return u && u.partnerIds.includes(parentPersonId);
+  });
 
-  if (!currentUnion.partnerIds.includes(parentPersonId)) return tree;
-
-  // Case 1: Union has 2 parents
-  if (currentUnion.partnerIds.length >= 2) {
-    const otherParentId = currentUnion.partnerIds.find((id) => id !== parentPersonId)!;
-    const otherParent = nextTree.people[otherParentId];
-
-    // Remove child from this 2-parent union
-    currentUnion.childrenIds = currentUnion.childrenIds.filter((id) => id !== childPersonId);
-
-    // Find or create single-parent union for otherParent
-    let singleUnionId = (otherParent?.unionIds || []).find((uId) => {
-      const u = nextTree.unions[uId];
-      return u && u.partnerIds.length === 1 && u.partnerIds[0] === otherParentId;
+  // If child belongs to a 0-partner orphan union, detach child from it
+  if (relevantLinks.length === 0) {
+    const orphanLinks = currentLinks.filter((link) => {
+      const u = nextTree.unions[link.unionId];
+      return u && u.partnerIds.length === 0;
     });
-
-    if (!singleUnionId) {
-      singleUnionId = generateId('u_parents');
-      const newSingleUnion: Union = {
-        id: singleUnionId,
-        partnerIds: [otherParentId],
-        childrenIds: [childPersonId],
-        type: 'married',
-      };
-      nextTree.unions[singleUnionId] = newSingleUnion;
-      if (otherParent) {
-        nextTree.people[otherParentId] = {
-          ...otherParent,
-          unionIds: [...(otherParent.unionIds || []), singleUnionId],
-        };
-      }
+    if (orphanLinks.length > 0) {
+      relevantLinks = orphanLinks;
     } else {
-      const singleUnion = nextTree.unions[singleUnionId];
-      if (!singleUnion.childrenIds.includes(childPersonId)) {
-        singleUnion.childrenIds.push(childPersonId);
+      return tree;
+    }
+  }
+
+  let remainingLinks = [...currentLinks];
+
+  for (const link of relevantLinks) {
+    const u = nextTree.unions[link.unionId];
+    if (!u) continue;
+
+    if (u.partnerIds.length >= 2) {
+      // Union has 2 parents: leave other parent attached by shifting to a 1-parent union or leaving child in remaining
+      const otherParentId = u.partnerIds.find((id) => id !== parentPersonId)!;
+      const otherParent = nextTree.people[otherParentId];
+
+      u.childrenIds = u.childrenIds.filter((id) => id !== childPersonId);
+      remainingLinks = remainingLinks.filter((l) => l.unionId !== u.id);
+
+      // Find or create single-parent union for otherParent
+      let singleUnionId = (otherParent?.unionIds || []).find((uId) => {
+        const unionObj = nextTree.unions[uId];
+        return unionObj && unionObj.partnerIds.length === 1 && unionObj.partnerIds[0] === otherParentId;
+      });
+
+      if (!singleUnionId) {
+        singleUnionId = generateId('u_parents');
+        const newSingleUnion: Union = {
+          id: singleUnionId,
+          partnerIds: [otherParentId],
+          childrenIds: [childPersonId],
+          type: 'married',
+        };
+        nextTree.unions[singleUnionId] = newSingleUnion;
+        if (otherParent) {
+          nextTree.people[otherParentId] = {
+            ...otherParent,
+            unionIds: [...(otherParent.unionIds || []), singleUnionId],
+          };
+        }
+      } else {
+        const singleUnion = nextTree.unions[singleUnionId];
+        if (!singleUnion.childrenIds.includes(childPersonId)) {
+          singleUnion.childrenIds.push(childPersonId);
+        }
+      }
+
+      remainingLinks.push({ unionId: singleUnionId, type: link.type, isPrimary: link.isPrimary });
+    } else {
+      // 1 parent union: remove child from this union
+      u.childrenIds = u.childrenIds.filter((id) => id !== childPersonId);
+      remainingLinks = remainingLinks.filter((l) => l.unionId !== u.id);
+      if (u.childrenIds.length === 0) {
+        delete nextTree.unions[u.id];
+        const p = nextTree.people[parentPersonId];
+        if (p) {
+          nextTree.people[parentPersonId] = {
+            ...p,
+            unionIds: (p.unionIds || []).filter((id) => id !== u.id),
+          };
+        }
       }
     }
-
-    nextTree.people[childPersonId] = {
-      ...child,
-      parentUnionId: singleUnionId,
-    };
-
-    return sanitizeTree(nextTree);
   }
 
-  // Case 2: Union has only this 1 parent
-  currentUnion.childrenIds = currentUnion.childrenIds.filter((id) => id !== childPersonId);
-  nextTree.people[childPersonId] = {
-    ...child,
-    parentUnionId: undefined,
-  };
-
-  if (currentUnion.childrenIds.length === 0) {
-    delete nextTree.unions[currentUnion.id];
-    const parent = nextTree.people[parentPersonId];
-    if (parent) {
-      nextTree.people[parentPersonId] = {
-        ...parent,
-        unionIds: (parent.unionIds || []).filter((id) => id !== currentUnion.id),
-      };
-    }
-  }
+  nextTree.people[childPersonId] = withParentLinks(child, remainingLinks);
 
   return sanitizeTree(nextTree);
 }
@@ -1204,11 +1260,12 @@ export function unlinkPartner(
 }
 
 /**
- * Unlinks a child from their parent union.
+ * Unlinks a child completely from a specific parent union or all parent unions.
  */
 export function unlinkChild(
   tree: TreeData,
-  childPersonId: string
+  childPersonId: string,
+  unionId?: string
 ): TreeData {
   const nextTree: TreeData = {
     ...tree,
@@ -1217,37 +1274,38 @@ export function unlinkChild(
   };
 
   const child = nextTree.people[childPersonId];
-  if (!child || !child.parentUnionId) return tree;
+  if (!child) return tree;
 
-  const unionId = child.parentUnionId;
-  const union = nextTree.unions[unionId];
+  const currentLinks = getParentLinks(child);
+  const targetUnionIds = unionId ? [unionId] : currentLinks.map((l) => l.unionId);
 
-  nextTree.people[childPersonId] = {
-    ...child,
-    parentUnionId: undefined,
-  };
-
-  if (union) {
-    const remainingChildren = (union.childrenIds || []).filter((id) => id !== childPersonId);
-    if (remainingChildren.length === 0 && union.partnerIds.length <= 1) {
-      delete nextTree.unions[unionId];
-      if (union.partnerIds.length === 1) {
-        const partnerId = union.partnerIds[0];
-        const parent = nextTree.people[partnerId];
-        if (parent) {
-          nextTree.people[partnerId] = {
-            ...parent,
-            unionIds: (parent.unionIds || []).filter((id) => id !== unionId),
-          };
+  for (const uId of targetUnionIds) {
+    const union = nextTree.unions[uId];
+    if (union) {
+      const remainingChildren = (union.childrenIds || []).filter((id) => id !== childPersonId);
+      if (remainingChildren.length === 0 && union.partnerIds.length <= 1) {
+        delete nextTree.unions[uId];
+        if (union.partnerIds.length === 1) {
+          const partnerId = union.partnerIds[0];
+          const parent = nextTree.people[partnerId];
+          if (parent) {
+            nextTree.people[partnerId] = {
+              ...parent,
+              unionIds: (parent.unionIds || []).filter((id) => id !== uId),
+            };
+          }
         }
+      } else {
+        nextTree.unions[uId] = {
+          ...union,
+          childrenIds: remainingChildren,
+        };
       }
-    } else {
-      nextTree.unions[unionId] = {
-        ...union,
-        childrenIds: remainingChildren,
-      };
     }
   }
+
+  const remainingLinks = unionId ? currentLinks.filter((l) => l.unionId !== unionId) : [];
+  nextTree.people[childPersonId] = withParentLinks(child, remainingLinks);
 
   return sanitizeTree(nextTree);
 }

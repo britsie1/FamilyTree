@@ -499,6 +499,10 @@ export function generateEdgesWithBridgeHops(
 
       const dropCrossings = findOverpasses(cx, busY, cy, horizontalSegments);
       const dropPath = buildVerticalPathWithHops(cx, busY, cy, dropCrossings, HOP_RADIUS);
+
+      const linkType = child.data.parentLinks?.find((l) => l.unionId === union.id)?.type ||
+        (child.data.parentUnionId === union.id ? 'biological' : undefined);
+
       edges.push({
         id: `edge_child_${union.id}_${child.id}`,
         sourceId: union.id,
@@ -507,6 +511,7 @@ export function generateEdgesWithBridgeHops(
         pathD: dropPath,
         color: unionColor,
         hasHop: dropCrossings.length > 0,
+        parentLinkType: linkType,
       });
     });
   }

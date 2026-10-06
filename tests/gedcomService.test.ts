@@ -227,6 +227,132 @@ describe('GEDCOM Service', () => {
       const nakedDeat = lines.find((l) => l.trim() === '1 DEAT');
       assert.strictEqual(nakedDeat, undefined);
     });
+
+    it('parses multiple FAMC records with PEDI tags correctly', () => {
+      const sample = `
+0 HEAD
+0 @I1@ INDI
+1 NAME Bio /Father/
+1 SEX M
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bio /Mother/
+1 SEX F
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Adoptive /Father/
+1 SEX M
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Adoptive /Mother/
+1 SEX F
+1 FAMS @F2@
+0 @I5@ INDI
+1 NAME Child /Person/
+1 SEX M
+1 FAMC @F1@
+2 PEDI birth
+1 FAMC @F2@
+2 PEDI adopted
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I5@
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I4@
+1 CHIL @I5@
+0 TRLR
+`;
+      const tree = parseGedcom(sample);
+      const child = Object.values(tree.people).find((p) => p.firstName === 'Child');
+      assert.ok(child);
+      assert.ok(child.parentLinks);
+      assert.strictEqual(child.parentLinks.length, 2);
+
+      const f1 = Object.values(tree.unions).find((u) => u.partnerIds.includes(Object.values(tree.people).find(p => p.firstName === 'Bio')!.id));
+      const f2 = Object.values(tree.unions).find((u) => u.partnerIds.includes(Object.values(tree.people).find(p => p.firstName === 'Adoptive')!.id));
+      assert.ok(f1 && f2);
+
+      const bioLink = child.parentLinks.find(l => l.unionId === f1.id);
+      const adopLink = child.parentLinks.find(l => l.unionId === f2.id);
+      assert.strictEqual(bioLink?.type, 'biological');
+      assert.strictEqual(adopLink?.type, 'adoptive');
+      assert.strictEqual(child.parentUnionId, f1.id);
+    });
+
+    it('exports and roundtrips multiple parent unions with PEDI tags', () => {
+      const sample = `
+0 HEAD
+0 @I1@ INDI
+1 NAME Bio /Father/
+1 SEX M
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bio /Mother/
+1 SEX F
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Step /Father/
+1 SEX M
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Child /Person/
+1 SEX F
+1 FAMC @F1@
+2 PEDI birth
+1 FAMC @F2@
+2 PEDI step
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I4@
+0 @F2@ FAM
+1 HUSB @I3@
+1 CHIL @I4@
+0 TRLR
+`;
+      const parsed = parseGedcom(sample);
+      const exported = exportGedcom(parsed);
+      assert.ok(exported.includes('1 FAMC @F'));
+      assert.ok(exported.includes('2 PEDI BIRTH'));
+      assert.ok(exported.includes('2 PEDI STEP'));
+
+      const roundtrip = parseGedcom(exported);
+      const child = Object.values(roundtrip.people).find((p) => p.firstName === 'Child');
+      assert.ok(child);
+      assert.ok(child.parentLinks);
+      assert.strictEqual(child.parentLinks.length, 2);
+      const types = child.parentLinks.map(l => l.type).sort();
+      assert.deepStrictEqual(types, ['biological', 'step']);
+    });
+
+    it('keeps both parent unions when a child is listed via CHIL under two FAMs without FAMC', () => {
+      const sample = `
+0 HEAD
+0 @I1@ INDI
+1 NAME A /One/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME B /Two/
+1 FAMS @F2@
+0 @I3@ INDI
+1 NAME Kid /Three/
+0 @F1@ FAM
+1 HUSB @I1@
+1 CHIL @I3@
+0 @F2@ FAM
+1 HUSB @I2@
+1 CHIL @I3@
+0 TRLR
+`;
+      const tree = parseGedcom(sample);
+      const kid = Object.values(tree.people).find((p) => p.firstName === 'Kid')!;
+      assert.strictEqual(kid.parentLinks?.length, 2);
+      for (const u of Object.values(tree.unions)) {
+        assert.ok(u.childrenIds.includes(kid.id));
+      }
+    });
   });
 });
 

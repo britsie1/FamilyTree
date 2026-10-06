@@ -19,6 +19,14 @@ export interface TreeLink {
   createdAt?: string;
 }
 
+export type ParentLinkType = 'biological' | 'adoptive' | 'step' | 'foster' | 'unknown';
+
+export interface ParentLink {
+  unionId: string;
+  type: ParentLinkType;
+  isPrimary?: boolean;
+}
+
 export interface Person {
   id: string;
   firstName?: string;
@@ -35,7 +43,8 @@ export interface Person {
   avatarUrl?: string;
   notes?: string;
   // Relationship references
-  parentUnionId?: string; // Union of this person's biological/adoptive parents
+  parentUnionId?: string; // Union of this person's biological/adoptive parents (legacy / primary fallback)
+  parentLinks?: ParentLink[]; // Multiple parent unions with typed parentage (biological, adoptive, step, foster, etc.)
   unionIds: string[];     // IDs of unions where this person is a partner/parent
   generation?: number;    // Generational rank level (supports negative for ancestors above root)
   // Cross-tree links
@@ -203,6 +212,7 @@ export interface LayoutEdge {
   isHighlighted?: boolean;
   hasHop?: boolean;
   unionType?: UnionType;
+  parentLinkType?: ParentLinkType;
 }
 
 export interface TreeLayout {

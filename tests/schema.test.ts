@@ -414,4 +414,159 @@ describe('Phase 1: Versioned Schema & Boundary Validation', () => {
       assert.throws(() => processTreeIngress('string-payload'), /valid non-null object/);
     });
   });
+
+  describe('Multiple Sets of Parents with Typed Relationships', () => {
+    it('validates a person with multiple typed parent links', () => {
+      const child: Person = {
+        id: 'child1',
+        firstName: 'Adopted',
+        lastName: 'Child',
+        unionIds: [],
+        parentUnionId: 'u_bio',
+        parentLinks: [
+          { unionId: 'u_bio', type: 'biological', isPrimary: true },
+          { unionId: 'u_adop', type: 'adoptive', isPrimary: false },
+          { unionId: 'u_foster', type: 'foster' },
+        ],
+      };
+      const res = validatePerson(child);
+      assert.equal(res.success, true);
+      assert.equal(res.data?.parentLinks?.length, 3);
+    });
+
+    it('rejects invalid parentLink type in validation', () => {
+      const child: any = {
+        id: 'child1',
+        firstName: 'Invalid',
+        unionIds: [],
+        parentLinks: [
+          { unionId: 'u_bio', type: 'extraterrestrial' },
+        ],
+      };
+      const res = validatePerson(child);
+      assert.equal(res.success, false);
+      assert.ok(res.errors.some((e: string) => e.includes('ParentLink.type must be one of')));
+    });
+
+    it('checkInvariants accepts multiple parent unions without flagging inconsistent parent links', () => {
+      const tree: TreeData = {
+        id: 'multi-parent-tree',
+        name: 'Multi Parent Tree',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        people: {
+          bio_dad: { id: 'bio_dad', unionIds: ['u_bio'] },
+          bio_mom: { id: 'bio_mom', unionIds: ['u_bio'] },
+          adop_dad: { id: 'adop_dad', unionIds: ['u_adop'] },
+          adop_mom: { id: 'adop_mom', unionIds: ['u_adop'] },
+          child: {
+            id: 'child',
+            unionIds: [],
+            parentUnionId: 'u_bio',
+            parentLinks: [
+              { unionId: 'u_bio', type: 'biological', isPrimary: true },
+              { unionId: 'u_adop', type: 'adoptive', isPrimary: false },
+            ],
+          },
+        },
+        unions: {
+          u_bio: {
+            id: 'u_bio',
+            partnerIds: ['bio_dad', 'bio_mom'],
+            childrenIds: ['child'],
+          },
+          u_adop: {
+            id: 'u_adop',
+            partnerIds: ['adop_dad', 'adop_mom'],
+            childrenIds: ['child'],
+          },
+        },
+      };
+
+      const violations = checkInvariants(tree);
+      assert.equal(violations.length, 0, `Expected 0 violations but got: ${JSON.stringify(violations)}`);
+    });
+
+    it('repair preserves both biological and adoptive parent unions for a child', () => {
+      const tree: TreeData = {
+        id: 'multi-parent-repair-tree',
+        name: 'Repair Tree',
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        people: {
+          bio_dad: { id: 'bio_dad', unionIds: ['u_bio'] },
+          adop_dad: { id: 'adop_dad', unionIds: ['u_adop'] },
+          child: {
+            id: 'child',
+            unionIds: [],
+            parentUnionId: 'u_bio',
+            parentLinks: [
+              { unionId: 'u_bio', type: 'biological', isPrimary: true },
+              { unionId: 'u_adop', type: 'adoptive', isPrimary: false },
+            ],
+          },
+        },
+        unions: {
+          u_bio: {
+            id: 'u_bio',
+            partnerIds: ['bio_dad'],
+            childrenIds: ['child'],
+          },
+          u_adop: {
+            id: 'u_adop',
+            partnerIds: ['adop_dad'],
+            childrenIds: ['child'],
+          },
+        },
+      };
+
+      const { tree: repaired } = repair(tree);
+      assert.ok(repaired.unions['u_bio'].childrenIds.includes('child'));
+      assert.ok(repaired.unions['u_adop'].childrenIds.includes('child'));
+      assert.equal(repaired.people['child'].parentLinks?.length, 2);
+    });
+
+    const driftTree = (): TreeData => ({
+      id: 'drift',
+      name: 'Drift',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      people: {
+        a: { id: 'a', unionIds: ['u1'] },
+        b: { id: 'b', unionIds: ['u2'] },
+        kid: {
+          id: 'kid',
+          unionIds: [],
+          parentUnionId: 'u_gone',
+          parentLinks: [
+            { unionId: 'u1', type: 'biological', isPrimary: true },
+            { unionId: 'u2', type: 'step', isPrimary: false },
+          ],
+        },
+      },
+      unions: {
+        u1: { id: 'u1', partnerIds: ['a'], childrenIds: ['kid'] },
+        u2: { id: 'u2', partnerIds: ['b'], childrenIds: ['kid'] },
+      },
+    } as unknown as TreeData);
+
+    it('flags parentUnionId that is not among parentLinks and repair resyncs it without mutating input', () => {
+      const tree = driftTree();
+      tree.people['kid'].parentUnionId = 'u2';
+      tree.people['kid'].parentLinks = [{ unionId: 'u1', type: 'biological', isPrimary: true }];
+      const before = JSON.stringify(tree);
+
+      assert.ok(
+        checkInvariants(tree).some((v) => v.code === 'INCONSISTENT_PARENT_LINK' && v.entityId === 'kid')
+      );
+
+      const { tree: repaired } = repair(tree);
+      assert.equal(repaired.people['kid'].parentUnionId, 'u1');
+      assert.equal(JSON.stringify(tree), before);
+      assert.ok(!checkInvariants(repaired).some((v) => v.code === 'INCONSISTENT_PARENT_LINK'));
+    });
+  });
 });

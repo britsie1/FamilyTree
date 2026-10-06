@@ -205,6 +205,20 @@ export const ConnectorLines: React.FC<ConnectorLinesProps> = ({
       return { strokeColor: edge.color || '#6366f1' };
     }
 
+    // Non-biological child links (adoptive, step, foster, unknown)
+    if (edge.parentLinkType && edge.parentLinkType !== 'biological') {
+      if (edge.parentLinkType === 'adoptive') {
+        return { strokeColor: edge.color || '#64748b', strokeDash: '5 3' };
+      }
+      if (edge.parentLinkType === 'foster') {
+        return { strokeColor: edge.color || '#64748b', strokeDash: '2 3' };
+      }
+      if (edge.parentLinkType === 'step') {
+        return { strokeColor: edge.color || '#64748b', strokeDash: '8 3 2 3' };
+      }
+      return { strokeColor: edge.color || '#64748b', strokeDash: '3 3' };
+    }
+
     return { strokeColor: edge.color || '#64748b' };
   };
 

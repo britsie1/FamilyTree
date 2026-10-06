@@ -172,4 +172,39 @@ describe('Tree Operations - Bug 3.4 & Bug 3.5', () => {
       assert.strictEqual(sanitized.people['p1'].deathPlace, undefined);
     });
   });
+
+  describe('unlinkChild with multiple parent unions', () => {
+    const makeTree = () =>
+      ({
+        id: 't', name: 't', createdAt: '', updatedAt: '',
+        people: {
+          a: { id: 'a', unionIds: ['u1'] },
+          b: { id: 'b', unionIds: ['u2'] },
+          kid: {
+            id: 'kid', unionIds: [], parentUnionId: 'u1',
+            parentLinks: [
+              { unionId: 'u1', type: 'biological', isPrimary: true },
+              { unionId: 'u2', type: 'adoptive', isPrimary: false },
+            ],
+          },
+        },
+        unions: {
+          u1: { id: 'u1', partnerIds: ['a'], childrenIds: ['kid'] },
+          u2: { id: 'u2', partnerIds: ['b'], childrenIds: ['kid'] },
+        },
+      }) as any;
+
+    it('detaches only the given union and promotes the remaining link', () => {
+      const next = unlinkChild(makeTree(), 'kid', 'u1');
+      assert.strictEqual(next.people['kid'].parentUnionId, 'u2');
+      assert.deepStrictEqual(next.people['kid'].parentLinks.map((l: any) => l.unionId), ['u2']);
+      assert.ok(next.unions['u2'].childrenIds.includes('kid'));
+    });
+
+    it('detaches from every union when no union id is given', () => {
+      const next = unlinkChild(makeTree(), 'kid');
+      assert.strictEqual(next.people['kid'].parentUnionId, undefined);
+      assert.strictEqual(next.people['kid'].parentLinks, undefined);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { produceWithPatches, applyPatches, enablePatches, setAutoFreeze, type Patch } from 'immer';
-import type { TreeData, Person, Union, PersonDocument, GoogleDriveConfig } from '../types/tree';
+import type { TreeData, Person, Union, PersonDocument, GoogleDriveConfig, ParentLinkType } from '../types/tree';
 import { useCanvasStore } from './useCanvasStore';
 import { useCollabStore } from './useCollabStore';
 import { cloudSyncBridge } from '../services/cloudSyncBridge';
@@ -19,6 +19,8 @@ import {
   linkExistingPartner,
   linkExistingParent,
   linkExistingSibling,
+  updateParentLinkType,
+  setPrimaryParentUnion,
   unlinkPartner,
   unlinkChild,
   unlinkParentFromChild,
@@ -251,16 +253,18 @@ export interface TreeStoreState {
   deleteUnion: (unionId: string) => void;
   deletePerson: (personId: string) => void;
   addPerson: (overrides?: Partial<Person>) => Person;
-  addChild: (personId: string, preferredUnionId?: string) => string;
+  addChild: (personId: string, preferredUnionId?: string, parentLinkType?: ParentLinkType) => string;
   addSibling: (personId: string) => string;
   addPartner: (personId: string) => string;
-  addParent: (personId: string) => string;
-  linkChild: (sourcePersonId: string, targetPersonId: string, preferredUnionId?: string) => void;
+  addParent: (personId: string, parentLinkType?: ParentLinkType) => string;
+  linkChild: (sourcePersonId: string, targetPersonId: string, preferredUnionId?: string, parentLinkType?: ParentLinkType) => void;
   linkSibling: (sourcePersonId: string, targetPersonId: string) => void;
   linkPartner: (sourcePersonId: string, targetPersonId: string) => void;
-  linkParent: (sourcePersonId: string, targetPersonId: string) => void;
+  linkParent: (sourcePersonId: string, targetPersonId: string, parentLinkType?: ParentLinkType) => void;
+  updateParentLinkTypeAction: (childPersonId: string, unionId: string, type: ParentLinkType) => void;
+  setPrimaryParentUnionAction: (childPersonId: string, unionId: string) => void;
   unlinkPartnerAction: (personId: string, unionId: string) => void;
-  unlinkChildAction: (childPersonId: string) => void;
+  unlinkChildAction: (childPersonId: string, unionId?: string) => void;
   unlinkParentFromChildAction: (childPersonId: string, parentPersonId: string) => void;
   resetLayout: () => void;
   makeCopy: () => TreeData;
@@ -683,10 +687,10 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       return newPerson;
     },
 
-    addChild: (personId, preferredUnionId) => {
+    addChild: (personId, preferredUnionId, parentLinkType) => {
       let newId = '';
       get().setTree((prev) => {
-        const res = addChildToPerson(prev, personId, preferredUnionId);
+        const res = addChildToPerson(prev, personId, preferredUnionId, parentLinkType);
         newId = res.newChildId;
         return res.tree;
       });
@@ -713,18 +717,18 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       return newId;
     },
 
-    addParent: (personId) => {
+    addParent: (personId, parentLinkType) => {
       let newId = '';
       get().setTree((prev) => {
-        const res = addParentToPerson(prev, personId);
+        const res = addParentToPerson(prev, personId, parentLinkType);
         newId = res.newParentId;
         return res.tree;
       });
       return newId;
     },
 
-    linkChild: (sourcePersonId, targetPersonId, preferredUnionId) => {
-      get().setTree((prev) => linkExistingChild(prev, sourcePersonId, targetPersonId, preferredUnionId));
+    linkChild: (sourcePersonId, targetPersonId, preferredUnionId, parentLinkType) => {
+      get().setTree((prev) => linkExistingChild(prev, sourcePersonId, targetPersonId, preferredUnionId, parentLinkType));
     },
 
     linkSibling: (sourcePersonId, targetPersonId) => {
@@ -735,16 +739,24 @@ export const useTreeStore = create<TreeStoreState>((set, get) => {
       get().setTree((prev) => linkExistingPartner(prev, sourcePersonId, targetPersonId));
     },
 
-    linkParent: (sourcePersonId, targetPersonId) => {
-      get().setTree((prev) => linkExistingParent(prev, sourcePersonId, targetPersonId));
+    linkParent: (sourcePersonId, targetPersonId, parentLinkType) => {
+      get().setTree((prev) => linkExistingParent(prev, sourcePersonId, targetPersonId, parentLinkType));
+    },
+
+    updateParentLinkTypeAction: (childPersonId, unionId, type) => {
+      get().setTree((prev) => updateParentLinkType(prev, childPersonId, unionId, type));
+    },
+
+    setPrimaryParentUnionAction: (childPersonId, unionId) => {
+      get().setTree((prev) => setPrimaryParentUnion(prev, childPersonId, unionId));
     },
 
     unlinkPartnerAction: (personId, unionId) => {
       get().setTree((prev) => unlinkPartner(prev, personId, unionId));
     },
 
-    unlinkChildAction: (childPersonId) => {
-      get().setTree((prev) => unlinkChild(prev, childPersonId));
+    unlinkChildAction: (childPersonId, unionId) => {
+      get().setTree((prev) => unlinkChild(prev, childPersonId, unionId));
     },
 
     unlinkParentFromChildAction: (childPersonId, parentPersonId) => {

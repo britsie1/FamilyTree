@@ -123,19 +123,19 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
   const openRelationshipModal = useModalStore((s) => s.openRelationshipModal);
 
   // Relationship modal handlers
-  const handleCreateNewRelation = () => {
+  const handleCreateNewRelation = (linkType?: import('../../types/tree').ParentLinkType) => {
     const { sourcePersonId, relationType, preferredUnionId } = relModal;
     if (!sourcePersonId) return;
 
     let newId = '';
     if (relationType === 'child') {
-      newId = addChild(sourcePersonId, preferredUnionId);
+      newId = addChild(sourcePersonId, preferredUnionId, linkType);
     } else if (relationType === 'sibling') {
       newId = addSibling(sourcePersonId);
     } else if (relationType === 'partner') {
       newId = addPartner(sourcePersonId);
     } else if (relationType === 'parent') {
-      newId = addParent(sourcePersonId);
+      newId = addParent(sourcePersonId, linkType);
     }
 
     if (newId) {
@@ -144,18 +144,18 @@ export const TreeModals: React.FC<TreeModalsProps> = ({
     closeRelationshipModal();
   };
 
-  const handleLinkExistingRelation = (targetPersonId: string) => {
+  const handleLinkExistingRelation = (targetPersonId: string, linkType?: import('../../types/tree').ParentLinkType) => {
     const { sourcePersonId, relationType, preferredUnionId } = relModal;
     if (!sourcePersonId || !targetPersonId) return;
 
     if (relationType === 'child') {
-      linkChild(sourcePersonId, targetPersonId, preferredUnionId);
+      linkChild(sourcePersonId, targetPersonId, preferredUnionId, linkType);
     } else if (relationType === 'sibling') {
       linkSibling(sourcePersonId, targetPersonId);
     } else if (relationType === 'partner') {
       linkPartner(sourcePersonId, targetPersonId);
     } else if (relationType === 'parent') {
-      linkParent(sourcePersonId, targetPersonId);
+      linkParent(sourcePersonId, targetPersonId, linkType);
     }
 
     selectPerson(targetPersonId);

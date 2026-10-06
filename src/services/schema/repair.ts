@@ -54,7 +54,11 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   // Clone individual records in sorted order
   for (const pId of Object.keys(nextTree.people).sort()) {
     const p = nextTree.people[pId];
-    nextTree.people[pId] = { ...p, unionIds: [...(p.unionIds || [])] };
+    nextTree.people[pId] = {
+      ...p,
+      unionIds: [...(p.unionIds || [])],
+      ...(p.parentLinks ? { parentLinks: p.parentLinks.map((l) => ({ ...l })) } : {}),
+    };
   }
   for (const uId of Object.keys(nextTree.unions).sort()) {
     const u = nextTree.unions[uId];
@@ -142,6 +146,20 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
       delete p.parentUnionId;
     }
 
+    if (p.parentLinks) {
+      const validParentLinks = p.parentLinks.filter((l) => Boolean(nextTree.unions[l.unionId]));
+      if (validParentLinks.length !== p.parentLinks.length) {
+        const removed = p.parentLinks.filter((l) => !nextTree.unions[l.unionId]).map((l) => l.unionId);
+        changes.push({
+          type: 'CLEANED_PARENT_UNION',
+          description: `Removed non-existent parentLinks [${removed.join(', ')}] on person "${p.id}"`,
+          entityId: p.id,
+          path: ['people', p.id, 'parentLinks'],
+        });
+        p.parentLinks = validParentLinks;
+      }
+    }
+
     const validUnions = p.unionIds.filter((uId) => Boolean(nextTree.unions[uId]));
     if (validUnions.length !== p.unionIds.length) {
       const removed = p.unionIds.filter((uId) => !nextTree.unions[uId]);
@@ -168,6 +186,9 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
       u.childrenIds = u.childrenIds.filter((cId) => cId !== pId);
       if (nextTree.people[pId]?.parentUnionId === u.id) {
         delete nextTree.people[pId].parentUnionId;
+      }
+      if (nextTree.people[pId]?.parentLinks) {
+        nextTree.people[pId].parentLinks = nextTree.people[pId].parentLinks!.filter((l) => l.unionId !== u.id);
       }
     }
   }
@@ -205,12 +226,36 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     }
   }
 
-  // 5c. Ensure union childrenIds match person parentUnionId
+  // 5b-links. parentLinks is authoritative: keep parentUnionId equal to its primary entry
+  for (const p of sortedPeople(nextTree.people)) {
+    if (!p.parentLinks) continue;
+    if (p.parentLinks.length === 0) {
+      delete p.parentLinks;
+      continue;
+    }
+    if (!p.parentLinks.some((l) => l.unionId === p.parentUnionId)) {
+      const primary = p.parentLinks.find((l) => l.isPrimary) ?? p.parentLinks[0];
+      changes.push({
+        type: 'REPAIRED_RECIPROCAL_LINK',
+        description: `Set parentUnionId "${primary.unionId}" on "${p.id}" to match its parentLinks`,
+        entityId: p.id,
+        path: ['people', p.id, 'parentUnionId'],
+      });
+      p.parentUnionId = primary.unionId;
+    }
+  }
+
+  // 5c. Ensure union childrenIds match person parentUnionId / parentLinks
   for (const u of sortedUnions(nextTree.unions)) {
     for (const cId of [...u.childrenIds]) {
       const child = nextTree.people[cId];
       if (!child) continue;
-      if (!child.parentUnionId) {
+
+      const hasLinkInParentLinks = Boolean(child.parentLinks?.some((l) => l.unionId === u.id));
+      const hasParentUnionId = Boolean(child.parentUnionId);
+
+      if (!hasParentUnionId && !hasLinkInParentLinks) {
+        // Child had neither; assign parentUnionId to this union
         changes.push({
           type: 'REPAIRED_RECIPROCAL_LINK',
           description: `Set parentUnionId "${u.id}" on child "${cId}"`,
@@ -218,11 +263,14 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
           path: ['people', cId, 'parentUnionId'],
         });
         child.parentUnionId = u.id;
-      } else if (child.parentUnionId !== u.id) {
-        // Child already has a different parent union; remove from this union
+        if (child.parentLinks) {
+          child.parentLinks.push({ unionId: u.id, type: 'biological', isPrimary: true });
+        }
+      } else if (child.parentUnionId !== u.id && !hasLinkInParentLinks) {
+        // Child has parentUnionId pointing elsewhere, and union is NOT in child's parentLinks
         changes.push({
           type: 'PRUNED_DANGLING_CHILD',
-          description: `Removed child "${cId}" from union "${u.id}" because child points to parentUnionId "${child.parentUnionId}"`,
+          description: `Removed child "${cId}" from union "${u.id}" because child points to parentUnionId "${child.parentUnionId}" and has no parentLink to union`,
           entityId: u.id,
           path: ['unions', u.id, 'childrenIds'],
         });
@@ -231,10 +279,18 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     }
   }
 
-  // 5d. Ensure person parentUnionId includes child in union.childrenIds
+  // 5d. Ensure person parentUnionId and parentLinks include child in union.childrenIds
   for (const p of sortedPeople(nextTree.people)) {
-    if (p.parentUnionId) {
-      const pu = nextTree.unions[p.parentUnionId];
+    const parentUnionIdsToSync = new Set<string>();
+    if (p.parentUnionId) parentUnionIdsToSync.add(p.parentUnionId);
+    if (p.parentLinks) {
+      for (const link of p.parentLinks) {
+        if (link.unionId) parentUnionIdsToSync.add(link.unionId);
+      }
+    }
+
+    for (const puId of parentUnionIdsToSync) {
+      const pu = nextTree.unions[puId];
       if (pu && !pu.childrenIds.includes(p.id)) {
         changes.push({
           type: 'REPAIRED_RECIPROCAL_LINK',
@@ -250,9 +306,24 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
   // 6. Break Ancestry Cycles
   const getParents = (personId: string): string[] => {
     const person = nextTree.people[personId];
-    if (!person || !person.parentUnionId) return [];
-    const parentUnion = nextTree.unions[person.parentUnionId];
-    return parentUnion ? parentUnion.partnerIds.filter((pId) => Boolean(nextTree.people[pId])) : [];
+    if (!person) return [];
+    const parentUnionIds = new Set<string>();
+    if (person.parentUnionId) parentUnionIds.add(person.parentUnionId);
+    if (person.parentLinks) {
+      for (const link of person.parentLinks) {
+        if (link.unionId) parentUnionIds.add(link.unionId);
+      }
+    }
+    const parents: string[] = [];
+    for (const uId of parentUnionIds) {
+      const parentUnion = nextTree.unions[uId];
+      if (parentUnion) {
+        for (const pId of parentUnion.partnerIds) {
+          if (nextTree.people[pId]) parents.push(pId);
+        }
+      }
+    }
+    return parents;
   };
 
   const visitedGlobal = new Set<string>();
@@ -269,20 +340,32 @@ export function repair(tree: TreeData): { tree: TreeData; report: RepairReport }
     for (const parentId of getParents(currId)) {
       if (inStack.has(parentId)) {
         // Cycle detected: currId is ancestor of parentId, but parentId is parent of currId!
-        // Break the back-edge by unlinking currId from its parent union
+        // Break the back-edge by unlinking currId from parent unions containing parentId
         const currPerson = nextTree.people[currId];
-        if (currPerson && currPerson.parentUnionId) {
-          const pu = nextTree.unions[currPerson.parentUnionId];
-          changes.push({
-            type: 'BROKEN_PARENT_CYCLE',
-            description: `Broken pedigree cycle between "${currId}" and "${parentId}" by unlinking child "${currId}"`,
-            entityId: currId,
-            path: ['people', currId, 'parentUnionId'],
-          });
-          if (pu) {
+        if (currPerson) {
+          const offendingUnions = Object.values(nextTree.unions).filter(
+            (u) => u.partnerIds.includes(parentId) && u.childrenIds.includes(currId)
+          );
+
+          for (const pu of offendingUnions) {
+            changes.push({
+              type: 'BROKEN_PARENT_CYCLE',
+              description: `Broken pedigree cycle between "${currId}" and "${parentId}" by unlinking child "${currId}" from union "${pu.id}"`,
+              entityId: currId,
+              path: ['people', currId],
+            });
             pu.childrenIds = pu.childrenIds.filter((id) => id !== currId);
+            if (currPerson.parentUnionId === pu.id) {
+              delete currPerson.parentUnionId;
+            }
+            if (currPerson.parentLinks) {
+              currPerson.parentLinks = currPerson.parentLinks.filter((l) => l.unionId !== pu.id);
+              if (!currPerson.parentUnionId && currPerson.parentLinks.length > 0) {
+                currPerson.parentUnionId = currPerson.parentLinks[0].unionId;
+              }
+              if (currPerson.parentLinks.length === 0) delete currPerson.parentLinks;
+            }
           }
-          delete currPerson.parentUnionId;
         }
       } else if (!visitedGlobal.has(parentId)) {
         dfsBreakCycle(parentId);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { TreeData, Person } from '../../types/tree';
+import type { TreeData, Person, ParentLinkType } from '../../types/tree';
 import { getPersonDisplayName } from '../../services/treeOperations';
 import { X, Search, UserPlus, Link2, Baby, Users, Heart, ArrowUp, User } from 'lucide-react';
 
@@ -11,8 +11,8 @@ interface AddRelationshipModalProps {
   tree: TreeData;
   sourcePersonId: string | null;
   relationType: RelationType;
-  onCreateNew: () => void;
-  onLinkExisting: (targetPersonId: string) => void;
+  onCreateNew: (linkType?: ParentLinkType) => void;
+  onLinkExisting: (targetPersonId: string, linkType?: ParentLinkType) => void;
 }
 
 export const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
@@ -25,6 +25,7 @@ export const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
   onLinkExisting,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [parentLinkType, setParentLinkType] = useState<ParentLinkType>('biological');
 
   if (!isOpen || !sourcePersonId) return null;
 
@@ -142,10 +143,35 @@ export const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
 
         {/* Content Body */}
         <div className="p-4 space-y-4 overflow-y-auto flex-1 text-sm">
+          {/* Relationship Type Selector (for child or parent) */}
+          {(relationType === 'child' || relationType === 'parent') && (
+            <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div>
+                <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                  Relationship Type
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Specify biological, adoptive, step, or foster parentage
+                </p>
+              </div>
+              <select
+                value={parentLinkType}
+                onChange={(e) => setParentLinkType(e.target.value as ParentLinkType)}
+                className="text-xs font-medium py-1 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="biological">Biological</option>
+                <option value="adoptive">Adoptive</option>
+                <option value="step">Step</option>
+                <option value="foster">Foster</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          )}
+
           {/* Option A: Create New Person */}
           <div
             onClick={() => {
-              onCreateNew();
+              onCreateNew(parentLinkType);
               onClose();
             }}
             className="p-3.5 bg-gradient-to-r from-indigo-50/70 to-violet-50/50 hover:from-indigo-100/70 hover:to-violet-100/50 dark:from-indigo-950/40 dark:to-violet-950/30 dark:hover:from-indigo-950/60 dark:hover:to-violet-950/50 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl cursor-pointer transition-all group flex items-center justify-between shadow-xs hover:shadow"
@@ -212,7 +238,7 @@ export const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                     <div
                       key={p.id}
                       onClick={() => {
-                        onLinkExisting(p.id);
+                        onLinkExisting(p.id, parentLinkType);
                         onClose();
                       }}
                       className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-300 dark:hover:border-indigo-600 rounded-xl cursor-pointer transition-all group"
